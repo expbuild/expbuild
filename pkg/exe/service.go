@@ -63,7 +63,11 @@ func (s *ExeServer) Execute(req *pb.ExecuteRequest, stream pb.Execution_ExecuteS
 }
 
 func (s *ExeServer) sendResult(stream pb.Execution_ExecuteServer, ar *pb.ActionResult, jobid string) error {
-	res, err := anypb.New(ar)
+	execResp := &pb.ExecuteResponse{
+		Result:       ar,
+		CachedResult: false,
+	}
+	any, err := anypb.New(execResp)
 	if err != nil {
 		return fmt.Errorf("recived a wrong job result")
 	}
@@ -71,7 +75,7 @@ func (s *ExeServer) sendResult(stream pb.Execution_ExecuteServer, ar *pb.ActionR
 		Name: jobid,
 		Done: true,
 		Result: &longrunning.Operation_Response{
-			Response: res,
+			Response: any,
 		},
 	}
 	return stream.Send(operation)
