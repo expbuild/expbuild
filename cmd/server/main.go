@@ -17,10 +17,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-var (
-	addr = flag.String("addr", "127.0.0.1:50051", "The exe server address")
-)
-
 // Version indicates the current version of the application.
 var Version = "1.0.0"
 
@@ -60,7 +56,9 @@ func main() {
 	pbbs.RegisterByteStreamServer(s, &cas_svr)
 	pb.RegisterExecutionServer(s, exe_svr)
 	pb.RegisterActionCacheServer(s, ac_svr)
+
 	exe_svr.Start()
+
 	logger.Infof("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		logger.Errorf("failed to serve: %v", err)
