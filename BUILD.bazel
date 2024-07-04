@@ -1,6 +1,0 @@
-load("@bazel_gazelle//:def.bzl", "gazelle")
-
-# gazelle:prefix github.com/expbuild/expbuild
-# gazelle:proto disable_global
-
-gazelle(name = "gazelle")

@@ -1,8 +1,0 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
-
-go_library(
-    name = "math",
-    srcs = ["math.go"],
-    importpath = "github.com/expbuild/expbuild/pkg/util/math",
-    visibility = ["//visibility:public"],
-)
