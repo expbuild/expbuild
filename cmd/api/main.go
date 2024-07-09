@@ -1,12 +1,15 @@
 package main
 
 import (
-	"log"
+	"context"
+	"flag"
+	"os"
 
 	"github.com/expbuild/expbuild/pkg/api"
 	"github.com/expbuild/expbuild/pkg/cache"
+	"github.com/expbuild/expbuild/pkg/config"
 	"github.com/expbuild/expbuild/pkg/database"
-
+	"github.com/expbuild/expbuild/pkg/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,9 +38,20 @@ import (
 
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
+var Version = "1.0.0"
+
+var flagConfig = flag.String("config", "./config/local.yml", "path to the config file")
+
 func main() {
+	logger := log.New().With(context.Background(), "version", Version)
+
+	cfg, err := config.Load(*flagConfig, logger)
+	if err != nil {
+		logger.Errorf("failed to load application configuration: %s", err)
+		os.Exit(-1)
+	}
 	cache.InitRedis()
-	database.ConnectDatabase()
+	database.ConnectDatabase(cfg.DSN)
 
 	//gin.SetMode(gin.ReleaseMode)
 	gin.SetMode(gin.DebugMode)
@@ -45,6 +59,6 @@ func main() {
 	r := api.InitRouter()
 
 	if err := r.Run(":8001"); err != nil {
-		log.Fatal(err)
+		logger.Errorf("failed to bind : %s", err)
 	}
 }
