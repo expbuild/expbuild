@@ -72,70 +72,17 @@ func CreateInstance(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"data": instance})
 }
 
-// FindBook godoc
-// @Summary Find a book by ID
-// @Description Get details of a book by its ID
-// @Tags books
+// StartInstance godoc
+// @Summary Start a instance by ID
+// @Description start the instance with the given ID
+// @Tags instances
 // @Security ApiKeyAuth
 // @Produce json
-// @Param id path string true "Book ID"
-// @Success 200 {object} models.Book "Successfully retrieved book"
-// @Failure 404 {string} string "Book not found"
-// @Router /books/{id} [get]
-func FindBook(c *gin.Context) {
-	var book models.Book
-
-	if err := database.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"data": book})
-}
-
-// UpdateBook godoc
-// @Summary Update a book by ID
-// @Description Update the book details for the given ID
-// @Tags books
-// @Security ApiKeyAuth
-// @Accept  json
-// @Produce  json
-// @Param id path string true "Book ID"
-// @Param input body models.UpdateBook true "Update book object"
-// @Success 200 {object} models.Book "Successfully updated book"
-// @Failure 400 {string} string "Bad Request"
-// @Failure 404 {string} string "book not found"
-// @Router /books/{id} [put]
-func UpdateBook(c *gin.Context) {
-	var book models.Book
-	var input models.UpdateBook
-
-	if err := database.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
-		return
-	}
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	database.DB.Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
-
-	c.JSON(http.StatusOK, gin.H{"data": book})
-}
-
-// DeleteBook godoc
-// @Summary Delete a book by ID
-// @Description Delete the book with the given ID
-// @Tags books
-// @Security ApiKeyAuth
-// @Produce json
-// @Param id path string true "Book ID"
-// @Success 204 {string} string "Successfully deleted book"
-// @Failure 404 {string} string "book not found"
-// @Router /books/{id} [delete]
-func DeleteBook(c *gin.Context) {
+// @Param id path string true "Instance ID"
+// @Success 204 {string} string "Successfully start Instance"
+// @Failure 404 {string} string "instance not found"
+// @Router /instances/{id} [post]
+func StartInstance(c *gin.Context) {
 	var book models.Book
 
 	if err := database.DB.Where("id = ?", c.Param("id")).First(&book).Error; err != nil {

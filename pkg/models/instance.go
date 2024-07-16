@@ -6,6 +6,7 @@ type Instance struct {
 	ID         uint      `json:"id" gorm:"primary_key"`
 	InstanceID string    `json:"instance_id"`
 	Comment    string    `json:"comment"`
+	Status     string    `json:"status"`
 	CreatedAt  time.Time `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt  time.Time `json:"updated_at" gorm:"autoUpdateTime"`
 }

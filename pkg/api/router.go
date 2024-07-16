@@ -7,6 +7,7 @@ import (
 	"github.com/expbuild/expbuild/pkg/middleware"
 
 	"github.com/expbuild/expbuild/pkg/api/books"
+	"github.com/expbuild/expbuild/pkg/api/instances"
 	"github.com/expbuild/expbuild/pkg/docs"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +36,9 @@ func InitRouter() *gin.Engine {
 		v1.GET("/books/:id", middleware.APIKeyAuth(), books.FindBook)
 		v1.PUT("/books/:id", middleware.APIKeyAuth(), books.UpdateBook)
 		v1.DELETE("/books/:id", middleware.APIKeyAuth(), books.DeleteBook)
+
+		v1.GET("/instances", middleware.APIKeyAuth(), instances.FindInstances)
+		v1.POST("/instances", middleware.APIKeyAuth(), middleware.JWTAuth(), instances.CreateInstance)
 
 		v1.POST("/login", middleware.APIKeyAuth(), auth.LoginHandler)
 		v1.POST("/register", middleware.APIKeyAuth(), auth.RegisterHandler)
