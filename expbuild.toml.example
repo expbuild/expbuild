@@ -1,0 +1,38 @@
+# ExpBuild CLI Configuration Example
+
+## Remote execution service endpoints
+[remote]
+# Main execution engine endpoint (required)
+engine_address = "grpc://localhost:8980"
+
+# Optional: separate CAS and action cache endpoints
+# cas_address = "grpc://localhost:8981"
+# action_cache_address = "grpc://localhost:8982"
+
+# Optional: instance name for the remote execution service
+# instance_name = "main"
+
+## TLS Configuration
+[tls]
+# Enable TLS (default: false)
+enabled = false
+
+# Path to CA certificates
+# ca_certs = "/path/to/ca-certificates.crt"
+
+# Path to client certificate (for mutual TLS)
+# client_cert = "/path/to/client-cert.pem"
+
+## gRPC Configuration
+[grpc]
+# Keepalive ping interval in seconds (default: 30)
+keepalive_time_secs = 30
+
+# Keepalive timeout in seconds (default: 10)
+keepalive_timeout_secs = 10
+
+# Send keepalive pings even when there are no active calls (default: true)
+keepalive_while_idle = true
+
+# Maximum message size for decoding in bytes
+# max_decoding_message_size = 4194304
