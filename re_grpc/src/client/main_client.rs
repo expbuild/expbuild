@@ -53,12 +53,13 @@ impl FindMissingCache {
     }
 }
 
+#[derive(Clone)]
 pub struct REClient {
     runtime_opts: RERuntimeOpts,
     grpc_clients: GRPCClients,
     capabilities: RECapabilities,
     instance_name: InstanceName,
-    find_missing_cache: Mutex<FindMissingCache>,
+    find_missing_cache: std::sync::Arc<Mutex<FindMissingCache>>,
     bystream_compressor: Option<Compressor>,
 }
 
@@ -80,11 +81,11 @@ impl REClient {
             grpc_clients,
             capabilities,
             instance_name,
-            find_missing_cache: Mutex::new(FindMissingCache {
+            find_missing_cache: std::sync::Arc::new(Mutex::new(FindMissingCache {
                 cache: LruCache::new(NonZeroUsize::new(50 << 20).unwrap()),
                 ttl: Duration::from_secs(12 * 60 * 60),
                 last_check: Instant::now(),
-            }),
+            })),
             bystream_compressor,
         }
     }
@@ -366,5 +367,100 @@ impl REClient {
 
     pub fn get_experiment_name(&self) -> anyhow::Result<Option<String>> {
         Ok(None)
+    }
+
+    pub async fn upload_action(
+        &self,
+        action: re_grpc_proto::build::bazel::remote::execution::v2::Action,
+        metadata: RemoteExecutionMetadata,
+    ) -> anyhow::Result<TDigest> {
+        use prost::Message;
+        
+        let mut buf = Vec::new();
+        action.encode(&mut buf)
+            .context("Failed to encode Action")?;
+        let digest = crate::digest::compute_digest(&buf);
+        
+        self.upload_blob_with_digest(buf, digest.clone(), metadata).await?;
+        Ok(digest)
+    }
+
+    pub async fn upload_command(
+        &self,
+        command: re_grpc_proto::build::bazel::remote::execution::v2::Command,
+        metadata: RemoteExecutionMetadata,
+    ) -> anyhow::Result<TDigest> {
+        use prost::Message;
+        
+        let mut buf = Vec::new();
+        command.encode(&mut buf)
+            .context("Failed to encode Command")?;
+        let digest = crate::digest::compute_digest(&buf);
+        
+        self.upload_blob_with_digest(buf, digest.clone(), metadata).await?;
+        Ok(digest)
+    }
+
+    pub async fn upload_directory_tree(
+        &self,
+        directories: Vec<(re_grpc_proto::build::bazel::remote::execution::v2::Directory, TDigest)>,
+        files: Vec<crate::action::directory::FileToUpload>,
+        metadata: RemoteExecutionMetadata,
+    ) -> anyhow::Result<TDigest> {
+        use prost::Message;
+        
+        let mut inlined_blobs = Vec::new();
+        let root_digest = directories.first()
+            .map(|(_, digest)| digest.clone())
+            .unwrap_or_default();
+        
+        for (directory, digest) in directories {
+            let mut buf = Vec::new();
+            directory.encode(&mut buf)
+                .context("Failed to encode Directory")?;
+            inlined_blobs.push(InlinedBlobWithDigest {
+                digest,
+                blob: buf,
+                ..Default::default()
+            });
+        }
+        
+        for file in &files {
+            inlined_blobs.push(InlinedBlobWithDigest {
+                digest: file.digest.clone(),
+                blob: file.content.clone(),
+                ..Default::default()
+            });
+        }
+        
+        self.upload(
+            metadata,
+            UploadRequest {
+                inlined_blobs_with_digest: Some(inlined_blobs),
+                files_with_digest: None,
+                directories: None,
+                upload_only_missing: true,
+                ..Default::default()
+            },
+        )
+        .await?;
+        
+        Ok(root_digest)
+    }
+
+    pub async fn wait_execution(
+        &self,
+        operation_name: String,
+        metadata: RemoteExecutionMetadata,
+    ) -> anyhow::Result<BoxStream<'static, anyhow::Result<ExecuteWithProgressResponse>>> {
+        let client = self.grpc_clients.execution_client.clone();
+        execution::wait_execution_impl(
+            client,
+            &self.instance_name,
+            operation_name,
+            metadata,
+            self.runtime_opts.use_fbcode_metadata,
+        )
+        .await
     }
 }

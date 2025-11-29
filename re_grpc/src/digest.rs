@@ -41,6 +41,20 @@ impl FromStr for TDigest {
 }
 
 impl TDigest {
+    /// Compute digest from bytes using SHA256
+    pub fn compute(data: &[u8]) -> Self {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        let result = hasher.finalize();
+        
+        TDigest {
+            hash: hex::encode(result),
+            size_in_bytes: data.len() as i64,
+            ..Default::default()
+        }
+    }
+
     /// Convert TDigest to protobuf Digest
     pub fn to_grpc(&self) -> re_grpc_proto::build::bazel::remote::execution::v2::Digest {
         re_grpc_proto::build::bazel::remote::execution::v2::Digest {
@@ -59,4 +73,8 @@ impl TDigest {
             ..Default::default()
         }
     }
+}
+
+pub fn compute_digest(data: &[u8]) -> TDigest {
+    TDigest::compute(data)
 }

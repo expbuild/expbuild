@@ -13,34 +13,205 @@ pub async fn execute_command(cmd: Commands, config: Config) -> Result<()> {
             action_digest,
             skip_cache,
             instance_name: _,
+            output,
         } => {
             println!("Executing action: {}", action_digest);
             let digest = parse_digest(&action_digest)?;
 
-            let request = ExecuteRequest {
-                action_digest: digest,
+            let metadata = RemoteExecutionMetadata::default();
+            let executor = remote_execution::action::ActionExecutor::new(client);
+
+            let result = executor
+                .execute_action_digest(digest, output, metadata, |progress| {
+                    println!("Stage: {:?}", progress.stage);
+                })
+                .await?;
+
+            println!("Exit code: {}", result.exit_code);
+            
+            if !result.stdout.is_empty() {
+                println!("\n--- STDOUT ---");
+                println!("{}", String::from_utf8_lossy(&result.stdout));
+            }
+            
+            if !result.stderr.is_empty() {
+                println!("\n--- STDERR ---");
+                eprintln!("{}", String::from_utf8_lossy(&result.stderr));
+            }
+
+            if result.cached_result {
+                println!("\n✓ Result was cached");
+            }
+
+            println!("\nOutput files: {}", result.output_files.len());
+            for file in &result.output_files {
+                println!("  - {} ({})", file.path, file.digest);
+            }
+
+            println!("Output directories: {}", result.output_directories.len());
+            for dir in &result.output_directories {
+                println!("  - {} ({})", dir.path, dir.tree_digest);
+            }
+
+            println!("\nExecution completed successfully");
+        }
+
+        Commands::Run {
+            command,
+            args,
+            input,
+            output,
+            output_paths,
+            env,
+            working_dir,
+            skip_cache,
+            timeout,
+            instance_name: _,
+        } => {
+            println!("Running command: {} {:?}", command, args);
+
+            let mut command_spec = remote_execution::action::CommandSpec::new(command, args);
+
+            for env_var in env {
+                if let Some((key, value)) = env_var.split_once('=') {
+                    command_spec = command_spec.with_env(key.to_string(), value.to_string());
+                } else {
+                    anyhow::bail!("Invalid environment variable format: {}. Expected KEY=VALUE", env_var);
+                }
+            }
+
+            for output_path in output_paths {
+                command_spec = command_spec.with_output_path(output_path);
+            }
+
+            if let Some(wd) = working_dir {
+                command_spec = command_spec.with_working_directory(wd);
+            }
+
+            let execution_request = remote_execution::action::ExecutionRequest {
+                command_spec,
+                input_directory: input,
+                output_directory: output.clone(),
                 skip_cache_lookup: skip_cache,
-                ..Default::default()
+                timeout: timeout.map(std::time::Duration::from_secs),
             };
 
             let metadata = RemoteExecutionMetadata::default();
-            let mut stream = client.execute_with_progress(metadata, request).await?;
+            let executor = remote_execution::action::ActionExecutor::new(client);
 
-            while let Some(response) = stream.next().await {
-                match response {
-                    Ok(exec_response) => {
-                        println!("Stage: {:?}", exec_response.stage);
-                        if let Some(execute_response) = exec_response.execute_response {
-                            println!("Exit code: {}", execute_response.action_result.exit_code);
-                            println!("Execution completed successfully");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Execution error: {}", e);
-                        return Err(e.into());
-                    }
+            let result = executor
+                .execute(execution_request, metadata, |progress| {
+                    println!("Stage: {:?}", progress.stage);
+                })
+                .await?;
+
+            println!("\n=== Execution Result ===");
+            println!("Exit code: {}", result.exit_code);
+            
+            if !result.stdout.is_empty() {
+                println!("\n--- STDOUT ---");
+                println!("{}", String::from_utf8_lossy(&result.stdout));
+            }
+            
+            if !result.stderr.is_empty() {
+                println!("\n--- STDERR ---");
+                eprintln!("{}", String::from_utf8_lossy(&result.stderr));
+            }
+
+            if result.cached_result {
+                println!("\n✓ Result was cached");
+            }
+
+            println!("\nOutput files: {}", result.output_files.len());
+            for file in &result.output_files {
+                println!("  - {} ({} bytes)", file.path, file.size_bytes);
+            }
+
+            println!("Output directories: {}", result.output_directories.len());
+            for dir in &result.output_directories {
+                println!("  - {}", dir.path);
+            }
+
+            println!("\nOutputs saved to: {}", output.display());
+            println!("Execution completed successfully");
+        }
+
+        Commands::PrepareAction {
+            command,
+            args,
+            input,
+            output_paths,
+            env,
+            working_dir,
+            dry_run,
+            timeout,
+        } => {
+            println!("Preparing action for command: {} {:?}", command, args);
+
+            let mut command_spec = remote_execution::action::CommandSpec::new(command, args);
+
+            for env_var in env {
+                if let Some((key, value)) = env_var.split_once('=') {
+                    command_spec = command_spec.with_env(key.to_string(), value.to_string());
+                } else {
+                    anyhow::bail!("Invalid environment variable format: {}. Expected KEY=VALUE", env_var);
                 }
             }
+
+            for output_path in output_paths {
+                command_spec = command_spec.with_output_path(output_path);
+            }
+
+            if let Some(wd) = working_dir {
+                command_spec = command_spec.with_working_directory(wd);
+            }
+
+            let input_root_digest = if let Some(ref input_dir) = input {
+                println!("Scanning input directory: {}", input_dir.display());
+                let mut dir_builder = remote_execution::action::DirectoryBuilder::from_directory(input_dir).await?;
+                dir_builder.build()?
+            } else {
+                let empty_dir = remote_execution::action::DirectoryBuilder::new();
+                empty_dir.root_digest().unwrap_or_default()
+            };
+
+            let action_builder = remote_execution::action::ActionBuilder::new(command_spec)
+                .with_input_root(input_root_digest)
+                .with_timeout(timeout.map(std::time::Duration::from_secs).unwrap_or(std::time::Duration::from_secs(600)));
+
+            let (command, command_digest) = action_builder.build_command()?;
+            println!("Command digest: {}", command_digest);
+
+            let (action, action_digest) = action_builder.build_action(command_digest.clone())?;
+            println!("Action digest: {}", action_digest);
+
+            if !dry_run {
+                println!("\nUploading to remote execution service...");
+                let metadata = RemoteExecutionMetadata::default();
+                
+                client.upload_command(command, metadata.clone()).await?;
+                println!("✓ Command uploaded");
+                
+                if let Some(ref input_dir) = input {
+                    let mut dir_builder = remote_execution::action::DirectoryBuilder::from_directory(input_dir).await?;
+                    dir_builder.build()?;
+                    
+                    client.upload_directory_tree(
+                        dir_builder.directories_to_upload(),
+                        dir_builder.files_to_upload().to_vec(),
+                        metadata.clone(),
+                    ).await?;
+                    println!("✓ Input files uploaded");
+                }
+                
+                client.upload_action(action, metadata).await?;
+                println!("✓ Action uploaded");
+                
+                println!("\nAction is ready for execution!");
+            }
+
+            println!("\nTo execute this action, run:");
+            println!("  expbuild execute --action-digest {}", action_digest);
         }
 
         Commands::Upload {

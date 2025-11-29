@@ -31,6 +31,69 @@ pub enum Commands {
 
         #[arg(long, help = "Instance name")]
         instance_name: Option<String>,
+
+        #[arg(short, long, help = "Output directory for results")]
+        output: Option<PathBuf>,
+    },
+
+    #[command(about = "Run a command with remote execution")]
+    Run {
+        #[arg(value_name = "COMMAND", help = "Command to execute")]
+        command: String,
+
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+
+        #[arg(short, long, help = "Input directory to upload")]
+        input: Option<PathBuf>,
+
+        #[arg(short, long, help = "Output directory for results")]
+        output: PathBuf,
+
+        #[arg(long, value_name = "PATH", help = "Expected output files/directories")]
+        output_paths: Vec<String>,
+
+        #[arg(short, long, value_name = "KEY=VALUE", help = "Environment variables")]
+        env: Vec<String>,
+
+        #[arg(short, long, help = "Working directory")]
+        working_dir: Option<String>,
+
+        #[arg(short = 'k', long, help = "Skip cache lookup")]
+        skip_cache: bool,
+
+        #[arg(long, help = "Timeout in seconds")]
+        timeout: Option<u64>,
+
+        #[arg(long, help = "Instance name")]
+        instance_name: Option<String>,
+    },
+
+    #[command(about = "Prepare action and print digest")]
+    PrepareAction {
+        #[arg(value_name = "COMMAND", help = "Command to execute")]
+        command: String,
+
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+
+        #[arg(short, long, help = "Input directory to upload")]
+        input: Option<PathBuf>,
+
+        #[arg(long, value_name = "PATH", help = "Expected output files/directories")]
+        output_paths: Vec<String>,
+
+        #[arg(short, long, value_name = "KEY=VALUE", help = "Environment variables")]
+        env: Vec<String>,
+
+        #[arg(short, long, help = "Working directory")]
+        working_dir: Option<String>,
+
+        #[arg(long, help = "Only compute digest, don't upload")]
+        dry_run: bool,
+
+        #[arg(long, help = "Timeout in seconds")]
+        timeout: Option<u64>,
     },
 
     #[command(about = "Upload files to CAS")]

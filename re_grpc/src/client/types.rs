@@ -9,6 +9,7 @@ use super::interceptor::InjectHeadersInterceptor;
 
 pub(crate) type GrpcService = InterceptedService<Channel, InjectHeadersInterceptor>;
 
+#[derive(Clone)]
 pub(crate) struct GRPCClients {
     pub(crate) cas_client: ContentAddressableStorageClient<GrpcService>,
     pub(crate) execution_client: ExecutionClient<GrpcService>,
@@ -16,6 +17,7 @@ pub(crate) struct GRPCClients {
     pub(crate) bytestream_client: ByteStreamClient<GrpcService>,
 }
 
+#[derive(Clone)]
 pub(crate) struct InstanceName(pub(crate) Option<String>);
 
 impl InstanceName {
@@ -34,6 +36,7 @@ impl InstanceName {
     }
 }
 
+#[derive(Clone)]
 pub struct RERuntimeOpts {
     pub(crate) use_fbcode_metadata: bool,
     pub(crate) max_concurrent_uploads_per_action: Option<usize>,

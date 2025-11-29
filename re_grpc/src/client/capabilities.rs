@@ -7,6 +7,7 @@ use re_grpc_proto::build::bazel::remote::execution::v2::capabilities_client::Cap
 
 const DEFAULT_MAX_TOTAL_BATCH_SIZE: usize = 4 * 1000 * 1000;
 
+#[derive(Clone)]
 pub(crate) struct RECapabilities {
     pub(crate) max_total_batch_size: usize,
     pub(crate) exec_enabled: bool,

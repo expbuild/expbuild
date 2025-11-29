@@ -1,3 +1,4 @@
+pub mod action;
 mod client;
 mod config;
 mod digest;

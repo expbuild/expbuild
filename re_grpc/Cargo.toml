@@ -28,6 +28,8 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 zstd = { workspace = true }
 serde = { workspace = true }
+sha2 = "0.10"
+hex = "0.4"
 
 re_grpc_proto = { path = "../re_grpc_proto" }
 

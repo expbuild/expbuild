@@ -134,3 +134,105 @@ pub(crate) async fn execute_with_progress_impl(
 
     Ok(stream.boxed())
 }
+
+pub(crate) async fn wait_execution_impl(
+    mut client: re_grpc_proto::build::bazel::remote::execution::v2::execution_client::ExecutionClient<super::types::GrpcService>,
+    instance_name: &super::types::InstanceName,
+    operation_name: String,
+    metadata: RemoteExecutionMetadata,
+    use_fbcode_metadata: bool,
+) -> anyhow::Result<BoxStream<'static, anyhow::Result<ExecuteWithProgressResponse>>> {
+    use re_grpc_proto::google::longrunning::WaitOperationRequest;
+
+    let request = WaitOperationRequest {
+        name: operation_name,
+        timeout: None,
+    };
+
+    let stream = client
+        .wait_execution(super::helpers::with_re_metadata(
+            re_grpc_proto::build::bazel::remote::execution::v2::WaitExecutionRequest {
+                name: request.name,
+            },
+            metadata,
+            use_fbcode_metadata,
+        ))
+        .await?
+        .into_inner();
+
+    let stream = futures::stream::try_unfold(stream, move |mut stream| async {
+        let msg = match stream.try_next().await.context("RE channel error")? {
+            Some(msg) => msg,
+            None => return Ok(None),
+        };
+
+        let status = if msg.done {
+            match msg
+                .result
+                .context("Missing `result` when message was `done`")?
+            {
+                OpResult::Error(rpc_status) => {
+                    return Err(REClientError {
+                        code: TCode(rpc_status.code),
+                        message: rpc_status.message,
+                        group: TCodeReasonGroup::UNKNOWN,
+                    }
+                    .into());
+                }
+                OpResult::Response(any) => {
+                    let execute_response_grpc: GExecuteResponse =
+                        GExecuteResponse::decode(&any.value[..])?;
+
+                    TStatus::from_grpc_result(execute_response_grpc.status.unwrap_or_default())?;
+
+                    let action_result = execute_response_grpc
+                        .result
+                        .with_context(|| "The action result is not defined.")?;
+
+                    let action_result = convert_action_result(action_result)?;
+
+                    let execute_response = ExecuteResponse {
+                        action_result,
+                        action_result_digest: TDigest::default(),
+                        action_result_ttl: 0,
+                        status: TStatus {
+                            code: TCode::OK,
+                            message: execute_response_grpc.message,
+                            ..Default::default()
+                        },
+                        cached_result: execute_response_grpc.cached_result,
+                        action_digest: Default::default(),
+                    };
+
+                    ExecuteWithProgressResponse {
+                        stage: Stage::COMPLETED,
+                        execute_response: Some(execute_response),
+                        ..Default::default()
+                    }
+                }
+            }
+        } else {
+            let meta =
+                ExecuteOperationMetadata::decode(&msg.metadata.unwrap_or_default().value[..])?;
+
+            let stage = match execution_stage::Value::try_from(meta.stage) {
+                Ok(execution_stage::Value::Unknown) => Stage::UNKNOWN,
+                Ok(execution_stage::Value::CacheCheck) => Stage::CACHE_CHECK,
+                Ok(execution_stage::Value::Queued) => Stage::QUEUED,
+                Ok(execution_stage::Value::Executing) => Stage::EXECUTING,
+                Ok(execution_stage::Value::Completed) => Stage::COMPLETED,
+                _ => Stage::UNKNOWN,
+            };
+
+            ExecuteWithProgressResponse {
+                stage,
+                execute_response: None,
+                ..Default::default()
+            }
+        };
+
+        anyhow::Ok(Some((status, stream)))
+    });
+
+    Ok(stream.boxed())
+}
