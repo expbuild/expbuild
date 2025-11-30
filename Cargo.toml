@@ -1,5 +1,5 @@
 [workspace]
-members = ["re_grpc", "re_grpc_proto", "cli"]
+members = ["re_grpc", "re_grpc_proto", "cli", "re_server", "re_server_bin"]
 resolver = "2"
 
 [workspace.package]

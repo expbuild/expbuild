@@ -1,0 +1,31 @@
+# ExpBuild Remote Execution Server Test Configuration
+
+[server]
+address = "127.0.0.1:8980"
+instance_name = "test"
+max_concurrent_executions = 10
+
+[storage.cas]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-test/cas"
+
+[storage.action_cache]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-test/action-cache"
+
+[execution]
+backend = "local"
+max_workers = 5
+worker_timeout_seconds = 600
+
+[execution.local]
+work_dir = "/tmp/expbuild-test/work"
+cache_dir = "/tmp/expbuild-test/cache"
+
+[capabilities]
+digest_functions = ["SHA256"]
+max_batch_total_size_bytes = 4194304
+supported_compressors = ["ZSTD", "DEFLATE"]
+exec_enabled = true
+action_cache_update_enabled = true
+symlink_absolute_path_strategy = "DISALLOWED"

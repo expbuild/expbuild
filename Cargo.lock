@@ -389,6 +389,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
+name = "filetime"
+version = "0.2.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc0505cd1b6fa6580283f6bdf70a73fcf4aba1184038c90902b92b3dd0df63ed"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "libredox",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -747,6 +759,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
+name = "libredox"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "416f7e718bdb06000964960ffa43b4335ad4012ae8b99060261aa4a8088d5ccb"
+dependencies = [
+ "bitflags",
+ "libc",
+ "redox_syscall",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1023,6 +1046,49 @@ dependencies = [
  "serde",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "re_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "filetime",
+ "futures",
+ "hex",
+ "once_cell",
+ "prost",
+ "prost-types",
+ "re_grpc_proto",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "toml",
+ "tonic",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "re_server_bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "re_grpc_proto",
+ "re_server",
+ "serde",
+ "tokio",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
