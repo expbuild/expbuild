@@ -1,0 +1,38 @@
+# ExpBuild Remote Execution Server - Simple Worker Pool Config
+
+[server]
+address = "127.0.0.1:8980"
+instance_name = "test"
+
+[storage.cas]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-test/cas"
+
+[storage.action_cache]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-test/action-cache"
+
+[execution]
+backend = "pool"
+
+[execution.pool]
+max_queue_size = 100
+scheduler_interval_ms = 100
+default_task_timeout_seconds = 600
+result_ttl_seconds = 300
+
+# Simple host worker configuration
+[[execution.pool.workers]]
+type = "host"
+count = 2
+work_dir = "/tmp/expbuild-test/workers"
+use_chroot = false
+env_whitelist = ["PATH", "HOME", "USER"]
+
+[capabilities]
+digest_functions = ["SHA256"]
+max_batch_total_size_bytes = 4194304
+supported_compressors = ["ZSTD", "DEFLATE"]
+exec_enabled = true
+action_cache_update_enabled = true
+symlink_absolute_path_strategy = "DISALLOWED"

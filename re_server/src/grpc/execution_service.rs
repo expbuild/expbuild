@@ -36,9 +36,9 @@ impl Execution for ExecutionService {
         
         let operation_name = self
             .execution_manager
-            .create_operation(action_digest.clone(), req.skip_cache_lookup)
+            .execute_action(action_digest.clone(), req.skip_cache_lookup)
             .await
-            .map_err(|e| Status::internal(format!("Failed to create operation: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Failed to execute action: {}", e)))?;
         
         let (tx, rx) = tokio::sync::mpsc::channel(100);
         

@@ -108,6 +108,8 @@ pub struct ExecutionConfig {
     #[serde(default = "default_worker_timeout")]
     pub worker_timeout_seconds: u64,
     pub local: Option<LocalExecutionConfig>,
+    pub docker: Option<DockerExecutionConfig>,
+    pub pool: Option<WorkerPoolConfig>,
 }
 
 impl Default for ExecutionConfig {
@@ -117,6 +119,8 @@ impl Default for ExecutionConfig {
             max_workers: default_max_workers(),
             worker_timeout_seconds: default_worker_timeout(),
             local: Some(LocalExecutionConfig::default()),
+            docker: None,
+            pool: None,
         }
     }
 }
@@ -147,6 +151,107 @@ impl Default for LocalExecutionConfig {
             cache_dir: Some(PathBuf::from("/tmp/expbuild-cache")),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DockerExecutionConfig {
+    pub image: String,
+    #[serde(default)]
+    pub always_pull: bool,
+    pub cpu_limit: Option<f64>,
+    pub memory_limit: Option<u64>,
+    #[serde(default = "default_network_mode")]
+    pub network_mode: String,
+    #[serde(default)]
+    pub volumes: Vec<VolumeMount>,
+    pub user: Option<String>,
+}
+
+fn default_network_mode() -> String {
+    "none".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct VolumeMount {
+    pub host_path: PathBuf,
+    pub container_path: PathBuf,
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WorkerPoolConfig {
+    #[serde(default = "default_max_queue_size")]
+    pub max_queue_size: usize,
+    #[serde(default = "default_scheduler_interval_ms")]
+    pub scheduler_interval_ms: u64,
+    #[serde(default = "default_task_timeout")]
+    pub default_task_timeout_seconds: u64,
+    #[serde(default = "default_result_ttl")]
+    pub result_ttl_seconds: u64,
+    #[serde(default)]
+    pub workers: Vec<WorkerConfig>,
+}
+
+fn default_max_queue_size() -> usize {
+    1000
+}
+
+fn default_scheduler_interval_ms() -> u64 {
+    100
+}
+
+fn default_task_timeout() -> u64 {
+    3600
+}
+
+fn default_result_ttl() -> u64 {
+    300
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum WorkerConfig {
+    #[serde(rename = "host")]
+    Host {
+        #[serde(default = "default_worker_count")]
+        count: usize,
+        work_dir: PathBuf,
+        #[serde(default)]
+        use_chroot: bool,
+        #[serde(default = "default_env_whitelist")]
+        env_whitelist: Vec<String>,
+        run_as_user: Option<String>,
+        run_as_group: Option<String>,
+    },
+    #[serde(rename = "docker")]
+    Docker {
+        #[serde(default = "default_worker_count")]
+        count: usize,
+        image: String,
+        #[serde(default)]
+        always_pull: bool,
+        cpu_limit: Option<f64>,
+        memory_limit: Option<u64>,
+        #[serde(default = "default_network_mode")]
+        network_mode: String,
+        #[serde(default)]
+        volumes: Vec<VolumeMount>,
+        user: Option<String>,
+    },
+}
+
+fn default_worker_count() -> usize {
+    1
+}
+
+fn default_env_whitelist() -> Vec<String> {
+    vec![
+        "PATH".to_string(),
+        "HOME".to_string(),
+        "USER".to_string(),
+        "TMPDIR".to_string(),
+    ]
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

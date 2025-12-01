@@ -4,7 +4,7 @@ use re_server::{
     cache::ActionCacheManager,
     cas::CasManager,
     config::ServerConfig,
-    execution::ExecutionManager,
+    execution::{create_worker_pool_from_config, ExecutionManager},
     grpc::{
         ActionCacheService, ByteStreamService, CapabilitiesService, CasService, ExecutionService,
     },
@@ -51,10 +51,22 @@ async fn main() -> Result<()> {
     tracing::info!("Initializing managers...");
     let cas_manager = Arc::new(CasManager::new(blob_store));
     let cache_manager = Arc::new(ActionCacheManager::new(action_cache_store));
-    let execution_manager = Arc::new(ExecutionManager::new(
-        cas_manager.clone(),
-        cache_manager.clone(),
-    ));
+    
+    tracing::info!("Initializing worker pool...");
+    let worker_pool = create_worker_pool_from_config(&config.execution, cas_manager.clone()).await?;
+    
+    let execution_manager = if let Some(pool) = worker_pool {
+        Arc::new(ExecutionManager::with_worker_pool(
+            cas_manager.clone(),
+            cache_manager.clone(),
+            pool,
+        ))
+    } else {
+        Arc::new(ExecutionManager::new(
+            cas_manager.clone(),
+            cache_manager.clone(),
+        ))
+    };
 
     tracing::info!("Initializing gRPC services...");
     let capabilities_service = CapabilitiesService::new(config.capabilities.clone());

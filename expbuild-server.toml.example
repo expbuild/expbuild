@@ -14,13 +14,43 @@ backend = "filesystem"
 root_dir = "/tmp/expbuild-server/action-cache"
 
 [execution]
-backend = "local"
+backend = "pool"  # "local", "docker", or "pool"
 max_workers = 10
 worker_timeout_seconds = 3600
 
-[execution.local]
-work_dir = "/tmp/expbuild-server/work"
-cache_dir = "/tmp/expbuild-server/cache"
+# Worker Pool Configuration
+[execution.pool]
+max_queue_size = 1000
+scheduler_interval_ms = 100
+default_task_timeout_seconds = 3600
+result_ttl_seconds = 300
+
+# Host Workers
+[[execution.pool.workers]]
+type = "host"
+count = 4
+work_dir = "/tmp/expbuild-workers/host"
+use_chroot = false
+env_whitelist = ["PATH", "HOME", "USER", "TMPDIR"]
+# run_as_user = "nobody"
+# run_as_group = "nogroup"
+
+# Docker Workers
+[[execution.pool.workers]]
+type = "docker"
+count = 2
+image = "alpine:latest"
+always_pull = false
+cpu_limit = 2.0
+memory_limit = 4294967296  # 4GB
+network_mode = "none"
+# user = "1000:1000"
+
+# Docker Worker with custom volume mounts
+[[execution.pool.workers.volumes]]
+host_path = "/var/cache/expbuild"
+container_path = "/cache"
+read_only = true
 
 [capabilities]
 digest_functions = ["SHA256"]
@@ -29,3 +59,4 @@ supported_compressors = ["ZSTD", "DEFLATE"]
 exec_enabled = true
 action_cache_update_enabled = true
 symlink_absolute_path_strategy = "DISALLOWED"
+

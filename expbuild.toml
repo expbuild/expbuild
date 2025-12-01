@@ -1,0 +1,22 @@
+[remote]
+engine_address = "grpc://localhost:8980"
+cas_address = "grpc://localhost:8980"
+action_cache_address = "grpc://localhost:8980"
+instance_name = "hello"
+
+[tls]
+enabled = false
+
+[grpc]
+keepalive_time_secs = 30
+keepalive_timeout_secs = 10
+keepalive_while_idle = true
+
+[build]
+command = "gcc"
+args = ["hello.c", "-o", "hello"]
+working_dir = "."
+output_paths = ["hello"]
+env = []
+timeout_secs = 60
+skip_cache = false
