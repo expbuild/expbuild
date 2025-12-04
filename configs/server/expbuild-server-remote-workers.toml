@@ -1,0 +1,25 @@
+# ExpBuild Server Configuration
+
+[server]
+address = "0.0.0.0:8980"
+instance_name = ""
+
+[storage.cas]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-server/cas"
+
+[storage.action_cache]
+backend = "filesystem"
+root_dir = "/tmp/expbuild-server/cache"
+
+# Execution configuration
+# Server always uses remote worker scheduler mode
+# Workers connect via gRPC to pull and execute tasks
+[execution]
+
+[capabilities]
+digest_functions = ["SHA256"]
+max_batch_total_size_bytes = 4194304
+supported_compressors = ["ZSTD", "DEFLATE"]
+exec_enabled = true
+action_cache_update_enabled = true

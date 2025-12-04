@@ -1,0 +1,52 @@
+# ExpBuild Worker Configuration - Docker Executor Example
+
+worker_id = "worker-docker-01"
+server_url = "http://localhost:50051"
+cas_url = "http://localhost:50051"
+work_dir = "/tmp/expbuild-worker"
+max_concurrent_tasks = 4
+heartbeat_interval_seconds = 30
+lease_poll_interval_seconds = 5
+
+[platform]
+os = "linux"
+arch = "x86_64"
+container = "docker"
+
+[executor]
+type = "docker"
+
+[executor.docker]
+# Container image to use for task execution
+image = "rust:1.75-alpine"
+
+# Always pull latest image before execution
+always_pull = false
+
+# Network isolation mode: "none", "bridge", or "host"
+# "none" = no network access (recommended for security)
+network_mode = "none"
+
+# Use read-only root filesystem
+readonly_rootfs = true
+
+# Mount /tmp as tmpfs (in-memory filesystem)
+mount_tmpfs = true
+
+# Security options
+security_opts = ["no-new-privileges"]
+
+# Socket path (leave empty for default)
+# socket_path = "/var/run/docker.sock"
+
+# Default resource limits
+[executor.docker.default_limits]
+cpu_cores = 2.0                # 2 CPU cores
+memory_bytes = 2147483648      # 2GB RAM
+max_processes = 128            # Maximum number of processes
+# disk_bytes = 10737418240     # 10GB disk (not yet supported by Docker executor)
+
+[executor.docker.default_limits.network]
+# Network policy - use string literal for enum
+# Options: "none", "full", or {"restricted": ["example.com"]}
+network = "none"

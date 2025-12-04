@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+package expbuild.worker.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "build/bazel/remote/execution/v2/remote_execution.proto";
+
+service WorkerScheduler {
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+  
+  rpc LeaseTask(LeaseTaskRequest) returns (LeaseTaskResponse);
+  
+  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+  
+  rpc ReportHeartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  
+  rpc UnregisterWorker(UnregisterWorkerRequest) returns (UnregisterWorkerResponse);
+}
+
+message RegisterWorkerRequest {
+  string worker_id = 1;
+  
+  WorkerCapabilities capabilities = 2;
+  
+  map<string, string> platform_properties = 3;
+}
+
+message RegisterWorkerResponse {
+  // Empty for now, could return configuration
+}
+
+message WorkerCapabilities {
+  int32 max_concurrent_executions = 1;
+  
+  ResourceLimits resources = 2;
+}
+
+message ResourceLimits {
+  double cpu_cores = 1;
+  
+  int64 memory_bytes = 2;
+  
+  int64 disk_bytes = 3;
+}
+
+message LeaseTaskRequest {
+  string worker_id = 1;
+  
+  int32 max_tasks = 2;
+  
+  int64 timeout_seconds = 3;
+}
+
+message LeaseTaskResponse {
+  repeated LeasedTask tasks = 1;
+}
+
+message LeasedTask {
+  string task_id = 1;
+  
+  string operation_name = 2;
+  
+  build.bazel.remote.execution.v2.Digest action_digest = 3;
+  
+  google.protobuf.Duration timeout = 4;
+  
+  google.protobuf.Timestamp lease_expires_at = 5;
+}
+
+message UpdateTaskStatusRequest {
+  string task_id = 1;
+  
+  string worker_id = 2;
+  
+  TaskStatus status = 3;
+  
+  build.bazel.remote.execution.v2.ActionResult result = 4;
+  
+  string error_message = 5;
+}
+
+enum TaskStatus {
+  TASK_STATUS_UNKNOWN = 0;
+  TASK_STATUS_EXECUTING = 1;
+  TASK_STATUS_COMPLETED = 2;
+  TASK_STATUS_FAILED = 3;
+}
+
+message UpdateTaskStatusResponse {
+  // Empty
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  
+  WorkerState state = 2;
+  
+  WorkerStats stats = 3;
+}
+
+enum WorkerState {
+  WORKER_STATE_UNKNOWN = 0;
+  WORKER_STATE_IDLE = 1;
+  WORKER_STATE_BUSY = 2;
+  WORKER_STATE_DRAINING = 3;
+}
+
+message WorkerStats {
+  int32 active_tasks = 1;
+  
+  int64 total_completed = 2;
+  
+  int64 total_failed = 3;
+}
+
+message HeartbeatResponse {
+  bool should_shutdown = 1;
+}
+
+message UnregisterWorkerRequest {
+  string worker_id = 1;
+}
+
+message UnregisterWorkerResponse {
+  // Empty
+}

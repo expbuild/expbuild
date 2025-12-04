@@ -1,0 +1,25 @@
+[package]
+name = "re_server_bin"
+version = "0.1.0"
+description = "Bazel Remote Execution API server binary"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "re-server"
+path = "src/main.rs"
+
+[dependencies]
+re_server = { path = "../server" }
+re_grpc_proto = { path = "../proto" }
+
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+toml = { workspace = true }
+serde = { workspace = true }
+
+clap = { workspace = true }

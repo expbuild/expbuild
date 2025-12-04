@@ -1,5 +1,5 @@
 [workspace]
-members = ["re_grpc", "re_grpc_proto", "cli", "re_server", "re_server_bin"]
+members = ["crates/client", "crates/proto", "crates/cli", "crates/server", "crates/server-bin", "crates/worker", "tests"]
 resolver = "2"
 
 [workspace.package]

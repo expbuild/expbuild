@@ -1,0 +1,30 @@
+# ExpBuild Worker Configuration
+
+# Worker ID (optional, will be auto-generated if not specified)
+# worker_id = "worker-1"
+
+# Server and CAS URLs (do not include http:// or https://)
+server_url = "http://localhost:8980"
+cas_url = "localhost:8980"
+
+# Concurrency settings
+max_concurrent_tasks = 4
+heartbeat_interval_seconds = 30
+lease_poll_interval_seconds = 5
+
+# Platform properties (used for task matching)
+[platform]
+OSFamily = "Linux"
+Arch = "x86_64"
+
+# Execution backend configuration
+[backend]
+type = "host"
+work_dir = "/tmp/expbuild-worker"
+
+# Environment variable whitelist (only these variables will be passed to commands)
+# If not specified, defaults to ["PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP"]
+env_whitelist = ["PATH", "HOME", "USER", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL"]
+
+# Cleanup workspace after task completion (default: true)
+cleanup_workspace = false
