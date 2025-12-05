@@ -1,21 +1,21 @@
-# Worker Framework 使用指南
+# Worker Framework Usage Guide
 
-## 概述
+## Overview
 
-Worker Framework 为 ExpBuild Remote Execution 服务器提供灵活的任务执行能力，支持多种执行后端。
+The Worker Framework provides flexible task execution capabilities for the ExpBuild Remote Execution server, supporting multiple execution backends.
 
-## 支持的 Worker 类型
+## Supported Worker Types
 
 ### 1. Host Worker
-在本地主机上以进程方式执行任务。
+Executes tasks as processes on the local host.
 
-**特性：**
-- 直接在主机上执行
-- 可配置环境变量白名单
-- 支持用户/组切换
-- 最快的启动时间
+**Features:**
+- Direct execution on the host
+- Configurable environment variable whitelist
+- User/group switching support
+- Fastest startup time
 
-**配置示例：**
+**Configuration Example:**
 ```toml
 [[execution.pool.workers]]
 type = "host"
@@ -27,24 +27,24 @@ run_as_user = "nobody"
 run_as_group = "nogroup"
 ```
 
-**参数说明：**
-- `count` - Worker 数量
-- `work_dir` - 工作目录
-- `use_chroot` - 是否使用 chroot 隔离（未实现）
-- `env_whitelist` - 允许传递的环境变量
-- `run_as_user` - 执行用户（可选）
-- `run_as_group` - 执行组（可选）
+**Parameter Description:**
+- `count` - Number of workers
+- `work_dir` - Working directory
+- `use_chroot` - Whether to use chroot isolation (not implemented)
+- `env_whitelist` - Allowed environment variables to pass through
+- `run_as_user` - Execution user (optional)
+- `run_as_group` - Execution group (optional)
 
 ### 2. Docker Worker
-在 Docker 容器中执行任务。
+Executes tasks in Docker containers.
 
-**特性：**
-- 完整的容器隔离
-- CPU/内存资源限制
-- 网络隔离
-- 卷挂载支持
+**Features:**
+- Complete container isolation
+- CPU/memory resource limits
+- Network isolation
+- Volume mount support
 
-**配置示例：**
+**Configuration Example:**
 ```toml
 [[execution.pool.workers]]
 type = "docker"
@@ -62,17 +62,17 @@ container_path = "/cache"
 read_only = true
 ```
 
-**参数说明：**
-- `count` - Worker 数量
-- `image` - Docker 镜像
-- `always_pull` - 每次执行前是否拉取镜像
-- `cpu_limit` - CPU 核数限制
-- `memory_limit` - 内存限制（字节）
-- `network_mode` - 网络模式（none/bridge/host）
-- `user` - 容器内运行用户
-- `volumes` - 卷挂载配置
+**Parameter Description:**
+- `count` - Number of workers
+- `image` - Docker image
+- `always_pull` - Whether to pull the image before each execution
+- `cpu_limit` - CPU core limit
+- `memory_limit` - Memory limit (bytes)
+- `network_mode` - Network mode (none/bridge/host)
+- `user` - User to run as inside the container
+- `volumes` - Volume mount configuration
 
-## Worker Pool 配置
+## Worker Pool Configuration
 
 ```toml
 [execution]
@@ -85,15 +85,15 @@ default_task_timeout_seconds = 3600
 result_ttl_seconds = 300
 ```
 
-**参数说明：**
-- `max_queue_size` - 最大队列长度
-- `scheduler_interval_ms` - 调度器轮询间隔（毫秒）
-- `default_task_timeout_seconds` - 默认任务超时
-- `result_ttl_seconds` - 结果保留时间
+**Parameter Description:**
+- `max_queue_size` - Maximum queue length
+- `scheduler_interval_ms` - Scheduler polling interval (milliseconds)
+- `default_task_timeout_seconds` - Default task timeout
+- `result_ttl_seconds` - Result retention time
 
-## 完整配置示例
+## Complete Configuration Example
 
-### 混合 Worker 配置
+### Mixed Worker Configuration
 
 ```toml
 [server]
@@ -117,7 +117,7 @@ scheduler_interval_ms = 100
 default_task_timeout_seconds = 3600
 result_ttl_seconds = 300
 
-# 快速 Host Workers 用于小任务
+# Fast Host Workers for small tasks
 [[execution.pool.workers]]
 type = "host"
 count = 4
@@ -125,7 +125,7 @@ work_dir = "/tmp/expbuild-host-workers"
 use_chroot = false
 env_whitelist = ["PATH", "HOME", "USER"]
 
-# Docker Workers 用于需要特定环境的任务
+# Docker Workers for tasks requiring specific environments
 [[execution.pool.workers]]
 type = "docker"
 count = 2
@@ -148,13 +148,13 @@ exec_enabled = true
 action_cache_update_enabled = true
 ```
 
-## 平台匹配
+## Platform Matching
 
-Worker Pool 会根据 Action 的 Platform 属性自动选择合适的 Worker。
+The Worker Pool automatically selects appropriate workers based on the Action's Platform attributes.
 
-### Platform 属性
+### Platform Attributes
 
-Action 可以指定平台要求：
+Actions can specify platform requirements:
 
 ```protobuf
 Platform {
@@ -165,21 +165,21 @@ Platform {
 }
 ```
 
-Worker 会声明自己的能力：
-- **Host Worker**: OSFamily=当前操作系统, Arch=当前架构
+Workers declare their capabilities:
+- **Host Worker**: OSFamily=current operating system, Arch=current architecture
 - **Docker Worker**: OSFamily=Linux, container=docker
 
-调度器会自动匹配：
-- 如果 Action 没有指定 Platform，可以调度到任何 Worker
-- 如果指定了 Platform，只会调度到匹配的 Worker
+The scheduler automatically matches:
+- If the Action doesn't specify a Platform, it can be scheduled to any worker
+- If a Platform is specified, it will only be scheduled to matching workers
 
-## 运行服务器
+## Running the Server
 
 ```bash
-# 使用 worker pool 配置启动
+# Start with worker pool configuration
 ./target/release/re-server --config expbuild-server-pool.toml --verbose
 
-# 输出示例：
+# Sample output:
 # 2025-11-30T12:00:00Z INFO re_server_bin: Loading configuration from: expbuild-server-pool.toml
 # 2025-11-30T12:00:00Z INFO re_server_bin: Initializing storage...
 # 2025-11-30T12:00:00Z INFO re_server_bin: Initializing worker pool...
@@ -190,102 +190,102 @@ Worker 会声明自己的能力：
 # 2025-11-30T12:00:00Z INFO re_server_bin: Starting server on 127.0.0.1:8980
 ```
 
-## 监控
+## Monitoring
 
-### Worker Pool 统计
+### Worker Pool Statistics
 
-通过日志可以观察 Worker Pool 状态：
-- 队列中的任务数量
-- 空闲/忙碌的 Worker 数量
-- 已完成/失败的任务数
+Worker Pool status can be observed through logs:
+- Number of tasks in queue
+- Number of idle/busy workers
+- Number of completed/failed tasks
 
-### 健康检查
+### Health Checks
 
-每个 Worker 都实现了健康检查：
-- **Host Worker**: 始终健康
-- **Docker Worker**: 检查 Docker daemon 连接
+Each worker implements health checks:
+- **Host Worker**: Always healthy
+- **Docker Worker**: Checks Docker daemon connection
 
-## 故障排除
+## Troubleshooting
 
-### 任务一直排队
+### Tasks Always Queuing
 
-**可能原因：**
-1. 所有 Worker 都忙碌
-2. Platform 不匹配
-3. Worker 已离线
+**Possible Causes:**
+1. All workers are busy
+2. Platform mismatch
+3. Workers are offline
 
-**解决方法：**
-- 增加 Worker 数量
-- 检查 Platform 配置
-- 查看 Worker 日志
+**Solutions:**
+- Increase the number of workers
+- Check Platform configuration
+- Review worker logs
 
-### Docker Worker 失败
+### Docker Worker Failures
 
-**可能原因：**
-1. Docker daemon 未运行
-2. 镜像不存在
-3. 资源限制过低
+**Possible Causes:**
+1. Docker daemon not running
+2. Image does not exist
+3. Resource limits too low
 
-**解决方法：**
+**Solutions:**
 ```bash
-# 检查 Docker
+# Check Docker
 docker version
 
-# 拉取镜像
+# Pull the image
 docker pull alpine:latest
 
-# 测试容器
+# Test container
 docker run --rm alpine:latest echo "test"
 ```
 
-### 内存不足
+### Out of Memory
 
-**症状：** 任务被 OOM Killer 杀死
+**Symptoms:** Tasks killed by OOM Killer
 
-**解决方法：**
-- 增加 `memory_limit`
-- 减少并发 Worker 数量
-- 使用更大的主机
+**Solutions:**
+- Increase `memory_limit`
+- Reduce the number of concurrent workers
+- Use a larger host
 
-## 最佳实践
+## Best Practices
 
-### 1. Worker 数量选择
+### 1. Worker Count Selection
 
 ```
-Host Workers = CPU 核数
-Docker Workers = (总内存 / 单个容器内存) * 0.8
+Host Workers = CPU cores
+Docker Workers = (Total memory / Single container memory) * 0.8
 ```
 
-### 2. 混合使用
+### 2. Mixed Usage
 
-- 小任务使用 Host Worker（快速启动）
-- 大任务或需要隔离的使用 Docker Worker
+- Use Host Workers for small tasks (fast startup)
+- Use Docker Workers for large tasks or those requiring isolation
 
-### 3. 资源限制
+### 3. Resource Limits
 
-- 设置合理的 CPU/内存限制避免资源竞争
-- Docker Worker 建议设置 `network_mode = "none"` 提高安全性
+- Set reasonable CPU/memory limits to avoid resource contention
+- For Docker Workers, recommend setting `network_mode = "none"` to improve security
 
-### 4. 超时配置
+### 4. Timeout Configuration
 
-- `default_task_timeout_seconds` 应该大于最长任务的预期时间
-- `result_ttl_seconds` 应该足够客户端获取结果
+- `default_task_timeout_seconds` should be greater than the expected time of the longest task
+- `result_ttl_seconds` should be sufficient for clients to retrieve results
 
-### 5. 日志级别
+### 5. Log Levels
 
-开发环境：
+Development environment:
 ```bash
 --verbose
 ```
 
-生产环境：
+Production environment:
 ```bash
 RUST_LOG=info ./re-server --config config.toml
 ```
 
-## 下一步
+## Next Steps
 
-- 实现 Kubernetes Worker 支持
-- 添加 Worker 健康监控
-- 实现优先级队列
-- 添加 Prometheus metrics
+- Implement Kubernetes Worker support
+- Add Worker health monitoring
+- Implement priority queue
+- Add Prometheus metrics

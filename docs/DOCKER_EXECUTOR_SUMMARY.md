@@ -1,25 +1,25 @@
-# Docker Executor 实现总结
+# Docker Executor Implementation Summary
 
-**完成时间**: 2025-12-04  
-**状态**: ✅ 已完成并测试通过
+**Completion Date**: 2025-12-04
+**Status**: ✅ Completed and Tested
 
 ---
 
-## 实现内容
+## Implementation
 
-### 1. 架构重构 ✅
+### 1. Architecture Refactoring ✅
 
-#### 新增模块结构
+#### New Module Structure
 ```
 crates/worker/src/executor/
-├── mod.rs          # 统一接口定义
-├── types.rs        # 核心类型定义
-├── host.rs         # Host 执行器实现
-├── docker.rs       # Docker 执行器实现
-└── tests.rs        # 单元测试
+├── mod.rs          # Unified interface definition
+├── types.rs        # Core type definitions
+├── host.rs         # Host executor implementation
+├── docker.rs       # Docker executor implementation
+└── tests.rs        # Unit tests
 ```
 
-#### 核心接口
+#### Core Interface
 ```rust
 #[async_trait]
 pub trait TaskExecutor: Send + Sync {
@@ -31,42 +31,42 @@ pub trait TaskExecutor: Send + Sync {
 }
 ```
 
-### 2. Docker Executor 完整实现 ✅
+### 2. Complete Docker Executor Implementation ✅
 
-#### 核心功能
-- ✅ 镜像管理（自动拉取、健康检查）
-- ✅ 容器生命周期管理（创建、启动、等待、清理）
-- ✅ 资源限制（CPU、内存、PID、网络）
-- ✅ 安全加固（只读根文件系统、no-new-privileges、网络隔离）
-- ✅ 日志收集（stdout/stderr 分离）
-- ✅ 输出文件收集（从容器中提取 tar 归档）
-- ✅ 执行统计（CPU 时间、内存峰值）
-- ✅ 超时处理（自动 kill 容器）
-- ✅ 资源清理（scopeguard 确保容器删除）
+#### Core Features
+- ✅ Image management (automatic pull, health checks)
+- ✅ Container lifecycle management (create, start, wait, cleanup)
+- ✅ Resource limits (CPU, memory, PID, network)
+- ✅ Security hardening (read-only root filesystem, no-new-privileges, network isolation)
+- ✅ Log collection (stdout/stderr separation)
+- ✅ Output file collection (extract tar archives from containers)
+- ✅ Execution statistics (CPU time, peak memory)
+- ✅ Timeout handling (automatic container kill)
+- ✅ Resource cleanup (scopeguard ensures container deletion)
 
-#### 安全特性
+#### Security Features
 ```rust
 DockerExecutorConfig {
-    readonly_rootfs: true,          // 只读根文件系统
-    network_mode: "none",            // 无网络访问
-    mount_tmpfs: true,               // /tmp 使用内存
+    readonly_rootfs: true,          // Read-only root filesystem
+    network_mode: "none",            // No network access
+    mount_tmpfs: true,               // /tmp uses memory
     security_opts: [
-        "no-new-privileges"          // 阻止权限提升
+        "no-new-privileges"          // Prevent privilege escalation
     ],
     resource_limits: {
-        cpu_cores: 2.0,              // CPU 限制
-        memory_bytes: 2GB,           // 内存限制
-        max_processes: 128,          // 防 fork bomb
+        cpu_cores: 2.0,              // CPU limit
+        memory_bytes: 2GB,           // Memory limit
+        max_processes: 128,          // Prevent fork bombs
     }
 }
 ```
 
-### 3. 配置系统更新 ✅
+### 3. Configuration System Updates ✅
 
-#### 新增配置类型
+#### New Configuration Types
 ```toml
 [executor]
-type = "docker"  # 或 "host"
+type = "docker"  # or "host"
 
 [executor.docker]
 image = "rust:1.75-alpine"
@@ -82,153 +82,153 @@ memory_bytes = 2147483648
 max_processes = 128
 ```
 
-#### 配置文件位置
-- `configs/worker/expbuild-worker-docker.toml` - Docker 执行器示例
-- `configs/worker/expbuild-worker.toml` - Host 执行器示例（现有）
+#### Configuration File Locations
+- `configs/worker/expbuild-worker-docker.toml` - Docker executor example
+- `configs/worker/expbuild-worker.toml` - Host executor example (existing)
 
-### 4. 测试覆盖 ✅
+### 4. Test Coverage ✅
 
-#### 单元测试
+#### Unit Tests
 ```bash
 cargo test --package expbuild-worker --lib executor::tests
 ```
 
-测试内容：
-- ✅ Host 执行器基本功能
-- ✅ 执行器能力查询
-- ✅ 健康检查
-- ✅ 隔离级别排序
-- ✅ 资源限制默认值
+Test coverage:
+- ✅ Host executor basic functionality
+- ✅ Executor capability queries
+- ✅ Health checks
+- ✅ Isolation level ordering
+- ✅ Resource limit defaults
 
-#### 测试结果
+#### Test Results
 ```
 test result: ok. 5 passed; 0 failed; 0 ignored
 ```
 
-### 5. 编译验证 ✅
+### 5. Build Verification ✅
 
 ```bash
-# 开发版本
+# Development build
 cargo build
 ✓ Finished `dev` profile in 3.46s
 
-# 发布版本
+# Release build
 cargo build --release
 ✓ Finished `release` profile in 42.98s
 ```
 
 ---
 
-## 新增依赖
+## New Dependencies
 
 ```toml
 [dependencies]
-bollard = "0.17"       # Docker API 客户端
-scopeguard = "1.2"     # RAII 资源清理
-tar = "0.4"            # tar 归档处理
-futures = "0.3"        # Stream 处理
+bollard = "0.17"       # Docker API client
+scopeguard = "1.2"     # RAII resource cleanup
+tar = "0.4"            # tar archive processing
+futures = "0.3"        # Stream processing
 ```
 
 ---
 
-## 文件变更清单
+## File Changes
 
-### 新增文件
-1. `crates/worker/src/executor/mod.rs` - 执行器模块定义
-2. `crates/worker/src/executor/types.rs` - 核心类型
-3. `crates/worker/src/executor/docker.rs` - Docker 执行器（450+ 行）
-4. `crates/worker/src/executor/tests.rs` - 单元测试
-5. `configs/worker/expbuild-worker-docker.toml` - 配置示例
-6. `docs/ISOLATION_DESIGN.md` - 设计文档
+### New Files
+1. `crates/worker/src/executor/mod.rs` - Executor module definition
+2. `crates/worker/src/executor/types.rs` - Core types
+3. `crates/worker/src/executor/docker.rs` - Docker executor (450+ lines)
+4. `crates/worker/src/executor/tests.rs` - Unit tests
+5. `configs/worker/expbuild-worker-docker.toml` - Configuration example
+6. `docs/ISOLATION_DESIGN.md` - Design documentation
 
-### 修改文件
-1. `crates/worker/src/executor/host.rs` - 重构以实现新接口
-2. `crates/worker/src/config.rs` - 支持多执行器配置
-3. `crates/worker/src/agent.rs` - 集成执行器选择逻辑
-4. `crates/worker/src/lib.rs` - 导出新接口
-5. `crates/worker/Cargo.toml` - 添加依赖
+### Modified Files
+1. `crates/worker/src/executor/host.rs` - Refactored to implement new interface
+2. `crates/worker/src/config.rs` - Support for multiple executor configurations
+3. `crates/worker/src/agent.rs` - Integrated executor selection logic
+4. `crates/worker/src/lib.rs` - Export new interfaces
+5. `crates/worker/Cargo.toml` - Added dependencies
 
 ---
 
-## 使用方法
+## Usage
 
-### 1. 使用 Docker 执行器
+### 1. Using Docker Executor
 
 ```bash
-# 启动 worker（需要 Docker daemon 运行）
+# Start worker (requires Docker daemon running)
 cargo run --bin expbuild-worker -- \
   --config configs/worker/expbuild-worker-docker.toml
 ```
 
-### 2. 使用 Host 执行器（原有方式）
+### 2. Using Host Executor (Original Method)
 
 ```bash
 cargo run --bin expbuild-worker -- \
   --config configs/worker/expbuild-worker.toml
 ```
 
-### 3. 验证 Docker 可用性
+### 3. Verify Docker Availability
 
 ```rust
 let executor = DockerExecutor::new(config).await?;
-executor.health_check().await?;  // 检查 Docker daemon 和镜像
+executor.health_check().await?;  // Check Docker daemon and image
 ```
 
 ---
 
-## 性能特征
+## Performance Characteristics
 
-| 特性 | Host Executor | Docker Executor |
-|------|--------------|-----------------|
-| 启动开销 | < 1ms | 50-200ms |
-| 运行开销 | 0% | 5-10% |
-| 隔离强度 | ⭐☆☆☆☆ | ⭐⭐⭐⭐☆ |
-| 资源限制 | ❌ | ✅ |
-| 网络隔离 | ❌ | ✅ |
-| 安全性 | 低 | 高 |
-
----
-
-## 下一步工作（可选）
-
-根据 `docs/ISOLATION_DESIGN.md` 中的规划：
-
-### Phase 4: 高级特性（可选）
-- [ ] Podman 支持（Rootless 容器）
-- [ ] Linux Namespace 支持（原生实现）
-- [ ] 容器池复用（预热容器）
-- [ ] Prometheus 监控指标
-- [ ] Firecracker microVM 支持
-
-### 集成测试
-- [ ] 端到端 Docker 执行测试
-- [ ] 多任务并发测试
-- [ ] 资源限制验证测试
-- [ ] 网络隔离验证测试
+| Feature | Host Executor | Docker Executor |
+|---------|--------------|-----------------|
+| Startup Overhead | < 1ms | 50-200ms |
+| Runtime Overhead | 0% | 5-10% |
+| Isolation Strength | ⭐☆☆☆☆ | ⭐⭐⭐⭐☆ |
+| Resource Limits | ❌ | ✅ |
+| Network Isolation | ❌ | ✅ |
+| Security | Low | High |
 
 ---
 
-## 已知限制
+## Next Steps (Optional)
 
-1. **磁盘配额**: Docker 不直接支持磁盘限制（需要额外配置）
-2. **输出文件权限**: 从容器提取的文件执行权限检测待完善
-3. **容器缓存**: 暂未实现容器池复用（每次创建新容器）
-4. **平台限制**: macOS/Windows 需要 Docker Desktop（通过 Linux VM）
+Based on the plan in `docs/ISOLATION_DESIGN.md`:
 
----
+### Phase 4: Advanced Features (Optional)
+- [ ] Podman support (Rootless containers)
+- [ ] Linux Namespace support (native implementation)
+- [ ] Container pool reuse (pre-warmed containers)
+- [ ] Prometheus monitoring metrics
+- [ ] Firecracker microVM support
 
-## 安全建议
-
-生产环境使用时建议：
-
-1. ✅ 启用 `readonly_rootfs`
-2. ✅ 设置 `network_mode = "none"`
-3. ✅ 配置资源限制（CPU、内存、PID）
-4. ✅ 使用 `no-new-privileges` 安全选项
-5. ⚠️ 考虑添加 Seccomp 配置文件
-6. ⚠️ 定期扫描镜像漏洞（Trivy）
-7. ⚠️ 使用镜像签名验证
+### Integration Testing
+- [ ] End-to-end Docker execution tests
+- [ ] Multi-task concurrency tests
+- [ ] Resource limit validation tests
+- [ ] Network isolation validation tests
 
 ---
 
-**状态**: 🎉 Docker Executor 已完全实现并通过测试，可以投入使用！
+## Known Limitations
+
+1. **Disk Quotas**: Docker doesn't directly support disk limits (requires additional configuration)
+2. **Output File Permissions**: Executable permission detection for files extracted from containers needs improvement
+3. **Container Caching**: Container pool reuse not yet implemented (creates new container each time)
+4. **Platform Limitations**: macOS/Windows require Docker Desktop (via Linux VM)
+
+---
+
+## Security Recommendations
+
+Production environment recommendations:
+
+1. ✅ Enable `readonly_rootfs`
+2. ✅ Set `network_mode = "none"`
+3. ✅ Configure resource limits (CPU, memory, PID)
+4. ✅ Use `no-new-privileges` security option
+5. ⚠️ Consider adding Seccomp profile
+6. ⚠️ Regularly scan images for vulnerabilities (Trivy)
+7. ⚠️ Use image signature verification
+
+---
+
+**Status**: 🎉 Docker Executor is fully implemented and tested, ready for production use!

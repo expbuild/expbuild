@@ -1,105 +1,105 @@
-# Remote Worker 使用指南
+# Remote Worker Usage Guide
 
-## 概述
+## Overview
 
-ExpBuild 现在支持独立的 Worker 模式，可以将任务执行分离到远程 Worker 节点。
+ExpBuild now supports standalone Worker mode, which allows task execution to be offloaded to remote Worker nodes.
 
-## 架构
+## Architecture
 
 ```
-Client → Server (Scheduler) → Worker (拉取任务并执行)
+Client → Server (Scheduler) → Worker (Pulls and executes tasks)
 ```
 
-## 快速开始
+## Quick Start
 
-### 1. 启动 Server（Scheduler 模式）
+### 1. Start Server (Scheduler Mode)
 
 ```bash
-# 使用 remote workers 配置启动服务器
+# Start the server with remote workers configuration
 cargo run --bin re-server -- --config expbuild-server-remote-workers.toml --verbose
 ```
 
-Server 将启动以下服务：
-- Remote Execution API (端口 8980)
-- Worker Scheduler API (gRPC, 端口 8980)
+The server will start the following services:
+- Remote Execution API (port 8980)
+- Worker Scheduler API (gRPC, port 8980)
 - CAS (Content Addressable Storage)
 - Action Cache
 
-### 2. 启动 Worker
+### 2. Start Worker
 
 ```bash
-# 在同一台或不同机器上启动 Worker
+# Start Worker on the same or different machine
 cargo run --bin expbuild-worker -- daemon --config expbuild-worker.toml --verbose
 ```
 
-Worker 将：
-- 连接到 Server 并注册
-- 定期发送心跳 (每 30 秒)
-- 拉取任务并执行
-- 上传执行结果
+The Worker will:
+- Connect to the Server and register
+- Send periodic heartbeats (every 30 seconds)
+- Poll for tasks and execute them
+- Upload execution results
 
-### 3. 提交任务
+### 3. Submit Tasks
 
-使用现有的 CLI 客户端提交任务（无需修改）：
+Use the existing CLI client to submit tasks (no modifications needed):
 
 ```bash
-# 运行命令
+# Run a command
 cargo run --bin expbuild-cli -- run echo "Hello from remote worker"
 
-# 或执行已上传的 Action
+# Or execute an uploaded Action
 cargo run --bin expbuild-cli -- execute <action_digest>
 ```
 
-## 配置说明
+## Configuration
 
-### Server 配置 (expbuild-server-remote-workers.toml)
+### Server Configuration (expbuild-server-remote-workers.toml)
 
 ```toml
 [execution]
-backend = "scheduler"  # 启用远程 Worker 调度器
+backend = "scheduler"  # Enable remote Worker scheduler
 ```
 
-### Worker 配置 (expbuild-worker.toml)
+### Worker Configuration (expbuild-worker.toml)
 
 ```toml
 [worker]
-server_url = "http://localhost:8980"  # Scheduler 地址
-cas_url = "http://localhost:8980"     # CAS 地址
-max_concurrent_tasks = 4              # 并发任务数
+server_url = "http://localhost:8980"  # Scheduler address
+cas_url = "http://localhost:8980"     # CAS address
+max_concurrent_tasks = 4              # Number of concurrent tasks
 
 [worker.platform]
-OSFamily = "Linux"                    # 平台属性用于任务匹配
+OSFamily = "Linux"                    # Platform properties for task matching
 Arch = "x86_64"
 
 [worker.backend]
-type = "host"                         # 执行后端: host 或 docker
+type = "host"                         # Execution backend: host or docker
 work_dir = "/tmp/expbuild-worker"
 ```
 
-## 架构特性
+## Architecture Features
 
-### Worker Scheduler (Server 端)
+### Worker Scheduler (Server Side)
 
-- ✅ 任务队列管理
-- ✅ Worker 注册和心跳监控
-- ✅ 任务租约机制 (5分钟)
-- ✅ Platform 属性匹配
-- ✅ 自动重试（租约超时）
-- ✅ Worker 健康检查
+- ✅ Task queue management
+- ✅ Worker registration and heartbeat monitoring
+- ✅ Task lease mechanism (5 minutes)
+- ✅ Platform property matching
+- ✅ Automatic retry (lease timeout)
+- ✅ Worker health checks
 
 ### Worker Agent
 
-- ✅ 自动注册到 Scheduler
-- ✅ 长轮询拉取任务（30秒超时）
-- ✅ 定期心跳（30秒间隔）
-- ✅ 优雅停机（Ctrl+C）
-- ✅ 从 CAS 下载输入
-- ✅ 本地执行命令
-- ✅ 上传输出到 CAS
+- ✅ Automatic registration with Scheduler
+- ✅ Long polling for tasks (30 second timeout)
+- ✅ Periodic heartbeat (30 second interval)
+- ✅ Graceful shutdown (Ctrl+C)
+- ✅ Download inputs from CAS
+- ✅ Execute commands locally
+- ✅ Upload outputs to CAS
 
-## 监控
+## Monitoring
 
-### Server 日志
+### Server Logs
 
 ```
 INFO  Initializing remote worker scheduler...
@@ -109,7 +109,7 @@ INFO  Leased task task-xyz789 to worker worker-abc123
 INFO  Task task-xyz789 completed on worker worker-abc123
 ```
 
-### Worker 日志
+### Worker Logs
 
 ```
 INFO  Worker worker-abc123 registered successfully
@@ -121,9 +121,9 @@ INFO  Command exited with code: 0
 INFO  Task task-xyz789 completed successfully
 ```
 
-## 扩展
+## Scaling
 
-### 添加更多 Worker
+### Adding More Workers
 
 ```bash
 # Worker 2
@@ -133,89 +133,89 @@ cargo run --bin expbuild-worker -- daemon --config worker2.toml
 cargo run --bin expbuild-worker -- daemon --config worker3.toml
 ```
 
-### 跨机器部署
+### Cross-Machine Deployment
 
-Server 机器:
+Server machine:
 ```bash
-# 监听所有网卡
+# Listen on all network interfaces
 [server]
 address = "0.0.0.0:8980"
 ```
 
-Worker 机器:
+Worker machine:
 ```bash
-# 连接到远程 Server
+# Connect to remote Server
 [worker]
 server_url = "http://192.168.1.100:8980"
 cas_url = "http://192.168.1.100:8980"
 ```
 
-## 故障排查
+## Troubleshooting
 
-### Worker 无法连接
+### Worker Cannot Connect
 
 ```bash
-# 检查网络连通性
+# Check network connectivity
 curl http://localhost:8980
 
-# 检查 Server 日志
-# 应该看到 Worker 注册信息
+# Check Server logs
+# Should see Worker registration information
 ```
 
-### 任务一直排队
+### Tasks Keep Queuing
 
 ```bash
-# 检查 Worker 状态
-# Server 日志应显示 Worker 心跳
+# Check Worker status
+# Server logs should show Worker heartbeats
 
-# 检查 Platform 匹配
-# Worker 和 Action 的 Platform 属性必须匹配
+# Check Platform matching
+# Worker and Action Platform properties must match
 ```
 
-### 任务执行失败
+### Task Execution Failures
 
 ```bash
-# 查看 Worker 日志
-# 应该显示具体错误信息
+# Check Worker logs
+# Should display specific error information
 
-# 检查工作目录权限
+# Check working directory permissions
 ls -la /tmp/expbuild-worker
 ```
 
-## 限制和未来改进
+## Limitations and Future Improvements
 
-### 当前限制
+### Current Limitations
 
-- ⚠️ `download_directory` 和 `upload_directory` 未完全实现
-- ⚠️ Docker Executor 未实现
-- ⚠️ 没有任务优先级
-- ⚠️ 没有 Prometheus metrics
+- ⚠️ `download_directory` and `upload_directory` not fully implemented
+- ⚠️ Docker Executor not implemented
+- ⚠️ No task priority
+- ⚠️ No Prometheus metrics
 
-### 计划改进
+### Planned Improvements
 
-- [ ] 完整的输入/输出目录支持
-- [ ] Docker 容器执行
-- [ ] 任务优先级队列
-- [ ] Metrics 暴露
-- [ ] Worker 资源限制
-- [ ] 动态 Worker 发现 (Kubernetes)
+- [ ] Full input/output directory support
+- [ ] Docker container execution
+- [ ] Task priority queue
+- [ ] Metrics exposure
+- [ ] Worker resource limits
+- [ ] Dynamic Worker discovery (Kubernetes)
 
-## 与现有功能对比
+## Comparison with Existing Features
 
-| 特性 | Local Worker Pool | Remote Workers |
-|------|-------------------|----------------|
-| 水平扩展 | ❌ | ✅ |
-| 跨机器部署 | ❌ | ✅ |
-| 动态增减节点 | ❌ | ✅ |
-| 故障隔离 | ⚠️ | ✅ |
-| 延迟 | 低 | 中等 |
-| 复杂度 | 低 | 高 |
+| Feature | Local Worker Pool | Remote Workers |
+|---------|-------------------|----------------|
+| Horizontal Scaling | ❌ | ✅ |
+| Cross-Machine Deployment | ❌ | ✅ |
+| Dynamic Add/Remove Nodes | ❌ | ✅ |
+| Fault Isolation | ⚠️ | ✅ |
+| Latency | Low | Medium |
+| Complexity | Low | High |
 
-## 贡献
+## Contributing
 
-欢迎贡献！主要文件：
-- `re_grpc_proto/proto/expbuild/worker/v1/worker_api.proto` - Worker API 定义
-- `re_server/src/execution/scheduler.rs` - 任务调度器
-- `re_server/src/grpc/worker_scheduler_service.rs` - gRPC 服务
+Contributions welcome! Key files:
+- `re_grpc_proto/proto/expbuild/worker/v1/worker_api.proto` - Worker API definition
+- `re_server/src/execution/scheduler.rs` - Task scheduler
+- `re_server/src/grpc/worker_scheduler_service.rs` - gRPC service
 - `worker/src/agent.rs` - Worker Agent
-- `worker/src/executor.rs` - 任务执行器
+- `worker/src/executor.rs` - Task executor

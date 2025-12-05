@@ -16,7 +16,6 @@ container = "docker"
 [executor]
 type = "docker"
 
-[executor.docker]
 # Container image to use for task execution
 image = "rust:1.75-alpine"
 
@@ -40,13 +39,12 @@ security_opts = ["no-new-privileges"]
 # socket_path = "/var/run/docker.sock"
 
 # Default resource limits
-[executor.docker.default_limits]
+[executor.default_limits]
 cpu_cores = 2.0                # 2 CPU cores
 memory_bytes = 2147483648      # 2GB RAM
 max_processes = 128            # Maximum number of processes
 # disk_bytes = 10737418240     # 10GB disk (not yet supported by Docker executor)
 
-[executor.docker.default_limits.network]
-# Network policy - use string literal for enum
-# Options: "none", "full", or {"restricted": ["example.com"]}
-network = "none"
+# Network policy - NetworkPolicy enum variant
+# Options: "None", "Full", "Localhost", or {"Restricted" = ["example.com"]}
+network = "None"
