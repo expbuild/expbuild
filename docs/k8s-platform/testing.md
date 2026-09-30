@@ -37,4 +37,14 @@ Helm 测试在临时集群中启动独立 PostgreSQL，不使用外部数据库�
 
 测试凭据仅用于一次性集群。请求失败时仅输出操作路径、状态或错误码，不输出创建和轮换响应中的明文密码。诊断输出包含工作负载状态、事件和服务日志，不打印 Secret 数据。
 
-测试通过端口转发访问服务，不证明 Ingress、DNS 或 TLS 可用。kind 默认网络不提供本项目网络策略的隔离验收；该门槛需要单独在启用策略执行的 CNI 上验证。测试数据库是临时存储，也不证明数据库备份、恢复或高可用。测试卸载前先删除缓存实例，不能据此假定 Helm 卸载会自动清理所有项目工作负载。
+默认内部模式通过端口转发访问服务，不证明 Ingress、DNS 或 TLS 可用；下文 Gateway 模式另行验证实际 TLS 代理。kind 默认网络不提供本项目网络策略的隔离验收；该门槛需要单独在启用策略执行的 CNI 上验证。测试数据库是临时存储，也不证明数据库备份、恢复或高可用。测试卸载前先删除缓存实例，不能据此假定 Helm 卸载会自动清理所有项目工作负载。
+
+## 真实 Gateway 数据面测试
+
+Gateway 模式还需要 Go 与 OpenSSL。`python3 tools/helm_lifecycle.py --gateway` 在相同的隔离集群中安装 Envoy Gateway v1.8.5，校验 Chart 压缩包 SHA256，控制器和 Envoy v1.38.4 代理均固定镜像摘要。脚本生成短期测试 CA 和通配叶证书；通过 Gateway Service 的本地端口转发访问真实 TLS 监听器，客户端仍验证实际 hostname/SNI 与证书信任，不使用跳过证书验证选项。
+
+WebDAV 检查包括匿名拒绝、错误 hostname/不受信任 CA 拒绝、16 MiB PUT/GET、PROPFIND、LOCK 和受锁约束的 DELETE、暂停恢复、凭据轮换以及实例删除后的入口撤销。故意拒绝 TLS 的测试独立使用端口转发会话，避免 kubectl 在连接重置后退出影响后续测试。
+
+同一任务再创建固定镜像摘要的 bazel-remote v2.6.2 实例。Go 合约客户端通过受信任 TLS 和 gRPC authority 验证 capabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载、匿名和旧密码拒绝，并在凭据滚动更新后读取原数据。它使用标准 protobuf 字段构造 wire message，不代表完整 Bazel 构建客户端、ActionCache 或压缩协议已经认证。凭据通过权限 0600 的临时文件交接，调用后删除，不出现在命令行参数或日志中。
+
+该测试没有公网 DNS、外部负载均衡器或执行 NetworkPolicy 的 CNI，因而不证明这些设施可用。实际通过状态与失败记录见 [实施状态](progress.md)。

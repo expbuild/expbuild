@@ -139,3 +139,11 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 - [原有 Operator 与 Helm/API 集群链路](https://github.com/expbuild/expbuild/actions/runs/36666795753)：成功，保持默认 Gateway 关闭，覆盖 WebDAV 和保留卷清理回归。
 
 独立域名仍未完成实际代理认证，不能以以上成功记录替代 TLS、外部 WebDAV/REAPI 和真实网络隔离验收。下一步继续固定一个实际 Gateway 实现并完成数据面测试。
+
+真实入口验收正在推进：新增固定 Envoy Gateway v1.8.5 Chart/镜像摘要与临时 CA，测试 WebDAV TLS、16 MiB 传输、锁与路由撤销。首轮提交 55b270c 的内部 Helm/WebDAV 回归通过，Gateway 任务已完成路由接纳及匿名 HTTPS 拒绝，但负向 TLS 请求导致 kubectl 转发会话退出，后续连接被拒绝；已隔离负向测试会话。提交 1dea942 增加 REAPI 非 root UID/fsGroup、只读根文件系统、独立 tmp 卷以及经 Gateway 的 8 MiB ByteStream/FindMissing/认证轮换测试，本地 Go 回归通过，真实入口结果待 CI 确认。
+
+真实入口第二轮（提交 1dea942）：[隔离集群任务](https://github.com/expbuild/expbuild/actions/runs/36668366042)中的 WebDAV 与内部 Helm 链路通过；Gateway 通过 TLS 负向校验、16 MiB 读写与加锁，但带锁删除断言失败。本地 Apache 复现为未标记 URL 的 If 条件同时影响父目录，返回 424/父目录 412；改为带 HTTPS 文件 URL 的 tagged-list 后原生测试通过。提交 ea1aaa7 修正此测试请求并补充失败响应诊断，继续真实入口验收。
+
+真实入口最终验收（2026-09-30，提交 ea1aaa7）：[隔离 Kubernetes 生命周期 CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)三个任务全部成功：Operator WebDAV、Helm 内部模式、Helm Gateway 模式。实际日志确认 WebDAV TLS/16 MiB/锁、暂停恢复与删除后的数据面撤销；REAPI TLS capabilities/FindMissing/8 MiB ByteStream、HTTP CAS、非 root PVC 运行和凭据轮换保留数据均通过。两个 Go RPC 阶段确实执行并通过，没有跳过。该结果更新以上历史记录中的入口待验收状态；详见 [Gateway 验证边界](gateway.md)和[引擎记录](engine-validation.md)。
+
+下一阶段仍需真实 CNI 流量隔离、Bazel 构建客户端与 ActionCache、独立指标及历史趋势、WebDAV 淘汰适配、配额和模板扩展、资源对账与浏览器端到端验证。整体重构目标继续进行中。

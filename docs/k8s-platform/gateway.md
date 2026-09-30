@@ -1,6 +1,6 @@
 # 独立域名入口（Gateway API）
 
-状态：适配代码和 API Server 契约已实现，真实 Gateway 数据面认证尚未完成。默认关闭；启用前需要完成本文末尾的协议验收。
+状态：适配代码、API Server 契约及固定 Envoy Gateway 的隔离集群协议验收已通过。默认关闭；生产部署仍需验证 DNS、入口负载均衡、CNI 与存储环境。
 
 ## 资源与职责
 
@@ -75,13 +75,23 @@ Gateway 模式下，Ready/EndpointReady 表示后端与路由配置接纳。`Ext
 
 关闭入口配置前，应先将 Gateway 实例改回内部访问或删除。关闭后 Operator 不再监听路由变化，但保留路由清理权限，使已有标记的实例仍可在删除时撤销访问。不能先卸载 Gateway API CRD；API 缺失会使安全清理失败并阻止正常完成。路由对象删除与代理实际停止转发之间存在控制器收敛时间，需要在真实数据面验证。
 
+## 已完成的隔离集群验收
+
+[2026-09-30 的真实集群 CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)通过，代码提交 `ea1aaa7`。使用固定 Chart SHA256 和镜像摘要的 Envoy Gateway v1.8.5、Envoy v1.38.4；可复现入口见 [测试说明](testing.md)。
+
+- 实际共享 HTTPS 监听器与跨 namespace HTTPRoute/GRPCRoute 接纳。
+- 临时 CA、通配证书、真实 hostname/SNI 校验；错误 hostname 和不受信任证书被拒绝。
+- WebDAV 认证、16 MiB PUT/GET、MKCOL/PROPFIND/LOCK、无令牌删除拒绝和指定资源锁令牌删除成功。
+- WebDAV 暂停后外部访问停止，恢复后读取原数据；轮换后旧密码拒绝、新密码读原数据；删除后外部入口撤销。
+- bazel-remote v2.6.2 固定摘要镜像、非 root UID/fsGroup、只读根文件系统、真实 PVC；gRPC TLS capabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载及 Bazel HTTP CAS。
+- REAPI 与 HTTP 轮换后旧密码被拒绝、新密码读取原数据；删除后 HTTPRoute/GRPCRoute 清理。
+
+流量通过本地端口转发抵达真实 Gateway TLS 监听器，没有绕过代理或证书校验。它不验证公网 DNS 或外部负载均衡器，也不证明生产 CSI 兼容性。
+
 ## 待完成的认证
 
-- 选定一个固定版本和镜像摘要的 Gateway 实现，测试共享 HTTPS 监听器与跨 namespace 接纳。
-- 真实 TLS 验证：受信任测试 CA、SNI、错误 hostname/证书拒绝。
-- WebDAV 的 MKCOL/PUT/GET/PROPFIND/LOCK/DELETE、认证、重定向及大文件。
-- REAPI capabilities、CAS、FindMissing 和 ByteStream，经外部 gRPC TLS 入口访问。
-- 真实 CNI 下允许/拒绝来源；暂停、撤销和删除后的数据面收敛。
-- 入口超时、请求大小限制及负载测试；当前未声称某个大文件尺寸或吞吐量已支持。
-
-代码契约测试包含真实 Gateway CRD 但没有 Gateway 控制器或代理，不能替代上述验收。
+- 真实 CNI 下允许/拒绝来源，以及生产网络与 DNS 配置。
+- 真实 Bazel 构建客户端、ActionCache、压缩与并发客户端行为。
+- WebDAV 重定向、MOVE/COPY 及更多客户端兼容性。
+- 入口超时、超大请求及负载测试；16 MiB/8 MiB 是已验证样本，不是容量上限或吞吐承诺。
+- REAPI 删除后的实际 RPC 拒绝；当前删除检查确认路由对象清理，WebDAV 另有数据面撤销断言。
