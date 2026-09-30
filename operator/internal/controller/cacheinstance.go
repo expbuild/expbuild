@@ -10,6 +10,7 @@ import (
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
 	"github.com/expbuild/expbuild/operator/internal/gateway"
 	"github.com/expbuild/expbuild/operator/internal/instance"
+	"github.com/expbuild/expbuild/operator/internal/monitoring"
 	"github.com/expbuild/expbuild/operator/internal/webdav"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +18,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,14 +40,20 @@ type Reconciler struct {
 	WebDAVImage string
 	Probe       Probe
 	Gateway     *gateway.Config
+	Monitoring  *monitoring.Config
 }
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(m).For(&cachev1.CacheInstance{}).
 		Owns(&appsv1.StatefulSet{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{})
 	if r.Gateway != nil {
-		builder = builder.Owns(&gatewayv1.HTTPRoute{}).Owns(&gatewayv1.GRPCRoute{}).Owns(&networkingv1.NetworkPolicy{})
+		builder = builder.Owns(&gatewayv1.HTTPRoute{}).Owns(&gatewayv1.GRPCRoute{})
 	}
+	if r.Gateway != nil || r.Monitoring != nil {
+		builder = builder.Owns(&networkingv1.NetworkPolicy{})
+	}
+	// Monitor resources use the periodic reconciliation path so an unavailable
+	// optional monitoring API cannot prevent the cache controller from starting.
 	return builder.Complete(r)
 }
 
@@ -77,6 +85,29 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		base := c.DeepCopy()
 		controllerutil.AddFinalizer(&c, Finalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
+	}
+	monitoringActive := r.Monitoring != nil && c.Spec.TemplateRef.Name == "bazel-remote" && c.Spec.DesiredState == "Running"
+	if previous := meta.FindStatusCondition(c.Status.Conditions, "MonitoringConfigured"); monitoringActive && (previous == nil || previous.ObservedGeneration != c.Generation) {
+		monitoringCondition(&c, metav1.ConditionUnknown, "NotVerified", "Monitoring configuration has not been checked")
+	}
+	if monitoringActive && !controllerutil.ContainsFinalizer(&c, MonitoringFinalizer) {
+		base := c.DeepCopy()
+		controllerutil.AddFinalizer(&c, MonitoringFinalizer)
+		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
+	}
+	if !monitoringActive {
+		if !controllerutil.ContainsFinalizer(&c, MonitoringFinalizer) {
+			monitoringCondition(&c, metav1.ConditionFalse, "Inactive", "Automatic monitoring is disabled, unsupported or the instance is suspended")
+		} else {
+			pending, cleanupErr := r.removeMonitoring(ctx, &c)
+			if cleanupErr != nil || pending {
+				monitoringCondition(&c, metav1.ConditionUnknown, "CleanupPending", "Monitoring cleanup has not completed")
+			} else {
+				base := c.DeepCopy()
+				controllerutil.RemoveFinalizer(&c, MonitoringFinalizer)
+				return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
+			}
+		}
 	}
 	if c.Spec.TemplateRef.Version != "0.1.0" || (c.Spec.Access.Exposure != "ClusterInternal" && c.Spec.Access.Exposure != "Gateway") || (c.Spec.Storage.DeletionPolicy != "Retain" && c.Spec.Storage.DeletionPolicy != "Delete") {
 		return r.report(ctx, &c, false, "InvalidConfiguration", "Unsupported template, exposure, policy or deletion mode")
@@ -131,6 +162,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 	if secret.Labels[InstanceLabel] != c.Spec.InstanceID || secret.Labels[ProjectLabel] != c.Spec.ProjectID || len(secret.Data["htpasswd"]) == 0 {
 		return r.report(ctx, &c, false, "CredentialsRejected", "Secret must belong to this instance/project and contain htpasswd")
+	}
+	if monitoringActive {
+		r.applyMonitoring(ctx, &c)
 	}
 	for _, raw := range objects {
 		desired := raw.(client.Object)
@@ -263,6 +297,17 @@ func (r *Reconciler) apply(ctx context.Context, desired client.Object) error {
 		p := current.(*corev1.Service)
 		p.Spec.Ports = d.Spec.Ports
 		p.Spec.Selector = d.Spec.Selector
+	case *unstructured.Unstructured:
+		if d.GroupVersionKind() != monitoring.GVK {
+			return fmt.Errorf("unsupported unstructured resource")
+		}
+		spec, _, err := unstructured.NestedMap(d.Object, "spec")
+		if err != nil {
+			return err
+		}
+		if err = unstructured.SetNestedMap(current.(*unstructured.Unstructured).Object, spec, "spec"); err != nil {
+			return err
+		}
 	case *gatewayv1.HTTPRoute:
 		current.(*gatewayv1.HTTPRoute).Spec = d.Spec
 	case *gatewayv1.GRPCRoute:
@@ -349,6 +394,15 @@ func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ct
 			return ctrl.Result{RequeueAfter: time.Second}, nil
 		}
 	}
+	if controllerutil.ContainsFinalizer(c, MonitoringFinalizer) {
+		pending, err := r.removeMonitoring(ctx, c)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending {
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
+	}
 	// Remove access before stopping the workload. Only delete exact owned UIDs.
 	for _, name := range []string{c.Name, c.Name + "-headless"} {
 		var svc corev1.Service
@@ -404,6 +458,7 @@ func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ct
 	}
 	base := c.DeepCopy()
 	controllerutil.RemoveFinalizer(c, Finalizer)
+	controllerutil.RemoveFinalizer(c, MonitoringFinalizer)
 	controllerutil.RemoveFinalizer(c, GatewayFinalizer)
 	return ctrl.Result{}, r.Patch(ctx, c, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
 }

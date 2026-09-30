@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
+	"github.com/expbuild/expbuild/operator/internal/monitoring"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -101,6 +102,17 @@ func TestReadyRequiresProtocolAndCurrentRevision(t *testing.T) {
 	policy = meta.FindStatusCondition(c.Status.Conditions, "PolicyApplied")
 	if policy == nil || policy.Status != metav1.ConditionUnknown {
 		t.Fatal("stale policy confirmation survived a failed probe")
+	}
+	r.Probe = probeResult{}
+	r.Monitoring = &monitoring.Config{Namespace: "monitoring"}
+	r.Reader = unavailableMonitoringReader{Reader: r.Reader}
+	reconcile(t, r, c)
+	_ = r.Get(ctx, client.ObjectKeyFromObject(c), c)
+	if !meta.IsStatusConditionTrue(c.Status.Conditions, "Ready") {
+		t.Fatal("monitoring outage blocked healthy cache")
+	}
+	if condition := meta.FindStatusCondition(c.Status.Conditions, "MonitoringConfigured"); condition == nil || condition.Status != metav1.ConditionFalse {
+		t.Fatal("monitoring outage not reported separately")
 	}
 }
 

@@ -54,3 +54,6 @@ gateway:
 # Optional external Prometheus; collectors must label samples with project/CR UID.
 monitoring:
   prometheusURL: ''
+  serviceMonitor:
+    enabled: false
+    namespace: '' # Namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true

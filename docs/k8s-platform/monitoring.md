@@ -1,12 +1,12 @@
 # 查询历史（Prometheus 接入）
 
-管理 API 和界面支持可选的 Prometheus 历史查询。当前实现查询适配与权限控制，**尚未自动部署 Prometheus、生成采集对象或同步采集凭据轮换**；部署方需要已有的受信任采集系统。无配置时返回 503，采集无数据时返回空序列，不伪造零值。
+管理 API 和界面支持可选的 Prometheus 历史查询。当前实现查询适配与权限控制，以及可选的 ServiceMonitor 自动生成与凭据引用同步；不部署 Prometheus 或 Prometheus Operator。部署方需要已有的受信任采集系统。无配置时返回 503，采集无数据时返回空序列，不伪造零值。
 
 ## 配置与指标契约
 
 Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。当前不支持上游查询认证配置，应连接企业内部受控查询入口。
 
-采集对象是 bazel-remote 的 `/metrics`，使用实例当前有效的 Basic 凭据。请求需要满足已有网络策略；本阶段不自动开放监控 namespace 的访问。
+采集对象是 bazel-remote 的 `/metrics`，使用实例当前有效的 Basic 凭据。请求需要满足已有网络策略；启用下文 ServiceMonitor 集成时会生成来源 namespace 与 Pod 标签同时匹配的入口策略；未启用时需由部署方维护访问。
 
 每条样本必须由采集系统附加可信标签：
 
@@ -48,3 +48,27 @@ PROMETHEUS_BIN=/tmp/expbuild-prometheus npx tsx --test apps/admin-api/src/histor
 ```
 
 下载器锁定[官方 v3.15.0 Linux amd64 发布资产](https://github.com/prometheus/prometheus/releases/tag/v3.15.0)及 SHA256；仅提取校验过归档中的指定普通二进制文件。测试创建临时配置/TSDB、随机本地端口和独立进程，退出后清理。需要等待真实采样进入分钟对齐的查询窗口，通常几十秒；缺少 PROMETHEUS_BIN 时明确跳过，CI 下载后强制执行。不连接默认或生产 Prometheus。
+
+## 可选的实例采集自动化
+
+部署方先安装兼容的 Prometheus Operator 与 ServiceMonitor CRD。本平台的 CRD 契约测试固定官方 v0.94.1 CRD 和 SHA256；尚未完成 Prometheus Operator 容器到真实缓存引擎的全链路验收。启用示例：
+
+```yaml
+monitoring:
+  prometheusURL: http://prometheus.monitoring.svc:9090
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+```
+
+Prometheus 自身需要选择项目 namespace 中带 `app.kubernetes.io/managed-by=expbuild` 的 ServiceMonitor，并给采集 Pod 设置 `cache.expbuild.io/monitoring=true`。Prometheus Operator 需要读取这些 namespace 内的凭据 Secret，Prometheus 需要相应服务发现权限；这些是部署方所维护监控系统的权限，不由 expbuild Chart 自动授予。
+
+expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTTP 端口、30 秒采集间隔与 5 秒超时，不跟随重定向。凭据通过当前 Secret 的 probe-username/probe-password 引用传递，不把明文写入 ServiceMonitor。凭据轮换时更新引用，由 Prometheus Operator 异步重新加载；短暂采集空缺可能发生，不承诺零中断。
+
+目标按 CR UID、项目和实例标签选择，并通过服务名重标签规则排除 headless Service，避免同一引擎重复采集。项目/UID 标签由固定重标签规则写入，honorLabels=false。配套 NetworkPolicy 同时限制来源 namespace 名称与采集 Pod 标签，只开放 8080；仍需执行网络策略的 CNI 才能证明实际隔离。
+
+`MonitoringConfigured=True/ResourcesApplied` 只表示采集对象和策略写入成功，不代表已有样本。监控错误单独报告，不将已通过协议探测的缓存判为不可用。可选监控 API 不参与启动时的 informer 注册，以免其不可用阻断缓存控制器启动。
+
+暂停、删除或关闭集成会清理精确归属的采集对象与网络策略，使用 UID/resourceVersion 删除前置条件；不接管其他 owner 的同名对象。清理标记在资源写入前添加，关闭功能后仍保留清理权限。Operator 只新增 ServiceMonitor get/create/patch/delete 权限，不获得 Prometheus 创建权限，管理 API 无 ServiceMonitor 写权限。
+
+关闭集成后等待清理完成，再卸载 CRD 或撤销清理权限。监控 API 缺失时无法确认清理，实例删除可能保留 finalizer；不要直接移除标记掩盖未完成的资源清理。当前自动采集仅针对 bazel-remote，WebDAV 尚无相应指标适配。

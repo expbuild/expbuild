@@ -41,3 +41,9 @@ jobs:
           echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.32.0 -p path)" >> "$GITHUB_ENV"
       - run: HELM_BIN="$(command -v helm)" go test ./internal/controller -run TestAPIServerContract -count=1
       - run: GATEWAY_API_CRDS="$(go env GOMODCACHE)/sigs.k8s.io/gateway-api@v1.2.1/config/crd/standard" go test ./internal/controller -run TestGatewayAPIServerContract -count=1
+      - name: Verify ServiceMonitor CRD contract
+        run: |
+          mkdir -p "$RUNNER_TEMP/monitoring-crds"
+          curl -fsSL https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.1/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml -o "$RUNNER_TEMP/monitoring-crds/servicemonitors.yaml"
+          echo "31bdff398b54ac2bc993a33f5dcb0472792a77104a6a609d264c8f1f17829769  $RUNNER_TEMP/monitoring-crds/servicemonitors.yaml" | sha256sum --check
+          MONITORING_CRDS="$RUNNER_TEMP/monitoring-crds" go test ./internal/controller -run TestMonitoringAPIServerContract -count=1

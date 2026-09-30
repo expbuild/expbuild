@@ -25,3 +25,7 @@
 {{- $value := required (printf "gateway.%s is required when enabled" $key) (index $.Values.gateway $key) -}}
 {{- end -}}
 {{- end -}}
+
+{{- if .Values.monitoring.serviceMonitor.enabled -}}
+{{- $monitoring := required "monitoring.serviceMonitor.namespace is required when enabled" .Values.monitoring.serviceMonitor.namespace -}}
+{{- end -}}

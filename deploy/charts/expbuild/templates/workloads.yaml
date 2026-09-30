@@ -37,6 +37,9 @@ spec:
             {{- include "expbuild.containerSecurity" $root | nindent 12 }}
           {{- if eq $component "operator" }}
           args:
+            {{- if $root.Values.monitoring.serviceMonitor.enabled }}
+            - --monitoring-namespace={{ $root.Values.monitoring.serviceMonitor.namespace }}
+            {{- end }}
             - --bazel-remote-image={{ $root.Values.images.bazelRemote }}
             - --leader-election-namespace={{ $root.Release.Namespace }}
             {{- if $root.Values.gateway.enabled }}

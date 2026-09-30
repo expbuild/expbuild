@@ -8,6 +8,7 @@ import (
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/controller"
 	"github.com/expbuild/expbuild/operator/internal/gateway"
+	"github.com/expbuild/expbuild/operator/internal/monitoring"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -19,6 +20,7 @@ import (
 )
 
 func main() {
+	monitoringNamespace := flag.String("monitoring-namespace", "", "optional namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true; requires ServiceMonitor CRD")
 	image := flag.String("bazel-remote-image", "", "administrator-approved digest-pinned engine image")
 	webdavImage := flag.String("webdav-image", "", "optional approved digest-pinned Apache WebDAV image")
 	namespace := flag.String("namespace", "", "optional single project namespace; empty watches all managed projects")
@@ -32,6 +34,14 @@ func main() {
 	flag.StringVar(&gatewayConfig.ControllerName, "gateway-controller-name", "", "expected Gateway API controller name")
 	flag.StringVar(&gatewayConfig.DataPlaneNamespace, "gateway-data-plane-namespace", "", "namespace of gateway Pods labeled cache.expbuild.io/gateway=true")
 	flag.Parse()
+	var monitoringOptions *monitoring.Config
+	if *monitoringNamespace != "" {
+		monitoringOptions = &monitoring.Config{Namespace: *monitoringNamespace}
+		if err := monitoringOptions.Validate(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	}
 	var gatewayOptions *gateway.Config
 	if gatewayConfig != (gateway.Config{}) {
 		if err := gatewayConfig.Validate(); err != nil {
@@ -67,7 +77,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions}
+	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions, Monitoring: monitoringOptions}
 	if err = r.SetupWithManager(m); err != nil {
 		panic(err)
 	}
