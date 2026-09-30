@@ -111,7 +111,12 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 initial_quota = api(quota_path)
                 quota_limits = {'instances': 1, 'storageGiB': 3, 'cpuMillis': 1000, 'memoryMiB': 1024}
                 api(quota_path, 'PUT', quota_limits, {'If-Match': initial_quota['revision']})
-                wait(lambda: api(quota_path)['synchronization']['state'] == 'Applied', 'Project ResourceQuota synchronized with Kubernetes accounting')
+                try:
+                    wait(lambda: api(quota_path)['synchronization']['state'] == 'Applied', 'Project ResourceQuota synchronized with Kubernetes accounting', timeout=420)
+                except Exception:
+                    print('Quota synchronization observation:', json.dumps(api(quota_path)), flush=True)
+                    print(kubectl('-n', ns, 'get', 'resourcequota', '-o', 'yaml'), flush=True)
+                    raise
                 spec = {'name': 'WebDAV via API', 'template': 'webdav-apache', 'storageGiB': 2, 'cacheGiB': 0, 'cpuMillis': 100, 'memoryMiB': 128, 'deletionPolicy': 'Delete', 'desiredState': 'Running'}
                 if gateway: spec['exposure'] = 'Gateway'
                 created = submit(f'/projects/{pid}/instances', data=spec)
@@ -137,6 +142,26 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 iid = created['operation']['instance_id']
                 path = f'/projects/{pid}/instances/{iid}'
                 resource = 'c-' + iid
+                inventory_path = f'/projects/{pid}/inventory'
+                def inventory_state(expected):
+                    api(inventory_path + '/refresh', 'POST', expected=202)
+                    def observed():
+                        result = api(inventory_path)['result']
+                        return result and result['state'] == expected and result['counts'] == {'instances': 1, 'volumes': 1}
+                    wait(observed, 'Read-only inventory reached ' + expected)
+                inventory_state('Healthy')
+                original_count = len(json.loads(kubectl('-n', ns, 'get', 'pvc', '-o', 'json'))['items'])
+                # Keep the untracked PVC within the remaining storage budget.
+                orphan_name = 'inventory-untracked'
+                apply({'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': {'name': orphan_name, 'namespace': ns}, 'spec': {'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': '1Mi'}}, 'storageClassName': 'standard'}})
+                api(inventory_path + '/refresh', 'POST', expected=202)
+                def untracked():
+                    result = api(inventory_path)['result']
+                    return result and any(issue['code'] == 'UntrackedVolume' and issue['resourceName'] == orphan_name for issue in result['issues'])
+                wait(untracked, 'Read-only inventory detected an untracked PVC')
+                assert len(json.loads(kubectl('-n', ns, 'get', 'pvc', '-o', 'json'))['items']) == original_count + 1, 'Inventory must not delete untracked resources'
+                kubectl('-n', ns, 'delete', 'pvc', orphan_name, '--wait=true', '--timeout=60s')
+                inventory_state('Healthy')
                 def basic(credentials):
                     token = base64.b64encode((credentials['username'] + ':' + credentials['password']).encode()).decode()
                     return {'Authorization': 'Basic ' + token}

@@ -18,6 +18,7 @@ async function endpoint(handler: (request: IncomingMessage, response: ServerResp
 test('Kubernetes SDK serializes NetworkPolicy source restrictions to the wire', async () => {
   const bodies: any[] = [];
   const fixture = await endpoint(async (request, response) => {
+    assert.ok(!request.url!.startsWith('//'), 'SDK base URL must not produce a double-slash API path');
     let raw = ''; for await (const chunk of request) raw += chunk;
     const body = raw ? JSON.parse(raw) : undefined;
     if (body) bodies.push(body);
@@ -25,6 +26,7 @@ test('Kubernetes SDK serializes NetworkPolicy source restrictions to the wire', 
     response.end(JSON.stringify(body ?? { metadata: { labels: { 'app.kubernetes.io/managed-by': 'expbuild', 'cache.expbuild.io/project-id': 'project' } } }));
   });
   try {
+    fixture.config.getCurrentCluster()!.server += '/';
     await new KubernetesClient(fixture.config).ensureProject('test-project', 'project');
     const policy = bodies.find(body => body.kind === 'NetworkPolicy');
     assert.deepEqual(policy.spec.ingress, [{ from: [{ namespaceSelector: { matchLabels: { 'cache.expbuild.io/control-plane': 'true' } } }] }]);
@@ -187,4 +189,35 @@ test('project ResourceQuota reconciles quantities, rejects foreign ownership and
     assert.equal(await kube.ensureProjectQuota('project-test','project','3',allNull),true);
     assert.equal(writes.length,3,'conflicts must not mutate resources');
   } finally { await fixture.close(); }
+});
+
+test('resource inventory reads complete paginated lists and refuses truncation or namespace replacement', async()=>{
+  let mode='normal', namespaceReads=0, mutations=0;
+  const seen:string[]=[];
+  const fixture=await endpoint((request,response)=>{
+    if(request.method!=='GET')mutations++;
+    const url=new URL(request.url!,'http://fixture');seen.push(request.url!);
+    response.setHeader('Content-Type','application/json');
+    if(url.pathname==='/api/v1/namespaces/inventory-test'){
+      namespaceReads++;
+      response.end(JSON.stringify({metadata:{uid:mode==='replacement'&&namespaceReads%2===0?'replacement':'namespace-uid',labels:{'app.kubernetes.io/managed-by':'expbuild','cache.expbuild.io/project-id':'project'}}}));return;
+    }
+    assert.equal(url.searchParams.get('limit'),'200');
+    const next=url.searchParams.get('continue');
+    if(url.pathname.endsWith('/cacheinstances')){
+      response.end(JSON.stringify({metadata:{continue:next?'':'next-instance-page'},items:next?[]:[{metadata:{name:'c-existing'}}]}));return;
+    }
+    response.end(JSON.stringify({metadata:{continue:mode==='overflow'?'repeat':next?'':'next-volume-page'},items:next?[]:[{metadata:{name:'c-existing-data'}}]}));
+  });
+  try{
+    const kube=new KubernetesClient(fixture.config);
+    const result=await kube.inspectProjectResources('inventory-test','project');
+    assert.equal(result.instances.length,1);assert.equal(result.volumes.length,1);
+    assert.ok(seen.some(path=>path.includes('continue=next-instance-page')));
+    assert.ok(seen.some(path=>path.includes('continue=next-volume-page')));
+    mode='overflow';await assert.rejects(kube.inspectProjectResources('inventory-test','project'),/inventory_limit_exceeded/);
+    mode='replacement';namespaceReads=0;
+    await assert.rejects(kube.inspectProjectResources('inventory-test','project'),/namespace_changed_during_scan/);
+    assert.equal(mutations,0);
+  }finally{await fixture.close();}
 });

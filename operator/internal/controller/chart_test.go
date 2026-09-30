@@ -118,6 +118,8 @@ func checkChartPermissions(t *testing.T, ctx context.Context, cl client.Client) 
 		{"api", "update", "", "resourcequotas", "status", "project-a", false},
 		{"operator", "update", "", "resourcequotas", "", "project-a", false},
 		{"api", "get", "", "persistentvolumeclaims", "", "project-a", true},
+		{"api", "list", "", "persistentvolumeclaims", "", "project-a", true},
+		{"api", "list", "cache.expbuild.io", "cacheinstances", "", "project-a", true},
 		{"api", "delete", "", "persistentvolumeclaims", "", "project-a", true},
 		{"api", "create", "", "persistentvolumeclaims", "", "project-a", false},
 		{"api", "delete", "", "persistentvolumes", "", "", false},

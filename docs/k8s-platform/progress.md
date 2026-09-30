@@ -183,3 +183,11 @@ Cilium 第二轮（提交 bd49142）：[集群 CI](https://github.com/expbuild/e
 Kubernetes 硬配额已接入：后台同步 namespace ResourceQuota，观察 spec/status.hard/used 的当前版本，实例写操作等待配额就绪，清理操作不被同步门槛阻断；归属、scope、数量等价与 UID/resourceVersion 保护已覆盖。管理界面区分保存与同步。真实 PostgreSQL 多副本/失败恢复/操作等待测试、SDK 请求契约、32 项界面测试和 envtest 最小权限检查通过；真实集群准入拒绝验收已加入，待 CI。
 
 Cilium 第三轮（提交 90a77c5）：[集群回归](https://github.com/expbuild/expbuild/actions/runs/36676376014)的内部、WebDAV、Gateway 成功。隔离流量矩阵和 REAPI TLS 通过后，HTTP CAS PUT 遭遇 RemoteDisconnected；写操作没有被重试，整项仍失败。新增私有临时文件保留端口转发进程的有限日志，下一轮失败将输出退出状态与有界错误尾部，以查明传输中断根因。没有将这一结果记为完整 Cilium 验收通过。
+
+只读资源对账已实现：后台租约分工、分页读取 CR/PVC、namespace 身份核对、实例绑定和操作指纹变化检测；报告缺失、归属/UID 冲突、配置差异、保留卷异常和未登记资源。新增项目授权 API、刷新入口和带时间/过期提示的管理面板。不改写生命周期或配额，不自动删除。PostgreSQL 租约/变化/失败测试、SDK 分页和归属测试、35 项界面测试、构建与 envtest 只读权限检查通过；真实 Helm/API 注入孤立 PVC 并检查检测/不删除/恢复的场景待 CI。详见 [资源对账](inventory.md)。
+
+提交 f1a62a6 的[隔离集群验收](https://github.com/expbuild/expbuild/actions/runs/36677378119)中 WebDAV、Gateway、Cilium isolation 三个任务成功；Cilium 首次完整通过网络隔离及授权撤销、REAPI TLS/HTTP CAS、预算变更、认证轮换、真实 Prometheus 采集、删除与卸载。日志确认两次 GET 断线后，已退出的 kubectl 转发会话被恢复，写断言未放宽。该结果仅覆盖单节点 kind 与固定 Cilium，生产多节点等仍待验证。
+
+同一轮 internal 任务在首次 ResourceQuota used 初始化处超过四分钟。原生 Kubernetes 1.32 控制器的隔离复现确认：运行中新增 CRD 后，内置资源计数已初始化而自定义 count 项暂缺；平台正确保持 Pending。验收窗口已调整为七分钟，覆盖官方默认五分钟重同步周期，实际请求超时和就绪判断保持原要求。另修复连接地址尾斜杠导致 SDK 请求路径出现双斜杠的问题，并补充配额失败的安全状态码和 CI 状态诊断。
+
+配额启动时序复现完成：本机独立 API Server/etcd 加固定 SHA256 的官方 kube-controller-manager v1.32.0，仅启用 resourcequota 控制器；控制器启动后再安装 CRD，先观察到 used 缺少自定义 count，约五分钟后由真实控制器补齐，平台原有判断返回就绪。没有手工填充本次 status，也没有放宽缺失计数条件。隔离进程已正常停止。

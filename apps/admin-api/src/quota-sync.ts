@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { transaction } from "./db.js";
 import { quotaInput, type Quota } from "./quotas.js";
+import { statusCode } from "./kubernetes.js";
 import { OperationError } from "./errors.js";
 
 export interface QuotaPort {
@@ -34,10 +35,16 @@ export class ProjectQuotaSync {
         quotaInput.parse(project.quota_limits),
       );
     } catch (failure) {
+      const code = statusCode(failure);
       error =
         failure instanceof OperationError
           ? failure.code
-          : "kubernetes_unavailable";
+          : typeof code === "number" &&
+              Number.isInteger(code) &&
+              code >= 400 &&
+              code <= 599
+            ? `kubernetes_${code}`
+            : "kubernetes_unavailable";
     }
     await client.query(
       `UPDATE projects SET quota_observed_revision=$2,quota_checked_at=now(),quota_sync_error=$3,

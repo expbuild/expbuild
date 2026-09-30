@@ -74,6 +74,12 @@ const accepted = object(
 const instanceSchema = z.toJSONSchema(instanceInput, { io: "input" });
 delete instanceSchema.$schema;
 const schemas: Record<string, Schema> = {
+  InventoryResult: object({
+    state:{type:'string',enum:['Healthy','Drift','InProgress','Unavailable']},
+    issues:{type:'array',maxItems:200,items:object({code:string,kind:{type:'string',enum:['CacheInstance','PersistentVolumeClaim']},resourceName:string,instanceId:nullable(uuid)})},
+    issueCount:{type:'integer',minimum:0},truncated:bool,busyInstances:{type:'integer',minimum:0},
+    counts:nullable(object({instances:{type:'integer',minimum:0},volumes:{type:'integer',minimum:0}})),error:string,
+  },['state','issues','issueCount','truncated','busyInstances','counts']),
   QuotaLimits: z.toJSONSchema(quotaInput),
   QuotaSnapshot: object({ limits: ref('QuotaLimits'), revision: string,
     reserved: object(Object.fromEntries(['instances','storageGiB','cpuMillis','memoryMiB'].map(key => [key, {type: 'integer', minimum: 0}]))),
@@ -386,6 +392,12 @@ route(
       "Creates project membership and queues namespace initialization. This route does not support idempotency; inspect project list before retrying an ambiguous response.",
   },
 );
+route('get','/v1/projects/{projectId}/inventory','getProjectInventory','Project member: read the last read-only resource inventory',{
+  response:object({result:nullable(ref('InventoryResult')),checkedAt:nullable({type:'string',format:'date-time'})}),
+});
+route('post','/v1/projects/{projectId}/inventory/refresh','refreshProjectInventory','Project member: schedule a read-only inventory scan',{
+  code:202,response:object({scheduled:{const:true}}),description:'Coalesced refresh requests, at least 10 seconds after the previous scan. Does not mutate Kubernetes resources or release resource reservations.',
+});
 route('get', '/v1/projects/{projectId}/quota', 'getProjectQuota', 'Project member: read resource reservations and limits', { response: ref('QuotaSnapshot') });
 route('put', '/v1/projects/{projectId}/quota', 'updateProjectQuota', 'Platform administrator: update project resource limits', {
   body: ref('QuotaLimits'), response: ref('QuotaSnapshot'), revision: true, revisionDescription: 'Quota revision from GET project quota; not an instance revision.',

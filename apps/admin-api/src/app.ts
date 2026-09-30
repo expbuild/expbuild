@@ -186,6 +186,18 @@ export async function buildApp(pool: pg.Pool, options: { origin: string; secureC
     });
     return reply.code(202).send({ id, namespace, state: 'pending' });
   });
+  app.get('/v1/projects/:projectId/inventory', async (request, reply) => {
+    const {projectId}=z.object({projectId:uuid}).parse(request.params);
+    await projectAccess(request,projectId,['admin','maintainer','viewer']);
+    const row=(await pool.query('SELECT inventory_result,inventory_checked_at FROM projects WHERE id=$1',[projectId])).rows[0];
+    return reply.header('Cache-Control','no-store').send({result:row.inventory_result,checkedAt:row.inventory_checked_at?.toISOString()??null});
+  });
+  app.post('/v1/projects/:projectId/inventory/refresh', async (request, reply) => {
+    const {projectId}=z.object({projectId:uuid}).parse(request.params);
+    await projectAccess(request,projectId,['admin','maintainer','viewer']);
+    await pool.query("UPDATE projects SET inventory_next_scan=least(inventory_next_scan,greatest(now(),coalesce(inventory_checked_at,now()-interval '10 seconds')+interval '10 seconds')) WHERE id=$1",[projectId]);
+    return reply.code(202).send({scheduled:true});
+  });
   app.get('/v1/projects/:projectId/quota', async (request, reply) => {
     const { projectId } = z.object({ projectId: uuid }).parse(request.params);
     await projectAccess(request, projectId, ['admin', 'maintainer', 'viewer']);

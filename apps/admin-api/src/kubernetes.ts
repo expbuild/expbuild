@@ -1,3 +1,4 @@
+import type { InventoryResources } from './inventory.js';
 import { quantityToScalar } from '@kubernetes/client-node/dist/util.js';
 import type { Quota } from "./quotas.js";
 import { KubeConfig, CoreV1Api, CustomObjectsApi, NetworkingV1Api, createConfiguration, ServerConfiguration, type V1Secret, type V1ResourceQuota } from '@kubernetes/client-node';
@@ -46,7 +47,7 @@ export class KubernetesClient implements KubernetesPort {
     const cluster = kc.getCurrentCluster();
     if (!cluster) throw new Error('Kubernetes context must select a cluster');
     const configuration = createConfiguration({
-      baseServer: new ServerConfiguration(cluster.server, {}), authMethods: { default: kc },
+      baseServer: new ServerConfiguration(cluster.server.replace(/\/+$/, ''), {}), authMethods: { default: kc },
       promiseMiddleware: [{ pre: async request => { request.setSignal(AbortSignal.timeout(timeoutMs)); return request; }, post: async response => response }],
     });
     this.core = new CoreV1Api(configuration); this.custom = new CustomObjectsApi(configuration); this.network = new NetworkingV1Api(configuration);
@@ -73,6 +74,25 @@ export class KubernetesClient implements KubernetesPort {
       if (current.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || current.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('policy_ownership_conflict');
       if (current.metadata.deletionTimestamp || !isDeepStrictEqual(JSON.parse(JSON.stringify(current.spec ?? null)), JSON.parse(JSON.stringify(access.spec)))) throw new OperationError('client_policy_configuration_conflict');
     }
+  }
+  async inspectProjectResources(namespace: string, projectId: string): Promise<InventoryResources> {
+    const ns = await this.core.readNamespace({name:namespace});
+    if (!ns.metadata?.uid || ns.metadata.deletionTimestamp || ns.metadata.labels?.['cache.expbuild.io/project-id'] !== projectId || ns.metadata.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('namespace_ownership_conflict');
+    const collect = async <T>(page: (continuation?:string)=>Promise<{items:T[];metadata?:{_continue?:string;continue?:string}}>):Promise<T[]> => {
+      const items:T[]=[]; let continuation:string|undefined;
+      for(let count=0;count<5;count++) {
+        const result=await page(continuation); items.push(...result.items);
+        if(items.length>1000)throw new OperationError('inventory_limit_exceeded');
+        continuation=result.metadata?._continue??result.metadata?.continue;
+        if(!continuation)return items;
+      }
+      throw new OperationError('inventory_limit_exceeded');
+    };
+    const instances=await collect<CacheObject>(async continuation=>await this.custom.listNamespacedCustomObject({namespace,group,version,plural,limit:200,_continue:continuation}) as {items:CacheObject[];metadata?:{continue?:string}});
+    const volumes=await collect(async continuation=>this.core.listNamespacedPersistentVolumeClaim({namespace,limit:200,_continue:continuation}));
+    const final=await this.core.readNamespace({name:namespace});
+    if(final.metadata?.uid!==ns.metadata.uid || final.metadata.deletionTimestamp || final.metadata.labels?.['cache.expbuild.io/project-id']!==projectId || final.metadata.labels?.['app.kubernetes.io/managed-by']!=='expbuild') throw new OperationError('namespace_changed_during_scan');
+    return {instances,volumes};
   }
   async ensureProjectQuota(namespace: string, projectId: string, desiredRevision: string, limits: Quota): Promise<boolean> {
     const ns = await this.core.readNamespace({name: namespace});

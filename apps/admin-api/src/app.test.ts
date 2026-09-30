@@ -46,6 +46,12 @@ test('PostgreSQL-backed sessions, project permissions and audit are isolated', {
     assert.equal(response.statusCode, 202, response.body);
     const project = response.json().id;
     assert.equal(response.json().state, 'pending');
+    const inventoryPath = `/v1/projects/${response.json().id}/inventory`;
+    assert.equal((await app.inject({url:inventoryPath,headers:adminHeaders})).statusCode,200);
+    assert.equal((await app.inject({url:inventoryPath,headers:strangerHeaders})).statusCode,404);
+    assert.equal((await app.inject({method:'POST',url:inventoryPath+'/refresh',headers:strangerHeaders})).statusCode,404);
+    assert.equal((await app.inject({method:'POST',url:inventoryPath+'/refresh',headers:adminHeaders})).statusCode,202);
+
     response = await app.inject({ method: 'PUT', url: `/v1/projects/${project}/members/${viewer}`, headers: adminHeaders, payload: { role: 'viewer' } });
     assert.equal(response.statusCode, 200, response.body);
     response = await app.inject({ method: 'GET', url: '/v1/projects', headers: viewerHeaders });

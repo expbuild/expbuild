@@ -20,8 +20,8 @@ def run(*args, data=None, timeout=240):
     return subprocess.check_output(args, input=data, text=True, timeout=timeout).strip()
 
 
-def wait(check, label):
-    end = time.monotonic() + 240
+def wait(check, label, timeout=240):
+    end = time.monotonic() + timeout
     while time.monotonic() < end:
         try:
             if check():

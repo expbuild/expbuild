@@ -29,3 +29,5 @@
 独立 PostgreSQL 数据库测试覆盖并发受理、幂等、版本冲突、四个维度、保留卷、历史回填、多副本同步、错误恢复和删除绕过同步门槛。实际 Kubernetes SDK 通过本地 HTTP 服务验证请求序列、数量归一化、归属拒绝与带版本删除；这些不是实际配额准入测试。
 
 隔离 Helm/API 场景已加入真实 ResourceQuota 同步，分别以 server dry-run 尝试直接创建超额 CR、PVC、CPU Pod、内存 Pod，要求 Kubernetes 返回 exceeded quota。结果待 CI。硬配额生产规模、集群管理员外部修改、额外工作负载与资源对账仍待进一步验证。
+
+新增 CRD 的配额计数可能先只有内置资源 used，暂缺 CR 的 count 项。平台继续保持 Pending，不把缺失值当零；固定 Kubernetes 1.32 的测试为首次计数初始化预留七分钟，覆盖[该版本默认五分钟的配额重同步周期](https://github.com/kubernetes/kubernetes/blob/v1.32.0/pkg/controller/resourcequota/config/v1alpha1/defaults.go)。每次 Kubernetes 请求仍有独立超时，资源操作仍受整体截止时间约束。

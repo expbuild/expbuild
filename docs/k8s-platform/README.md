@@ -372,3 +372,6 @@ make test-e2e     # 部署实例，运行生命周期与协议测试
 当前实施进度见 [实现计划](implementation-plan.md) 和 [Go 模块说明](../../operator/README.md)。未验证的镜像、引擎能力与集群组合在实现计划中设为明确门槛，不代表已经完成认证。
 
 - [Prometheus 查询历史接入与验证边界](monitoring.md)
+
+- [项目配额与 Kubernetes 硬限制](quotas.md)
+- [实例与存储卷的只读资源对账](inventory.md)

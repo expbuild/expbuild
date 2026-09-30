@@ -1,3 +1,4 @@
+import { ResourceInventory } from './inventory.js';
 import { ProjectQuotaSync } from './quota-sync.js';
 import { createPool } from './db.js';
 import { buildApp } from './app.js';
@@ -17,11 +18,13 @@ const storageClass=process.env.STORAGE_CLASS;
 if(!storageClass)throw new Error('STORAGE_CLASS is required');
 const app = await buildApp(pool, { origin, secureCookies: !origin.startsWith('http://localhost:') && !origin.startsWith('http://127.0.0.1:'),kube,gatewayEnabled:process.env.GATEWAY_ENABLED === 'true',webdavEnabled:process.env.WEBDAV_ENABLED === 'true',statistics:kube,history:process.env.PROMETHEUS_URL ? new PrometheusHistory(process.env.PROMETHEUS_URL) : undefined,encryptionKey:key,storageClass });
 const quotas=new ProjectQuotaSync(pool,kube);
+const inventory=new ResourceInventory(pool,kube);
 const worker=new OperationWorker(pool,kube,key,id=>quotas.ensure(id));
 let closing = false;
 const work=(async()=>{while(!closing){try{if(await worker.tick())continue;}catch{app.log.error('Operation worker failed; retrying');}await new Promise(resolve=>setTimeout(resolve,1000));}})();
 const quotaWork=(async()=>{while(!closing){try{if(await quotas.tick())continue;}catch{app.log.error('Quota reconciliation failed; retrying');}await new Promise(resolve=>setTimeout(resolve,1000));}})();
+const inventoryWork=(async()=>{while(!closing){try{if(await inventory.tick())continue;}catch{app.log.error('Resource inventory failed; retrying');}await new Promise(resolve=>setTimeout(resolve,1000));}})();
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, async () => {
-  if (closing) return; closing = true; await app.close(); await Promise.all([work,quotaWork]); await pool.end();
+  if (closing) return; closing = true; await app.close(); await Promise.all([work,quotaWork,inventoryWork]); await pool.end();
 });
 await app.listen({ host: process.env.HOST ?? '127.0.0.1', port: Number(process.env.PORT ?? 3001) });
