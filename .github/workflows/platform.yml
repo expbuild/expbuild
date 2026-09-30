@@ -29,7 +29,7 @@ jobs:
       - name: Verify actual cache engine protocol contract
         run: |
           python3 ../tools/download_bazel_remote.py "$RUNNER_TEMP/bazel-remote"
-          BAZEL_REMOTE_BIN="$RUNNER_TEMP/bazel-remote" go test ./internal/controller -run TestRealBazelRemoteContract -count=1
+          BAZEL_LRU_TEST=1 BAZEL_REMOTE_BIN="$RUNNER_TEMP/bazel-remote" go test ./internal/controller -run TestRealBazelRemoteContract -count=1
       - name: Verify actual Apache WebDAV contract
         run: |
           sudo apt-get update

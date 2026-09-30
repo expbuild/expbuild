@@ -161,3 +161,5 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 ServiceMonitor 补充验证：暂停/恢复、实例删除后的采集对象清理和无变化时 CR 状态/ServiceMonitor 均不重复写入已通过真实 API Server 测试。Helm 启用配置 lint、隔离权限验证与 Go 回归通过；可选监控使用周期调谐，ServiceMonitor 权限限定 get/create/patch/delete。此前历史统计提交 e80621a 和真实 Prometheus 提交 b64d88c 的隔离集群回归也均已通过，均未启用新 ServiceMonitor 功能。
 
 ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https://github.com/expbuild/expbuild/actions/runs/36672451980)通过。新增真实集群监控 fixture，固定官方 Prometheus Operator 部署包与三个镜像摘要，在已有 Gateway 场景中接入实际 bazel-remote 指标、认证轮换、管理历史 API、采集目标去重及删除撤销；完整链路结果等待 CI。
+
+原生淘汰补充验证：本地固定 bazel-remote v2.6.2、默认压缩存储、1 GiB 预算通过三个 400 MiB 不可压缩 CAS 块的超预算测试。完整读取刷新 LRU 后，较旧块被淘汰，保留块 SHA256、最终条目数和实际容量正确。已接入原生引擎 CI；不代表并发、磁盘满或生产存储认证。自动采集完整集群任务 36672925904 仍在运行，等待实际结果。

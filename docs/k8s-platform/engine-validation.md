@@ -49,3 +49,15 @@ FindMissingBlobs 测试使用官方 [REAPI protobuf 字段定义](https://github
 - 公网 DNS、实际网络策略隔离、轮换期间并发客户端行为与性能基线。
 
 测试不将已通过的 RPC 扩大为完整性能或生产可用性结论。
+
+## 原生 LRU 预算实测
+
+在同一份渲染配置、默认压缩存储和 1 GiB 预算下，真实 v2.6.2 引擎通过以下测试：顺序上传 A、B 两个各 400 MiB 的不可压缩 CAS 数据块，完整读取 A 更新访问顺序，再上传同等大小的 C。随后 B 返回 404，A、C 可完整读出且 SHA256 匹配；实际缓存容量未超过预算，最终条目数为 2。
+
+数据由可重复的 AES-CTR 流生成，客户端按流上传、下载和校验，不把完整大文件留在内存。测试使用临时目录，需要至少约 2 GiB 可用磁盘空间；不触碰已有缓存。示例：
+
+```sh
+BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote BAZEL_LRU_TEST=1 go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
+```
+
+命令从 operator 目录运行。磁盘较小的临时目录可通过 TMPDIR 指向独立测试目录。CI 已加入此项，本地实际执行通过；它验证该预算和访问序列下的原生 LRU，不替代磁盘满、并发上传、重启排序或吞吐基准。
