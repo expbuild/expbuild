@@ -278,6 +278,23 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     assert.deepEqual((await disabled.inject({ url: '/v1/templates', headers })).json().items.map((x: {name: string}) => x.name), ['bazel-remote']);
     assert.equal((await create(disabled)).statusCode, 409);
     assert.equal((await pool.query('SELECT count(*)::int AS n FROM instance_bindings')).rows[0].n, 0);
+    const gatewayPayload = { name: 'Gateway cache', storageGiB: 10, cacheGiB: 8, exposure: 'Gateway' };
+    const gatewayDenied = await disabled.inject({ method: 'POST', url: path, headers: { ...headers, 'idempotency-key': 'gateway-disabled' }, payload: gatewayPayload });
+    assert.equal(gatewayDenied.statusCode, 409);
+    assert.match(gatewayDenied.body, /Gateway exposure is not enabled/);
+    const gatewayApp = await buildApp(pool, { origin, secureCookies: false, kube, encryptionKey: key, storageClass: 'test', gatewayEnabled: true });
+    try {
+      const directory = (await gatewayApp.inject({ url: '/v1/templates', headers })).json().items;
+      assert.deepEqual(directory[0].exposures, ['ClusterInternal', 'Gateway']);
+      const routed = await gatewayApp.inject({ method: 'POST', url: path, headers: { ...headers, 'idempotency-key': 'gateway-enabled' }, payload: gatewayPayload });
+      assert.equal(routed.statusCode, 202, routed.body);
+      const queued = (await pool.query('SELECT request FROM operations WHERE id=$1', [routed.json().operation.id])).rows[0].request;
+      assert.equal(queued.desired.spec.access.exposure, 'Gateway');
+      // This case checks acceptance only; leave no active work in the recovery fixture.
+      await pool.query("UPDATE operations SET state='failed',secret_payload=NULL WHERE id=$1", [routed.json().operation.id]);
+      await pool.query("UPDATE instance_bindings SET lifecycle='failed' WHERE id=$1", [routed.json().operation.instance_id]);
+    } finally { await gatewayApp.close(); }
+
     const catalog = (await app.inject({ url: '/v1/templates', headers })).json().items;
     assert.equal(catalog[1].name, 'webdav-apache');
     assert.equal(catalog[1].capabilities.statistics, false);

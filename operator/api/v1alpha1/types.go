@@ -33,7 +33,7 @@ type StorageSpec struct {
 }
 
 type AccessSpec struct {
-	// +kubebuilder:validation:Enum=ClusterInternal
+	// +kubebuilder:validation:Enum=ClusterInternal;Gateway
 	Exposure             string `json:"exposure"`
 	CredentialsSecretRef string `json:"credentialsSecretRef"`
 }

@@ -50,6 +50,7 @@ export type Template = {
   name: TemplateName;
   version: string;
   protocols: string[];
+  exposures?: ("ClusterInternal" | "Gateway")[];
   capabilities: {
     capacity: boolean;
     statistics: boolean;
@@ -81,6 +82,7 @@ export type Operation = {
   created_at: string;
 };
 export type Input = {
+  exposure: "ClusterInternal" | "Gateway";
   template: TemplateName;
   name: string;
   storageGiB: number;
@@ -97,6 +99,7 @@ export type Detail = {
   revision: string | null;
   spec: null | {
     templateRef: { name: TemplateName; version: string };
+    access?: { exposure: "ClusterInternal" | "Gateway" };
     desiredState: Input["desiredState"];
     storage: { capacity: string; deletionPolicy: Input["deletionPolicy"] };
     eviction: { maxCacheGiB: number };

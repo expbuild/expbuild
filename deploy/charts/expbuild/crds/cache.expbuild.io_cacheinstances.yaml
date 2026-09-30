@@ -51,6 +51,7 @@ spec:
                   exposure:
                     enum:
                     - ClusterInternal
+                    - Gateway
                     type: string
                 required:
                 - credentialsSecretRef

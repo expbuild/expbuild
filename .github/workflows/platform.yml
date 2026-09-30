@@ -40,3 +40,4 @@ jobs:
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20250517180713-32e5e9e948a5
           echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.32.0 -p path)" >> "$GITHUB_ENV"
       - run: HELM_BIN="$(command -v helm)" go test ./internal/controller -run TestAPIServerContract -count=1
+      - run: GATEWAY_API_CRDS="$(go env GOMODCACHE)/sigs.k8s.io/gateway-api@v1.2.1/config/crd/standard" go test ./internal/controller -run TestGatewayAPIServerContract -count=1

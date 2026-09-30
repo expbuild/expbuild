@@ -5,6 +5,7 @@ const commonInput = z.object({
   storageGiB: z.number().int().min(2).max(1048576),
   cpuMillis: z.number().int().min(100).max(64000).default(500),
   memoryMiB: z.number().int().min(128).max(262144).default(512),
+  exposure: z.enum(['ClusterInternal', 'Gateway']).default('ClusterInternal'),
   desiredState: z.enum(['Running', 'Suspended']).default('Running'),
   deletionPolicy: z.enum(['Retain', 'Delete']).default('Retain'),
 }).strict();
@@ -51,7 +52,7 @@ export function desiredObject(input: InstanceInput, projectId: string, namespace
     spec: {
       instanceId: id, projectId, templateRef: { name: input.template, version: '0.1.0' }, desiredState: input.desiredState,
       storage: { className: storageClass, capacity: `${input.storageGiB}Gi`, deletionPolicy: input.deletionPolicy },
-      access: { exposure: 'ClusterInternal', credentialsSecretRef: `c-${id}-auth` },
+      access: { exposure: input.exposure, credentialsSecretRef: `c-${id}-auth` },
       eviction: { maxCacheGiB: input.cacheGiB, enginePolicy: input.template === 'bazel-remote' ? 'lru' : 'none' }, resources: { requests: resources, limits: { ...resources } },
     },
   };

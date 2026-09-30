@@ -8,10 +8,12 @@ import (
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
+	"github.com/expbuild/expbuild/operator/internal/gateway"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	"github.com/expbuild/expbuild/operator/internal/webdav"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 const Finalizer = "cache.expbuild.io/cleanup"
@@ -34,12 +37,16 @@ type Reconciler struct {
 	Image       string
 	WebDAVImage string
 	Probe       Probe
+	Gateway     *gateway.Config
 }
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(m).For(&cachev1.CacheInstance{}).
-		Owns(&appsv1.StatefulSet{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{}).
-		Complete(r)
+	builder := ctrl.NewControllerManagedBy(m).For(&cachev1.CacheInstance{}).
+		Owns(&appsv1.StatefulSet{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{})
+	if r.Gateway != nil {
+		builder = builder.Owns(&gatewayv1.HTTPRoute{}).Owns(&gatewayv1.GRPCRoute{}).Owns(&networkingv1.NetworkPolicy{})
+	}
+	return builder.Complete(r)
 }
 
 func config(c *cachev1.CacheInstance, image string) instance.Config {
@@ -71,8 +78,30 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.AddFinalizer(&c, Finalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	if c.Spec.TemplateRef.Version != "0.1.0" || c.Spec.Access.Exposure != "ClusterInternal" || (c.Spec.Storage.DeletionPolicy != "Retain" && c.Spec.Storage.DeletionPolicy != "Delete") {
+	if c.Spec.TemplateRef.Version != "0.1.0" || (c.Spec.Access.Exposure != "ClusterInternal" && c.Spec.Access.Exposure != "Gateway") || (c.Spec.Storage.DeletionPolicy != "Retain" && c.Spec.Storage.DeletionPolicy != "Delete") {
 		return r.report(ctx, &c, false, "InvalidConfiguration", "Unsupported template, exposure, policy or deletion mode")
+	}
+	if c.Spec.Access.Exposure == "Gateway" && c.Spec.DesiredState != "Suspended" && r.Gateway == nil {
+		return r.report(ctx, &c, false, "InvalidConfiguration", "Gateway exposure is not configured")
+	}
+	// Track external access before creating any route. The marker is retained if
+	// route cleanup fails, including after gateway support has been disabled.
+	if c.Spec.Access.Exposure == "Gateway" && c.Spec.DesiredState == "Running" && !controllerutil.ContainsFinalizer(&c, GatewayFinalizer) {
+		base := c.DeepCopy()
+		controllerutil.AddFinalizer(&c, GatewayFinalizer)
+		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
+	}
+	if controllerutil.ContainsFinalizer(&c, GatewayFinalizer) && (c.Spec.Access.Exposure != "Gateway" || c.Spec.DesiredState == "Suspended") {
+		pending, err := r.removeGateway(ctx, &c)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending {
+			return r.report(ctx, &c, false, "EndpointRemoving", "Waiting for external routes to be removed")
+		}
+		base := c.DeepCopy()
+		controllerutil.RemoveFinalizer(&c, GatewayFinalizer)
+		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
 	render := bazelremote.Render
 	image := r.Image
@@ -125,6 +154,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return r.report(ctx, &c, false, "ApplyFailed", err.Error())
 		}
 	}
+	if c.Spec.Access.Exposure == "Gateway" && c.Spec.DesiredState == "Running" {
+		if err := r.applyGateway(ctx, &c); err != nil {
+			return r.report(ctx, &c, false, "EndpointApplyFailed", err.Error())
+		}
+	}
 	var sts appsv1.StatefulSet
 	if err = r.Reader.Get(ctx, req.NamespacedName, &sts); err != nil {
 		return ctrl.Result{}, err
@@ -162,12 +196,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if err := r.cleanupConfigs(ctx, &c, &sts); err != nil {
 		return ctrl.Result{}, err
 	}
+	if c.Spec.Access.Exposure == "Gateway" {
+		ready, err := r.gatewayReady(ctx, &c)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !ready {
+			return r.report(ctx, &c, false, "EndpointPending", "Waiting for current HTTPS Gateway and route acceptance")
+		}
+	}
 	c.Status.AppliedConfigHash = sts.Spec.Template.Annotations["cache.expbuild.io/config-hash"]
 	c.Status.CredentialRevision = secret.ResourceVersion
 	c.Status.AppliedTemplateVersion = c.Spec.TemplateRef.Version
 	c.Status.Endpoints = []cachev1.Endpoint{{Protocol: "reapi", URL: fmt.Sprintf("grpc://%s.%s.svc:9092", c.Name, c.Namespace)}, {Protocol: "bazel-http", URL: fmt.Sprintf("http://%s.%s.svc:8080", c.Name, c.Namespace)}}
 	if c.Spec.TemplateRef.Name == "webdav-apache" {
 		c.Status.Endpoints = []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", c.Name, c.Namespace)}}
+	}
+	if c.Spec.Access.Exposure == "Gateway" {
+		c.Status.Endpoints = r.Gateway.Endpoints(&c)
 	}
 	return r.report(ctx, &c, true, "Available", "Current workload revision and authenticated protocol probes succeeded")
 }
@@ -217,6 +263,12 @@ func (r *Reconciler) apply(ctx context.Context, desired client.Object) error {
 		p := current.(*corev1.Service)
 		p.Spec.Ports = d.Spec.Ports
 		p.Spec.Selector = d.Spec.Selector
+	case *gatewayv1.HTTPRoute:
+		current.(*gatewayv1.HTTPRoute).Spec = d.Spec
+	case *gatewayv1.GRPCRoute:
+		current.(*gatewayv1.GRPCRoute).Spec = d.Spec
+	case *networkingv1.NetworkPolicy:
+		current.(*networkingv1.NetworkPolicy).Spec = d.Spec
 	case *appsv1.StatefulSet:
 		p := current.(*appsv1.StatefulSet)
 		p.Spec.Replicas = d.Spec.Replicas
@@ -248,6 +300,13 @@ func (r *Reconciler) report(ctx context.Context, c *cachev1.CacheInstance, ready
 		value = metav1.ConditionTrue
 	}
 	meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "Ready", Status: value, Reason: reason, Message: message, ObservedGeneration: c.Generation})
+	if c.Spec.Access.Exposure == "Gateway" {
+		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "EndpointReady", Status: value, Reason: reason, Message: "HTTPS Gateway, route acceptance and backend readiness; external reachability is a separate check", ObservedGeneration: c.Generation})
+		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "ExternalReachability", Status: metav1.ConditionUnknown, Reason: "NotProbed", Message: "External DNS, certificate trust and client connectivity have not been probed", ObservedGeneration: c.Generation})
+	} else {
+		meta.RemoveStatusCondition(&current.Status.Conditions, "EndpointReady")
+		meta.RemoveStatusCondition(&current.Status.Conditions, "ExternalReachability")
+	}
 	if !ready {
 		current.Status.Endpoints = nil
 		current.Status.AppliedConfigHash = ""
@@ -270,6 +329,15 @@ func (r *Reconciler) pods(ctx context.Context, c *cachev1.CacheInstance) (corev1
 func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(c, Finalizer) {
 		return ctrl.Result{}, nil
+	}
+	if controllerutil.ContainsFinalizer(c, GatewayFinalizer) {
+		pending, err := r.removeGateway(ctx, c)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if pending {
+			return ctrl.Result{RequeueAfter: time.Second}, nil
+		}
 	}
 	// Remove access before stopping the workload. Only delete exact owned UIDs.
 	for _, name := range []string{c.Name, c.Name + "-headless"} {
@@ -326,5 +394,6 @@ func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ct
 	}
 	base := c.DeepCopy()
 	controllerutil.RemoveFinalizer(c, Finalizer)
+	controllerutil.RemoveFinalizer(c, GatewayFinalizer)
 	return ctrl.Result{}, r.Patch(ctx, c, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
 }

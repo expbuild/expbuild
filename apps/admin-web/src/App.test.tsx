@@ -9,6 +9,7 @@ const projectId = "project-1";
 let projectState = "ready";
 let operations: Operation[] = [];
 let webdavEnabled = false;
+let gatewayEnabled = false;
 let webdavInstance = false;
 let role = "admin",
   platform = true;
@@ -23,6 +24,7 @@ beforeEach(() => {
   role = "admin";
   projectState = "ready";
   webdavEnabled = false;
+  gatewayEnabled = false;
   webdavInstance = false;
   platform = true;
   requests = [];
@@ -38,6 +40,7 @@ beforeEach(() => {
               name: "bazel-remote",
               version: "0.1.0",
               capabilities: { capacity: true },
+              exposures: gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"],
             },
             ...(webdavEnabled
               ? [
@@ -121,6 +124,20 @@ afterEach(() => {
 });
 
 describe("management console", () => {
+  it('exposes administrator-enabled Gateway access in the create form', async () => {
+    gatewayEnabled = true;
+    sessionStorage.setItem('expbuild-csrf', 'csrf');
+    const user = userEvent.setup(); render(<App />);
+    await user.click(await screen.findByRole('button', { name: '＋ 创建实例' }));
+    await screen.findByRole('option', { name: '独立域名（HTTPS / gRPC TLS）' });
+    await user.selectOptions(screen.getByLabelText('访问方式'), 'Gateway');
+    await user.type(screen.getByLabelText('实例名称'), 'Gateway build');
+    await user.click(screen.getByRole('button', { name: '创建实例' }));
+    await waitFor(() => expect(requests.some(r => r.options.method === 'POST' && r.path.endsWith('/instances'))).toBe(true));
+    const created = requests.find(r => r.options.method === 'POST' && r.path.endsWith('/instances'))!;
+    expect(JSON.parse(String(created.options.body)).exposure).toBe('Gateway');
+  });
+
   it.each(["admin", "maintainer", "viewer"])(
     "shows only eligible recovery controls to %s",
     async (memberRole) => {

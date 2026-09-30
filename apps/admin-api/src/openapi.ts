@@ -92,7 +92,7 @@ const schemas: Record<string, Schema> = {
   InstanceInput: {
     ...instanceSchema,
     description:
-      "Full configuration, including for PATCH. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template.",
+      "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template.",
   },
   Project: object(
     {
@@ -453,6 +453,7 @@ route(
         name: string,
         version: string,
         protocols: { type: "array", items: string },
+        exposures: { type: "array", items: { type: "string", enum: ["ClusterInternal", "Gateway"] } },
         capabilities: { type: "object" },
         inputSchema: { type: "object" },
       }),

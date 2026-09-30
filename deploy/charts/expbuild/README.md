@@ -129,3 +129,7 @@ kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
 Retain 删除完成后，在实例详情中查看实际保留卷；管理员输入卷名确认清理。API 将删除请求放入异步队列并记录审计，核对项目、原实例 UID、PVC UID、ownerReferences、CR 是否存在以及所有 Pod 的卷引用。删除使用 PVC UID 与 resourceVersion 前置条件，避免清理同名替换卷。仅在确认 PVC 不存在后完成操作。
 
 这是删除 PVC 声明，不是直接删除 PV 或保证底层数据擦除；实际回收由 StorageClass/PV 策略决定。不要绕过流程手动挂载待清理卷。拥有集群写权限的外部控制器可能并发改动资源，PVC protection 仍可能使清理保持等待直到引用解除。失败后排除原因、重新查询并再次确认；平台尚不支持保留卷领回。
+
+## 实例独立域名
+
+可选 `gateway.enabled` 将实例路由接入部署方已有的 Gateway API HTTPS 监听器。必须提供完整 gateway 配置、DNS、证书和带授权标签的数据面 Pod；默认关闭。Operator 拥有实例 HTTPRoute/GRPCRoute/入口 NetworkPolicy 的管理权限及 Gateway 只读权限，不可修改 Gateway 或证书。清理权限不随功能关闭而移除，避免已有实例无法撤销路由。详见 [入口配置与未完成认证](../../../docs/k8s-platform/gateway.md)。

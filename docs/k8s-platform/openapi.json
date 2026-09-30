@@ -2721,6 +2721,16 @@
                               "type": "string"
                             }
                           },
+                          "exposures": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "ClusterInternal",
+                                "Gateway"
+                              ]
+                            }
+                          },
                           "capabilities": {
                             "type": "object"
                           },
@@ -2732,6 +2742,7 @@
                           "name",
                           "version",
                           "protocols",
+                          "exposures",
                           "capabilities",
                           "inputSchema"
                         ]
@@ -4887,6 +4898,14 @@
                 "minimum": 128,
                 "maximum": 262144
               },
+              "exposure": {
+                "default": "ClusterInternal",
+                "type": "string",
+                "enum": [
+                  "ClusterInternal",
+                  "Gateway"
+                ]
+              },
               "desiredState": {
                 "default": "Running",
                 "type": "string",
@@ -4946,6 +4965,14 @@
                 "minimum": 128,
                 "maximum": 262144
               },
+              "exposure": {
+                "default": "ClusterInternal",
+                "type": "string",
+                "enum": [
+                  "ClusterInternal",
+                  "Gateway"
+                ]
+              },
               "desiredState": {
                 "default": "Running",
                 "type": "string",
@@ -4980,7 +5007,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "Full configuration, including for PATCH. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template."
+        "description": "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template."
       },
       "Project": {
         "type": "object",

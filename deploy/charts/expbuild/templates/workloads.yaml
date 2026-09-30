@@ -39,6 +39,14 @@ spec:
           args:
             - --bazel-remote-image={{ $root.Values.images.bazelRemote }}
             - --leader-election-namespace={{ $root.Release.Namespace }}
+            {{- if $root.Values.gateway.enabled }}
+            - --gateway-name={{ $root.Values.gateway.name }}
+            - --gateway-namespace={{ $root.Values.gateway.namespace }}
+            - --gateway-section={{ $root.Values.gateway.sectionName }}
+            - --gateway-base-domain={{ $root.Values.gateway.baseDomain }}
+            - --gateway-controller-name={{ $root.Values.gateway.controllerName }}
+            - --gateway-data-plane-namespace={{ $root.Values.gateway.dataPlaneNamespace }}
+            {{- end }}
             {{- with $root.Values.images.webdav }}
             - --webdav-image={{ . }}
             {{- end }}
@@ -46,6 +54,7 @@ spec:
           {{- if eq $component "api" }}
           env:
             - {name: HOST, value: "0.0.0.0"}
+            - {name: GATEWAY_ENABLED, value: {{ $root.Values.gateway.enabled | quote }}}
             - {name: APP_ORIGIN, value: {{ $root.Values.appOrigin | quote }}}
             - {name: WEBDAV_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.webdav)) | quote }}}
             - {name: STORAGE_CLASS, value: {{ $root.Values.storageClass | quote }}}

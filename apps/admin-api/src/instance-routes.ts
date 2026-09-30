@@ -32,6 +32,7 @@ export type InstanceOptions = {
   encryptionKey?: Buffer;
   storageClass?: string;
   webdavEnabled?: boolean;
+  gatewayEnabled?: boolean;
   statistics?: {readStatistics(object: CacheObject): Promise<InstanceStatistics>};
 };
 const ids = z.object({
@@ -154,12 +155,13 @@ export async function registerInstanceRoutes(
         {
           name: "bazel-remote",
           version: "0.1.0",
+          exposures: options.gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"],
           protocols: ["reapi", "bazel-http"],
           capabilities: { capacity: true, statistics: true, lru: true, ttl: false, replicas: 1 },
           inputSchema: z.toJSONSchema(bazelInput, { io: "input" }),
         },
         ...(options.webdavEnabled ? [{
-          name: "webdav-apache", version: "0.1.0", protocols: ["webdav", "http"],
+          name: "webdav-apache", version: "0.1.0", exposures: options.gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"], protocols: ["webdav", "http"],
           capabilities: { capacity: false, statistics: false, lru: false, ttl: false, replicas: 1 },
           inputSchema: z.toJSONSchema(webdavInput, { io: "input" }),
         }] : []),
@@ -272,6 +274,7 @@ export async function registerInstanceRoutes(
         requestHash,
       );
       if (existing) return { operation: existing, replayed: true };
+      if (input.exposure === "Gateway" && !options.gatewayEnabled) throw new HttpError(409, "Gateway exposure is not enabled");
       if (input.template === "webdav-apache" && !options.webdavEnabled)
         throw new HttpError(409, "WebDAV template is not enabled");
       if (project.state !== "ready")
@@ -351,6 +354,7 @@ export async function registerInstanceRoutes(
       });
       if (result)
         return reply.code(202).send({ operation: result, replayed: true });
+      if (input.exposure === "Gateway" && !options.gatewayEnabled) throw new HttpError(409, "Gateway exposure is not enabled");
       const b = await binding(projectId, instanceId),
         current = await readOwned(b);
       if (!current || current.metadata.deletionTimestamp || !b.kubernetes_uid)

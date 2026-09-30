@@ -572,6 +572,7 @@ function ProjectView({ project, user }: { project: Project; user: User }) {
 }
 
 const defaults: Input = {
+  exposure: "ClusterInternal",
   template: "bazel-remote",
   name: "",
   storageGiB: 20,
@@ -600,6 +601,7 @@ function InstanceForm({
     spec
       ? {
           template: spec.templateRef.name,
+          exposure: spec.access?.exposure ?? "ClusterInternal",
           name: baseline?.name ?? "",
           storageGiB: parseInt(spec.storage.capacity),
           cacheGiB: spec.eviction.maxCacheGiB,
@@ -617,7 +619,6 @@ function InstanceForm({
   const [templates, setTemplates] = useState<Template[]>([]);
   const [catalogError, setCatalogError] = useState("");
   useEffect(() => {
-    if (baseline) return;
     const abort = new AbortController();
     void api<{ items: Template[] }>("/templates", { signal: abort.signal })
       .then((value) => {
@@ -626,6 +627,7 @@ function InstanceForm({
           ["bazel-remote", "webdav-apache"].includes(t.name),
         );
         setTemplates(supported);
+        if (baseline) return;
         if (!supported.length) setCatalogError("当前没有可创建的模板。");
         else
           setInput((previous) =>
@@ -716,6 +718,13 @@ function InstanceForm({
                 </option>
               ))
             )}
+          </select>
+        </label>
+        <label>
+          访问方式
+          <select value={input.exposure} onChange={e => setInput({ ...input, exposure: e.target.value as Input['exposure'] })}>
+            <option value="ClusterInternal">集群内部</option>
+            {(input.exposure === 'Gateway' || templates.find(t => t.name === input.template)?.exposures?.includes('Gateway')) && <option value="Gateway">独立域名（HTTPS / gRPC TLS）</option>}
           </select>
         </label>
         <label>

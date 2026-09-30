@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 // Render produces a retained PVC, immutable config, headless Service, client
@@ -41,7 +42,7 @@ func Render(c instance.Config) ([]runtime.Object, error) {
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}, StorageClassName: &c.StorageClass,
 		Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse(c.Capacity)}},
 	}}
-	ports := []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")}, {Name: "grpc", Port: 9092, TargetPort: intstr.FromString("grpc")}}
+	ports := []corev1.ServicePort{{Name: "http", Port: 8080, TargetPort: intstr.FromString("http")}, {Name: "grpc", Port: 9092, AppProtocol: ptr.To("kubernetes.io/h2c"), TargetPort: intstr.FromString("grpc")}}
 	svc := &corev1.Service{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}, ObjectMeta: meta(c.Name), Spec: corev1.ServiceSpec{Selector: labels(), Ports: ports}}
 	headless := svc.DeepCopy()
 	headless.Name = c.Name + "-headless"

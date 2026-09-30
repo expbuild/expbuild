@@ -39,3 +39,14 @@ ingress:
   host: ''
   tlsSecret: ''
   annotations: {}
+
+# Requires administrator-installed Gateway API CRDs/controller and an existing
+# HTTPS listener with wildcard certificate and DNS. Disable only after routes drain.
+gateway:
+  enabled: false
+  name: ''
+  namespace: ''
+  sectionName: ''
+  baseDomain: ''
+  controllerName: ''
+  dataPlaneNamespace: '' # Gateway Pods must have cache.expbuild.io/gateway=true
