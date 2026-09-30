@@ -26,6 +26,14 @@ func checkChart(t *testing.T, ctx context.Context, cl client.Client) {
 	chart := filepath.Join("..", "..", "..", "deploy", "charts", "expbuild")
 	values := filepath.Join(chart, "ci-values.yaml")
 	args := []string{"template", "test", chart, "--namespace", "chart-test", "-f", values, "--include-crds", "--set", "bootstrap.enabled=true"}
+	defaultRendered, err := exec.Command(helm, args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("default chart: %v", err)
+	}
+	if bytes.Contains(defaultRendered, []byte("PROMETHEUS_BEARER_TOKEN")) {
+		t.Fatal("query authentication enabled by default")
+	}
+	args = append(args, "--set", "monitoring.prometheusURL=https://metrics.example.test/prometheus", "--set", "monitoring.queryBearerTokenSecret=metrics-query")
 	rendered, err := exec.Command(helm, args...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, rendered)
@@ -35,6 +43,7 @@ func checkChart(t *testing.T, ctx context.Context, cl client.Client) {
 	}
 	decoder := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(rendered), 4096)
 	counts := map[string]int{}
+	queryAuthCount := 0
 	for {
 		var object unstructured.Unstructured
 		if err := decoder.Decode(&object); err == io.EOF {
@@ -46,6 +55,31 @@ func checkChart(t *testing.T, ctx context.Context, cl client.Client) {
 			continue
 		}
 		counts[object.GetKind()]++
+		if object.GetKind() == "Deployment" {
+			containers, _, _ := unstructured.NestedSlice(object.Object, "spec", "template", "spec", "containers")
+			for _, raw := range containers {
+				container := raw.(map[string]interface{})
+				env, _, _ := unstructured.NestedSlice(container, "env")
+				for _, rawEnv := range env {
+					item := rawEnv.(map[string]interface{})
+					if item["name"] != "PROMETHEUS_BEARER_TOKEN" {
+						continue
+					}
+					queryAuthCount++
+					if _, ok := item["value"]; ok {
+						t.Fatal("query token must not be inline")
+					}
+					ref, found, _ := unstructured.NestedStringMap(item, "valueFrom", "secretKeyRef")
+					if !found || ref["name"] != "metrics-query" || ref["key"] != "bearer-token" {
+						t.Fatal("wrong query secret reference")
+					}
+					component, _, _ := unstructured.NestedString(object.Object, "spec", "template", "metadata", "labels", "app.kubernetes.io/component")
+					if component != "api" || container["name"] != "api" {
+						t.Fatal("query token exposed outside API")
+					}
+				}
+			}
+		}
 		if object.GetKind() == "CustomResourceDefinition" {
 			continue
 		} // Installed by envtest before this subtest.
@@ -64,13 +98,16 @@ func checkChart(t *testing.T, ctx context.Context, cl client.Client) {
 			}
 		}
 	}
+	if queryAuthCount != 1 {
+		t.Fatalf("query token references: %d", queryAuthCount)
+	}
 	checkChartPermissions(t, ctx, cl)
 	for kind, want := range map[string]int{"Deployment": 3, "Service": 2, "Job": 2, "Ingress": 1, "CustomResourceDefinition": 1} {
 		if counts[kind] != want {
 			t.Fatalf("%s count=%d, want %d", kind, counts[kind], want)
 		}
 	}
-	for _, invalid := range []string{"images.bazelRemote=example.invalid/cache:latest", "appOrigin=https://wrong.example.test", "secrets.bootstrap="} {
+	for _, invalid := range []string{"images.bazelRemote=example.invalid/cache:latest", "appOrigin=https://wrong.example.test", "secrets.bootstrap=", "monitoring.prometheusURL=", "monitoring.queryBearerTokenSecret=invalid/name"} {
 		badArgs := append(append([]string{}, args...), "--set", invalid)
 		if output, err := exec.Command(helm, badArgs...).CombinedOutput(); err == nil {
 			t.Fatalf("invalid setting %q accepted: %s", invalid, output)

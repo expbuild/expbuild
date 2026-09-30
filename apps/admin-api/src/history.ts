@@ -50,11 +50,18 @@ const matrix = z.object({
 // metric names or label selectors. External collectors must attach these labels.
 export class PrometheusHistory implements HistoryReader {
   private readonly base: URL;
+  #authorization?: string;
   constructor(
     address: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly now = () => Date.now(),
+    options: { bearerToken?: string } = {},
   ) {
+    if (options.bearerToken !== undefined) {
+      if (options.bearerToken.length > 8192 || !/^[a-zA-Z0-9._~+/-]+=*$/.test(options.bearerToken))
+        throw new Error("Invalid Prometheus bearer token");
+      this.#authorization = `Bearer ${options.bearerToken}`;
+    }
     this.base = new URL(address);
     if (
       !["http:", "https:"].includes(this.base.protocol) ||
@@ -87,7 +94,7 @@ export class PrometheusHistory implements HistoryReader {
     const response = await this.fetcher(url, {
       redirect: "error",
       signal: AbortSignal.timeout(5000),
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(this.#authorization ? { Authorization: this.#authorization } : {}) },
     });
     if (!response.ok || !response.body) {
       await response.body?.cancel();

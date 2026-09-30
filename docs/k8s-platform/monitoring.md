@@ -4,7 +4,17 @@
 
 ## 配置与指标契约
 
-Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。当前不支持上游查询认证配置，应连接企业内部受控查询入口。
+Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。可选配置 `monitoring.queryBearerTokenSecret`，引用控制面 namespace 中现有 Secret 的 `bearer-token` 字段。该凭据仅注入管理 API，不注入 Operator、前端或实例，也不作为 Helm values 中的明文。直接运行 API 时使用 `PROMETHEUS_BEARER_TOKEN`。必须同时配置查询 URL；token 必须非空且不含空格/换行，最长 8192 字符。
+
+查询认证示例（Secret 由部署方预先创建）：
+
+```yaml
+monitoring:
+  prometheusURL: https://metrics.example.test/prometheus
+  queryBearerTokenSecret: expbuild-metrics-query
+```
+
+此认证用于 API 向监控查询入口发送 Bearer token，与引擎指标采集使用的实例 Basic 凭据分离。API 不跟随重定向，查询失败仅报告统计不可用；不会改变缓存实例状态。Secret 更新后需滚动重启管理 API 才会加载新 token。企业入口使用自定义 CA 时仍需在运行环境配置受信任 CA，不提供跳过 TLS 验证选项。当前支持 Bearer 查询认证，其他查询认证方式尚未适配。
 
 采集对象是 bazel-remote 的 `/metrics`，使用实例当前有效的 Basic 凭据。请求需要满足已有网络策略；启用下文 ServiceMonitor 集成时会生成来源 namespace 与 Pod 标签同时匹配的入口策略；未启用时需由部署方维护访问。
 

@@ -94,3 +94,42 @@ test("history rejects partial, oversized, duplicate and malformed upstream resul
   ])
     assert.throws(() => new PrometheusHistory(address));
 });
+
+test('query bearer authentication uses the configured endpoint and never follows redirects', async () => {
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const token = 'test-only.query-token_123';
+  let redirected = 0;
+  const server = createServer((request, response) => {
+    const url = new URL(request.url!, 'http://fixture');
+    if (url.pathname === '/redirect/api/v1/query_range') {
+      response.writeHead(302, { Location: '/sink' }); response.end(); return;
+    }
+    if (url.pathname === '/sink') { redirected++; response.end(); return; }
+    if (request.headers.authorization !== `Bearer ${token}`) { response.writeHead(401); response.end('denied'); return; }
+    assert.equal(url.pathname, '/prometheus/api/v1/query_range');
+    assert.equal(request.headers.accept, 'application/json');
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(body([])));
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const origin = `http://127.0.0.1:${address.port}`;
+  try {
+    const client = new PrometheusHistory(origin + '/prometheus', fetch, () => now, { bearerToken: token });
+    assert.deepEqual((await client.read(target, '1h')).series, []);
+    assert.equal(JSON.stringify(client).includes(token), false);
+    for (const bearerToken of [undefined, 'wrong-token']) {
+      await assert.rejects(new PrometheusHistory(origin + '/prometheus', fetch, () => now, { bearerToken }).read(target, '1h'), /History unavailable/);
+    }
+    await assert.rejects(new PrometheusHistory(origin + '/redirect', fetch, () => now, { bearerToken: token }).read(target, '1h'));
+    assert.equal(redirected, 0);
+    for (const bearerToken of ['', 'Bearer token', 'header\r\ninjection', 'x'.repeat(8193)]) {
+      assert.throws(() => new PrometheusHistory(origin, fetch, () => now, { bearerToken }), { message: 'Invalid Prometheus bearer token' });
+    }
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});

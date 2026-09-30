@@ -29,3 +29,10 @@
 {{- if .Values.monitoring.serviceMonitor.enabled -}}
 {{- $monitoring := required "monitoring.serviceMonitor.namespace is required when enabled" .Values.monitoring.serviceMonitor.namespace -}}
 {{- end -}}
+
+{{- with .Values.monitoring.queryBearerTokenSecret -}}
+{{- $url := required "monitoring.prometheusURL is required for query authentication" $.Values.monitoring.prometheusURL -}}
+{{- if or (gt (len .) 253) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" .)) -}}
+{{- fail "monitoring.queryBearerTokenSecret must be a valid Secret name" -}}
+{{- end -}}
+{{- end -}}
