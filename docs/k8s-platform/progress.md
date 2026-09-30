@@ -249,3 +249,5 @@ Gradle 模板接入阶段：Operator `gradle-http@0.1.0` 注册表、PVC/Statefu
 Gradle kind 验收已加入一次性 Operator 生命周期任务：加载当前提交的 Gradle 镜像并按实际 manifest 摘要固定引用，测试 PVC 上的读写与 Pod 重建持久化、暂停恢复、凭据轮换和 Retain/Delete 卷行为。脚本语法与补丁格式已检查；完整集群结果须以新提交的 CI 为准。
 
 Helm 内部模式新增 Gradle 管理链路：同一次性集群安装可选摘要镜像，通过管理 API 创建实例，验证真实缓存读写、容量/请求计数、凭据轮换及 Delete 卷清理。Gateway 和隔离模式沿用原有 REAPI/WebDAV 测试；Gradle 外部入口与 CNI 验收仍需后续加入。该脚本尚未得到新 CI 结果。
+
+提交 098eeb0 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36717706628)四项全部成功，Operator 生命周期任务实际执行 Gradle 的 PVC 持久化、暂停恢复、轮换和删除。提交 8ea0878 的 Helm 内部模式在 Gradle Pod 已启动后创建操作等待超时：管理 API 的凭据 Secret 有客户端与探测两个 bcrypt 身份，而 Gradle 引擎只接受一条记录，Operator 认证探测无法通过。已将引擎改为严格解析最多两条不重复身份并增加错误格式拒绝测试；真实 Helm/API 链路仍需新 CI 验证。8ea0878 的 Gateway 模式通过，隔离模式当时仍在运行。

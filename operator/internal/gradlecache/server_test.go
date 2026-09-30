@@ -89,6 +89,47 @@ func TestAuthenticationAndBounds(t *testing.T) {
 	}
 }
 
+func TestClientAndProbeCredentialsFromManagementAPI(t *testing.T) {
+	clientHash, err := bcrypt.GenerateFromPassword([]byte("client-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	probeHash, err := bcrypt.GenerateFromPassword([]byte("probe-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials := filepath.Join(t.TempDir(), "htpasswd")
+	write := func(content string) {
+		t.Helper()
+		if err := os.WriteFile(credentials, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("cache:" + string(clientHash) + "\nhealth:" + string(probeHash) + "\n")
+	s, err := New(filepath.Join(t.TempDir(), "entries"), credentials, 32, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(user, password string, want int) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodGet, "/status", nil)
+		r.SetBasicAuth(user, password)
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		if w.Code != want {
+			t.Fatalf("user %q: got %d, want %d", user, w.Code, want)
+		}
+	}
+	check("cache", "client-password", 200)
+	check("health", "probe-password", 200)
+	check("cache", "probe-password", 401)
+	check("health", "client-password", 401)
+	write("cache:" + string(clientHash) + "\nhealth:" + string(probeHash) + "\nother:" + string(probeHash) + "\n")
+	check("cache", "client-password", 503)
+	write("cache:" + string(clientHash) + "\ncache:" + string(probeHash) + "\n")
+	check("cache", "client-password", 503)
+}
+
 func TestAuthenticatedStatusReportsRequestsAndCapacity(t *testing.T) {
 	s := fixture(t, filepath.Join(t.TempDir(), "entries"), 8, 16)
 	request(t, s, http.MethodGet, keyA, nil, "secret")

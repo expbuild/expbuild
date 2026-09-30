@@ -96,14 +96,27 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
 		return false
 	}
-	// Credentials are a dedicated single-user htpasswd file. Reject malformed
-	// files instead of accidentally accepting one of several identities.
-	parts := strings.Split(strings.TrimSpace(string(data)), ":")
-	if len(parts) != 2 || strings.ContainsAny(parts[0], "\r\n") || strings.ContainsAny(parts[1], "\r\n") {
+	// The management API supplies one client identity and one probe identity.
+	// Validate the entire bounded file before accepting either identity.
+	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
+	if len(data) > 4096 || len(lines) == 0 || len(lines) > 2 {
 		http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
 		return false
 	}
-	if !ok || subtle.ConstantTimeCompare([]byte(user), []byte(parts[0])) != 1 || bcrypt.CompareHashAndPassword([]byte(parts[1]), []byte(password)) != nil {
+	seen := map[string]bool{}
+	hash := ""
+	for _, line := range lines {
+		parts := strings.Split(line, ":")
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(parts[0], "\r\n\t ") || strings.ContainsAny(parts[1], "\r\n\t ") || seen[parts[0]] {
+			http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
+			return false
+		}
+		seen[parts[0]] = true
+		if ok && subtle.ConstantTimeCompare([]byte(user), []byte(parts[0])) == 1 {
+			hash = parts[1]
+		}
+	}
+	if hash == "" || bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="expbuild Gradle cache"`)
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return false
