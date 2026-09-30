@@ -243,3 +243,5 @@ WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1
 提交 87a04da 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36706302289)四个模式全部成功；平台测试和镜像构建也成功。浏览器验收扩展为真实前端、管理 API、独立 PostgreSQL 与异步 worker 的实例创建、一次性凭据、暂停、恢复和删除流程；仅 Kubernetes 边界使用确定性的测试替身，不能替代上述真实集群的数据面验收。本地三条浏览器流程全部通过。WebDAV 创建表单的说明已按模板版本展示 0.2.0 的近似内容快照能力，仍明确无自动淘汰。
 
 Gradle HTTP 构建缓存引擎开发启动：新增独立 Go 数据面与非 root 镜像，支持认证 GET/PUT opaque archive、原子发布、条目上限、实例预算和最近访问淘汰；Go 协议/并发/重启测试和容器 smoke 已接入。当前未接入模板/管理 API/Helm，也未做原生 Gradle 或真实 PVC 验收，不作为已发布协议。详见 [Gradle HTTP 引擎记录](gradle-http.md)。
+
+Gradle 模板接入阶段：Operator `gradle-http@0.1.0` 注册表、PVC/StatefulSet/Service、认证预算探测、CRD 版本/策略准入、Gateway `/cache/` 端点、Helm 可选摘要镜像和管理 API 模板/统计均已编码。管理界面创建、容量/请求计数及 Kotlin 客户端指引已接入。真实 Gradle 8.14.3 本地三阶段构建通过远程上传、全新目录命中与禁用缓存对照；真实 API Server、PostgreSQL、浏览器与 Helm 本地测试通过。完整 kind 集群与生产 CSI 尚未验收，不能据此宣布 Gradle 模板生产可用。

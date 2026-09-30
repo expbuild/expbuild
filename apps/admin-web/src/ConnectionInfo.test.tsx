@@ -34,6 +34,7 @@ it('never includes credentials, unsupported schemes or ambiguous endpoint URLs',
   }
   expect(connectionExample({ protocol: 'reapi', url: 'https://example.test' })).toBeNull();
   expect(connectionExample({ protocol: 'unknown', url: 'https://example.test' })).toBeNull();
+  expect(connectionExample({ protocol: 'gradle-http', url: 'https://example.test/wrong/' })).toBeNull();
   const example = connectionExample({ protocol: 'webdav', url: 'https://dav.example.test/' })!;
   expect(example).toContain('--request PROPFIND');
   expect(example).toContain("--header 'Depth: 0'");
@@ -52,4 +53,10 @@ it('Bash examples preserve literal addresses and encode interactive credentials 
   expect(probe.status).toBe(0);
   expect(probe.stdout).toContain('--user\ntest-user\n');
   expect(probe.stdout).toContain('PROPFIND\n');
+  const gradle = connectionExample({ protocol: 'gradle-http', url: "https://cache.example.test/cache/$(unexpected)'" });
+  expect(gradle).toBeNull();
+  const gradleValid = connectionExample({ protocol: 'gradle-http', url: 'https://cache.example.test/cache/' })!;
+  expect(gradleValid).toContain('remote<HttpBuildCache>');
+  expect(gradleValid).toContain('System.getenv("CI") == "true"');
+  expect(gradleValid).not.toContain('isAllowUntrustedServer');
 });

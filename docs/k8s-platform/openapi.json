@@ -6402,9 +6402,76 @@
               "cacheGiB"
             ],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "storageGiB": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 1048576
+              },
+              "cpuMillis": {
+                "default": 500,
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 64000
+              },
+              "memoryMiB": {
+                "default": 512,
+                "type": "integer",
+                "minimum": 128,
+                "maximum": 262144
+              },
+              "exposure": {
+                "default": "ClusterInternal",
+                "type": "string",
+                "enum": [
+                  "ClusterInternal",
+                  "Gateway"
+                ]
+              },
+              "desiredState": {
+                "default": "Running",
+                "type": "string",
+                "enum": [
+                  "Running",
+                  "Suspended"
+                ]
+              },
+              "deletionPolicy": {
+                "default": "Retain",
+                "type": "string",
+                "enum": [
+                  "Retain",
+                  "Delete"
+                ]
+              },
+              "template": {
+                "type": "string",
+                "const": "gradle-http"
+              },
+              "cacheGiB": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1048575
+              }
+            },
+            "required": [
+              "name",
+              "storageGiB",
+              "template",
+              "cacheGiB"
+            ],
+            "additionalProperties": false
           }
         ],
-        "description": "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template."
+        "description": "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote and gradle-http, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. Optional templates require the deployment to enable their trusted images."
       },
       "Project": {
         "type": "object",
@@ -6556,7 +6623,8 @@
             "type": "string",
             "enum": [
               "bazel-remote",
-              "webdav-apache"
+              "webdav-apache",
+              "gradle-http"
             ]
           },
           "id": {
@@ -6626,7 +6694,8 @@
             "type": "string",
             "enum": [
               "bazel-remote-status",
-              "webdav-content-scan"
+              "webdav-content-scan",
+              "gradle-http-status"
             ]
           },
           "observedAt": {
@@ -6665,6 +6734,33 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "requestCounts": {
+            "type": "object",
+            "properties": {
+              "getHits": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "getMisses": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "putSuccess": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "putRejected": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "getHits",
+              "getMisses",
+              "putSuccess",
+              "putRejected"
             ]
           }
         },

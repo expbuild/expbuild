@@ -5,7 +5,7 @@ import { KubeConfig, CoreV1Api, CustomObjectsApi, NetworkingV1Api, createConfigu
 import { isDeepStrictEqual } from 'node:util';
 import { labels, revision, type CacheObject } from './instance-contract.js';
 import { OperationError } from './errors.js';
-import { readEngineStatistics, readWebDAVStatistics } from './statistics.js';
+import { readEngineStatistics, readWebDAVStatistics, readGradleStatistics } from './statistics.js';
 import { clientAccessPolicy } from './network-policy.js';
 
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
@@ -46,6 +46,8 @@ export class KubernetesClient implements KubernetesPort {
       return readWebDAVStatistics(object.metadata.namespace,object.metadata.name,username,password);
     if (object.spec.templateRef.name === 'bazel-remote' && object.spec.templateRef.version === '0.1.0')
       return readEngineStatistics(object.metadata.namespace,object.metadata.name,username,password);
+    if (object.spec.templateRef.name === 'gradle-http' && object.spec.templateRef.version === '0.1.0')
+      return readGradleStatistics(object.metadata.namespace,object.metadata.name,username,password);
     throw new OperationError('statistics_template_unsupported');
   }
   constructor(config?: KubeConfig, timeoutMs = 10_000) {

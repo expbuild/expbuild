@@ -18,23 +18,23 @@ import (
 func TestRegistryTrustBoundary(t *testing.T) {
 	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
 	for _, ref := range []cachev1.TemplateRef{{Name: "unknown", Version: "0.1.0"}, {Name: "bazel-remote", Version: "latest"}, {Name: "bazel-remote", Version: "0.2.0"}} {
-		if _, err := Resolve(ref, image, image, image); err == nil {
+		if _, err := Resolve(ref, image, image, image, image); err == nil {
 			t.Fatalf("accepted unknown template: %+v", ref)
 		}
 	}
-	if _, err := Resolve(cachev1.TemplateRef{Name: "webdav-apache", Version: "0.1.0"}, image, "", image); err == nil {
+	if _, err := Resolve(cachev1.TemplateRef{Name: "webdav-apache", Version: "0.1.0"}, image, "", image, image); err == nil {
 		t.Fatal("accepted disabled engine")
 	}
-	for _, name := range []string{"bazel-remote", "webdav-apache"} {
+	for _, name := range []string{"bazel-remote", "webdav-apache", "gradle-http"} {
 		t.Run(name, func(t *testing.T) {
-			adapter, err := Resolve(cachev1.TemplateRef{Name: name, Version: "0.1.0"}, image, image, image)
+			adapter, err := Resolve(cachev1.TemplateRef{Name: name, Version: "0.1.0"}, image, image, image, image)
 			if err != nil {
 				t.Fatal(err)
 			}
 			resources := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}
 			c := instance.Config{Name: "test", Namespace: "project", InstanceID: "instance", ProjectID: "project", Image: "untrusted:latest", StorageClass: "standard", Capacity: "3Gi", CredentialsSecret: "auth", DesiredState: "Running", Resources: corev1.ResourceRequirements{Requests: resources, Limits: resources}}
 			policy := "none"
-			if name == "bazel-remote" {
+			if name == "bazel-remote" || name == "gradle-http" {
 				c.MaxCacheGiB = 1
 				policy = "lru"
 			}
@@ -87,7 +87,7 @@ func TestProtocolLookupRejectsUnknownBeforeNetwork(t *testing.T) {
 			t.Fatalf("expected template rejection, got %v", err)
 		}
 	}
-	for _, name := range []string{"bazel-remote", "webdav-apache"} {
+	for _, name := range []string{"bazel-remote", "webdav-apache", "gradle-http"} {
 		c := &cachev1.CacheInstance{}
 		c.Spec.TemplateRef = cachev1.TemplateRef{Name: name, Version: "0.1.0"}
 		err := CheckProtocol(context.Background(), c, &corev1.Secret{})
@@ -116,7 +116,7 @@ func TestSharedAPITemplateFixtures(t *testing.T) {
 	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
-			adapter, err := Resolve(cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}, image, image, image)
+			adapter, err := Resolve(cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}, image, image, image, image)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -168,7 +168,7 @@ func TestIntegrationCapabilitiesMatchRenderedService(t *testing.T) {
 		if capabilities.HTTPPort != fixture.HTTPPort || capabilities.GRPCPort != fixture.GRPCPort || (capabilities.MetricsPort > 0) != fixture.PrometheusMetrics {
 			t.Fatalf("capability contract drift for %s", fixture.Name)
 		}
-		adapter, err := Resolve(ref, image, image, image)
+		adapter, err := Resolve(ref, image, image, image, image)
 		if err != nil {
 			t.Fatal(err)
 		}

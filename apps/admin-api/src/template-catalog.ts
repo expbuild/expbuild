@@ -17,6 +17,10 @@ export const webdavInput = commonInput.extend({
   template: z.literal('webdav-apache'),
   cacheGiB: z.literal(0),
 });
+export const gradleInput = commonInput.extend({
+  template: z.literal('gradle-http'),
+  cacheGiB: z.number().int().min(1).max(1048575),
+}).refine(x => x.cacheGiB < x.storageGiB, { message: 'Cache budget must leave space in the volume', path: ['cacheGiB'] });
 
 
 // All creation schemas, public capabilities and CR policy mappings live together.
@@ -40,10 +44,16 @@ const templates = [
     capabilities: { capacity: false, statistics: false, lookupHistory: false, lru: false, ttl: false, replicas: 1, policyApplyMode: 'unsupported', policyCondition: 'PolicyApplied' },
     enabled: (_options: TemplateOptions) => false,
   },
+  {
+    name: 'gradle-http', version: '0.1.0', enginePolicy: 'lru',
+    protocols: ['gradle-http'], input: gradleInput,
+    capabilities: { capacity: true, statistics: true, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
+    enabled: (options: TemplateOptions) => options.gradleEnabled === true,
+  },
 ] as const;
 
-export type TemplateOptions = { webdavEnabled?: boolean; gatewayEnabled?: boolean };
-export const instanceInput = z.union([templates[0].input, templates[1].input]);
+export type TemplateOptions = { webdavEnabled?: boolean; gradleEnabled?: boolean; gatewayEnabled?: boolean };
+export const instanceInput = z.union([bazelInput, webdavInput, gradleInput]);
 export type InstanceInput = z.infer<typeof instanceInput>;
 
 export function templateDefinition(name: string, version?: string) {

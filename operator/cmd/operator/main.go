@@ -23,6 +23,7 @@ func main() {
 	monitoringNamespace := flag.String("monitoring-namespace", "", "optional namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true; requires ServiceMonitor CRD")
 	image := flag.String("bazel-remote-image", "", "administrator-approved digest-pinned engine image")
 	webdavImage := flag.String("webdav-image", "", "optional approved digest-pinned Apache WebDAV image")
+	gradleImage := flag.String("gradle-image", "", "optional approved digest-pinned Gradle HTTP cache image")
 	statsImage := flag.String("webdav-stats-image", "", "image containing the trusted WebDAV content statistics binary")
 	namespace := flag.String("namespace", "", "optional single project namespace; empty watches all managed projects")
 	leaderNamespace := flag.String("leader-election-namespace", "expbuild-system", "control plane namespace for leader election")
@@ -78,7 +79,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, StatsImage: *statsImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions, Monitoring: monitoringOptions}
+	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, GradleImage: *gradleImage, StatsImage: *statsImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions, Monitoring: monitoringOptions}
 	if err = r.SetupWithManager(m); err != nil {
 		panic(err)
 	}

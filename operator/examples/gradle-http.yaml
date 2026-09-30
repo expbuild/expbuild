@@ -1,0 +1,18 @@
+# Requires an expbuild-managed project namespace, a matching credentials Secret
+# and an Operator configured with a digest-pinned --gradle-image.
+apiVersion: cache.expbuild.io/v1alpha1
+kind: CacheInstance
+metadata:
+  name: gradle-demo
+  namespace: expbuild-demo
+spec:
+  instanceId: gradle-demo
+  projectId: demo
+  templateRef: {name: gradle-http, version: 0.1.0}
+  desiredState: Running
+  storage: {className: standard, capacity: 10Gi, deletionPolicy: Retain}
+  access: {exposure: ClusterInternal, credentialsSecretRef: gradle-demo-auth}
+  eviction: {enginePolicy: lru, maxCacheGiB: 8}
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {cpu: '1', memory: 512Mi}

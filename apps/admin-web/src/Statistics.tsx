@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 type Snapshot = {
-  source?: "bazel-remote-status" | "webdav-content-scan";
+  source?: "bazel-remote-status" | "webdav-content-scan" | "gradle-http-status";
   observedAt: string;
   usedBytes: number;
   capacityBytes: number;
   itemCount: number;
   reservedBytes: number | null;
+  requestCounts?: { getHits: number; getMisses: number; putSuccess: number; putRejected: number };
 };
 const size = (bytes: number) =>
   `${(bytes / 1024 ** 3).toLocaleString(undefined, { maximumFractionDigits: 2 })} GiB`;
@@ -74,9 +75,16 @@ export function Statistics({
             max={data.capacityBytes}
             value={data.usedBytes}
           />
+          {data.source === "gradle-http-status" && data.requestCounts && <div className="detail-grid">
+            <p>GET 命中<strong>{data.requestCounts.getHits.toLocaleString()}</strong></p>
+            <p>GET 缺失<strong>{data.requestCounts.getMisses.toLocaleString()}</strong></p>
+            <p>PUT 成功<strong>{data.requestCounts.putSuccess.toLocaleString()}</strong></p>
+            <p>PUT 拒绝<strong>{data.requestCounts.putRejected.toLocaleString()}</strong></p>
+          </div>}
           <p className="muted">
             采集于 {new Date(data.observedAt).toLocaleString()}。
             {data.source === "webdav-content-scan" ? "内容目录扫描是近似快照；申请卷容量不保证是底层存储硬上限，也不代表缓存命中率。" :
+              data.source === "gradle-http-status" ? "请求计数从当前进程启动时累计；归档用量不代表整个存储卷使用量，GET 命中也不等同于构建任务命中率。" :
               <>已预留 {data.reservedBytes === null ? "未知" : size(data.reservedBytes)}。这是引擎缓存统计，不代表整个存储卷的使用量。</>}
           </p>
         </>

@@ -5,6 +5,7 @@ images:
   operator: ''
   bazelRemote: '' # Required repository@sha256:digest; no mutable engine tags.
   webdav: '' # Optional Apache WebDAV image; digest required when enabled.
+  gradle: '' # Optional Gradle HTTP cache image; digest required when enabled.
 imagePullPolicy: IfNotPresent
 imagePullSecrets: []
 appOrigin: '' # e.g. https://expbuild.example.com; must match ingress.host

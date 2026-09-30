@@ -41,6 +41,11 @@ func TestRoutesAndStatus(t *testing.T) {
 	if len(webdav[1].(*networkingv1.NetworkPolicy).Spec.Ingress[0].Ports) != 1 {
 		t.Fatal("WebDAV must not expose gRPC port")
 	}
+	c.Spec.TemplateRef.Name = "gradle-http"
+	gradle, err := cfg.Render(c)
+	if err != nil || len(gradle) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http")+"/cache/" {
+		t.Fatal("Gradle HTTPS endpoint must include the cache base path", err)
+	}
 	conditions := []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue, ObservedGeneration: 2}, {Type: "ResolvedRefs", Status: metav1.ConditionTrue, ObservedGeneration: 2}}
 	parents := []gatewayv1.RouteParentStatus{{ParentRef: cfg.Parent(), ControllerName: gatewayv1.GatewayController(cfg.ControllerName), Conditions: conditions}}
 	if !cfg.Accepted(parents, 2) || cfg.Accepted(parents, 3) {

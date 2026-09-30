@@ -181,6 +181,7 @@ spec:
                     enum:
                     - bazel-remote
                     - webdav-apache
+                    - gradle-http
                     type: string
                   version:
                     enum:
@@ -211,13 +212,16 @@ spec:
             - message: unsupported bazel-remote template version
               rule: self.templateRef.name != 'bazel-remote' || self.templateRef.version
                 == '0.1.0'
+            - message: unsupported gradle-http template version
+              rule: self.templateRef.name != 'gradle-http' || self.templateRef.version
+                == '0.1.0'
             - message: storage class is immutable
               rule: self.storage.className == oldSelf.storage.className
             - message: retained volume identity is immutable
               rule: has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim)
                 || self.storage.reclaim == oldSelf.storage.reclaim)
             - message: eviction policy must match engine capabilities
-              rule: 'self.templateRef.name == ''bazel-remote'' ? (self.eviction.enginePolicy
+              rule: 'self.templateRef.name == ''bazel-remote'' || self.templateRef.name == ''gradle-http'' ? (self.eviction.enginePolicy
                 == ''lru'' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy
                 == ''none'' && self.eviction.maxCacheGiB == 0)'
           status:

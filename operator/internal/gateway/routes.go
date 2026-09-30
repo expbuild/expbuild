@@ -81,7 +81,11 @@ func (c Config) Endpoints(instance *cachev1.CacheInstance) []cachev1.Endpoint {
 		return nil
 	}
 	protocol := capabilities.HTTPProtocol
-	result := []cachev1.Endpoint{{Protocol: protocol, URL: "https://" + c.Host(instance, "http") + "/"}}
+	basePath := capabilities.HTTPBasePath
+	if basePath == "" {
+		basePath = "/"
+	}
+	result := []cachev1.Endpoint{{Protocol: protocol, URL: "https://" + c.Host(instance, "http") + basePath}}
 	if capabilities.GRPCPort > 0 {
 		result = append(result, cachev1.Endpoint{Protocol: "reapi", URL: "grpcs://" + c.Host(instance, "grpc")})
 	}

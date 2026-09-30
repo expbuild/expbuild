@@ -171,6 +171,48 @@ func TestAPIServerContract(t *testing.T) {
 			t.Fatalf("unsupported bazel-remote version accepted: %v", err)
 		}
 	})
+	t.Run("Gradle HTTP admission and isolated Service", func(t *testing.T) {
+		gradle := c.DeepCopy()
+		gradle.Name, gradle.ResourceVersion, gradle.UID = "gradle-cache", "", ""
+		gradle.Generation = 0
+		gradle.Finalizers = nil
+		gradle.Status = cachev1.CacheInstanceStatus{}
+		gradle.Spec.InstanceID = "gradle-cache"
+		gradle.Spec.TemplateRef = cachev1.TemplateRef{Name: "gradle-http", Version: "0.1.0"}
+		if err := cl.Create(ctx, gradle); err != nil {
+			t.Fatalf("Gradle 0.1.0 rejected: %v", err)
+		}
+		credential := secret.DeepCopy()
+		credential.ResourceVersion, credential.UID = "", ""
+		credential.Name = "gradle-auth"
+		credential.Labels[InstanceLabel] = gradle.Spec.InstanceID
+		if err := cl.Create(ctx, credential); err != nil {
+			t.Fatal(err)
+		}
+		gradle.Spec.Access.CredentialsSecretRef = credential.Name
+		if err := cl.Update(ctx, gradle); err != nil {
+			t.Fatal(err)
+		}
+		r.GradleImage = local.Image
+		reconcile(t, r, gradle)
+		var service corev1.Service
+		if err := cl.Get(ctx, client.ObjectKeyFromObject(gradle), &service); err != nil {
+			t.Fatal(err)
+		}
+		if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Name != "http" {
+			t.Fatal("Gradle exposed unexpected ports")
+		}
+		invalid := gradle.DeepCopy()
+		invalid.Name, invalid.ResourceVersion, invalid.UID = "invalid-gradle-version", "", ""
+		invalid.Generation = 0
+		invalid.Finalizers = nil
+		invalid.Status = cachev1.CacheInstanceStatus{}
+		invalid.Spec.InstanceID = "invalid-gradle-version"
+		invalid.Spec.TemplateRef.Version = "0.2.0"
+		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+			t.Fatalf("unsupported Gradle version accepted: %v", err)
+		}
+	})
 }
 
 func checkRBAC(t *testing.T, ctx context.Context, cl client.Client) {

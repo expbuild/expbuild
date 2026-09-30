@@ -9,6 +9,9 @@
 {{- if and .Values.images.webdav (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.webdav)) -}}
 {{- fail "images.webdav must be pinned to a SHA256 digest" -}}
 {{- end -}}
+{{- if and .Values.images.gradle (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.gradle)) -}}
+{{- fail "images.gradle must be pinned to a SHA256 digest" -}}
+{{- end -}}
 {{- $database := required "secrets.database is required" .Values.secrets.database -}}
 {{- $key := required "secrets.operationEncryption is required" .Values.secrets.operationEncryption -}}
 {{- $origin := required "appOrigin is required" .Values.appOrigin -}}

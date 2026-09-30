@@ -12,6 +12,7 @@ export function connectionExample(endpoint: Endpoint): string | null {
   const reapi = endpoint.protocol === 'reapi';
   if (reapi ? !['grpc:', 'grpcs:'].includes(url.protocol) : !['http:', 'https:'].includes(url.protocol)) return null;
   if (reapi && url.pathname && url.pathname !== '/') return null;
+  if (endpoint.protocol === 'gradle-http' && url.pathname !== '/cache/') return null;
   const address = quote(endpoint.url);
   if (reapi || endpoint.protocol === 'bazel-http') {
     return [
@@ -29,6 +30,33 @@ export function connectionExample(endpoint: Endpoint): string | null {
       '# curl 将提示输入密码；此请求只查询目录信息。',
       `curl --fail --show-error --user "$CACHE_USER" --request PROPFIND --header 'Depth: 0' ${address}`,
       'unset CACHE_USER',
+    ].join('\n');
+  }
+  if (endpoint.protocol === 'gradle-http') {
+    return [
+      `export EXPBUILD_CACHE_URL=${address}`,
+      "read -r -p '缓存用户名：' EXPBUILD_CACHE_USER",
+      "read -r -s -p '缓存密码：' EXPBUILD_CACHE_PASSWORD",
+      "printf '\\n'",
+      'export EXPBUILD_CACHE_USER EXPBUILD_CACHE_PASSWORD',
+      'CACHE_INIT="$(mktemp)"',
+      "trap 'rm -f \"$CACHE_INIT\"; unset EXPBUILD_CACHE_URL EXPBUILD_CACHE_USER EXPBUILD_CACHE_PASSWORD CACHE_INIT' EXIT",
+      "cat >\"$CACHE_INIT\" <<'GRADLE_INIT'",
+      'import org.gradle.caching.http.HttpBuildCache',
+      'gradle.settingsEvaluated {',
+      '  buildCache {',
+      '    remote<HttpBuildCache> {',
+      '      url = uri(System.getenv("EXPBUILD_CACHE_URL"))',
+      '      credentials {',
+      '        username = System.getenv("EXPBUILD_CACHE_USER")',
+      '        password = System.getenv("EXPBUILD_CACHE_PASSWORD")',
+      '      }',
+      '      isPush = System.getenv("CI") == "true"',
+      '    }',
+      '  }',
+      '}',
+      'GRADLE_INIT',
+      'gradle -I "$CACHE_INIT" --build-cache build',
     ].join('\n');
   }
   return null;
@@ -51,6 +79,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
         {examples.map((example, index) => <div key={`${example.protocol}-${index}`}>
           <h4>{example.protocol}</h4>
           {(example.protocol === 'reapi' || example.protocol === 'bazel-http') && <p>在 Bazel 项目目录执行，将 //... 替换为需要构建的目标。该配置使用远程缓存，不启用远程执行。</p>}
+          {example.protocol === 'gradle-http' && <p>在 Gradle 项目目录执行。仅当 CI=true 时向远程缓存上传；开发机默认只读取。请确保客户端信任入口 TLS 证书。</p>}
           <pre style={{ overflowX: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><code>{example.text}</code></pre>
         </div>)}
       </>}

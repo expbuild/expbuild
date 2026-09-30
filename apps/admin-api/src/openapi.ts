@@ -104,7 +104,7 @@ const schemas: Record<string, Schema> = {
   InstanceInput: {
     ...instanceSchema,
     description:
-      "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. WebDAV creation requires the deployment to enable that template.",
+      "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote and gradle-http, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. Optional templates require the deployment to enable their trusted images.",
   },
   Project: object(
     {
@@ -139,7 +139,7 @@ const schemas: Record<string, Schema> = {
   InstanceDetail: object({
     templateVersion: nullable(string),
     capabilities: nullable(ref("InstanceCapabilities")),
-    template: {type: "string", enum: ["bazel-remote", "webdav-apache"]},
+    template: {type: "string", enum: ["bazel-remote", "webdav-apache", "gradle-http"]},
     id: uuid,
     name: string,
     lifecycle: string,
@@ -156,14 +156,18 @@ const schemas: Record<string, Schema> = {
     observedAt: { type: "string", format: "date-time" },
   }),
   Statistics: object({
-    source: { type: "string", enum: ["bazel-remote-status", "webdav-content-scan"] },
+    source: { type: "string", enum: ["bazel-remote-status", "webdav-content-scan", "gradle-http-status"] },
     observedAt: { type: "string", format: "date-time" },
     usedBytes: { type: "integer", minimum: 0 },
     capacityBytes: { type: "integer", minimum: 1 },
     itemCount: { type: "integer", minimum: 0 },
     reservedBytes: nullable({ type: "integer", minimum: 0 }),
     uncompressedBytes: nullable({ type: "integer", minimum: 0 }),
-  }),
+    requestCounts: { type: "object", properties: {
+      getHits: { type: "integer", minimum: 0 }, getMisses: { type: "integer", minimum: 0 },
+      putSuccess: { type: "integer", minimum: 0 }, putRejected: { type: "integer", minimum: 0 },
+    }, required: ["getHits", "getMisses", "putSuccess", "putRejected"] },
+  }, ["source", "observedAt", "usedBytes", "capacityBytes", "itemCount", "reservedBytes", "uncompressedBytes"]),
 };
 
 type Options = {

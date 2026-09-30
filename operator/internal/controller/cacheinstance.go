@@ -41,6 +41,7 @@ type Reconciler struct {
 	// Image is an administrator-supplied digest, not an instance spec field.
 	Image       string
 	WebDAVImage string
+	GradleImage string
 	StatsImage  string
 	Probe       Probe
 	Gateway     *gateway.Config
@@ -139,7 +140,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.RemoveFinalizer(&c, GatewayFinalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage)
+	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage, r.GradleImage)
 	if err != nil {
 		return r.report(ctx, &c, false, "InvalidConfiguration", err.Error())
 	}
@@ -407,13 +408,14 @@ func (r *Reconciler) report(ctx context.Context, c *cachev1.CacheInstance, ready
 	}
 	meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "Ready", Status: value, Reason: reason, Message: message, ObservedGeneration: c.Generation})
 	policy := metav1.Condition{Type: "PolicyApplied", Status: metav1.ConditionUnknown, Reason: "VerificationPending", Message: "Current running engine policy has not been verified", ObservedGeneration: c.Generation}
-	if c.Spec.TemplateRef.Name == "webdav-apache" {
+	enginePolicy, policyErr := templates.Policy(c.Spec.TemplateRef)
+	if policyErr == nil && enginePolicy == "none" {
 		policy.Reason = "NotSupported"
 		policy.Message = "This template does not support automatic eviction"
-	} else if ready && c.Spec.TemplateRef.Name == "bazel-remote" {
+	} else if policyErr == nil && ready && enginePolicy == "lru" {
 		policy.Status = metav1.ConditionTrue
 		policy.Reason = "EngineBudgetVerified"
-		policy.Message = "Current workload uses native LRU and the authenticated engine status confirms the requested cache budget"
+		policy.Message = "Authenticated engine status confirms the requested native LRU cache budget"
 	}
 	meta.SetStatusCondition(&current.Status.Conditions, policy)
 	if c.Spec.Access.Exposure == "Gateway" {

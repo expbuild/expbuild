@@ -89,6 +89,25 @@ test('instance creation, one-time credentials, pause, resume and deletion throug
   await expect(row).toContainText('已删除');
 });
 
+test('Gradle template can be created and displays a ready client configuration', async ({ page }) => {
+  await login(page);
+  await createProject(page, 'Browser Gradle cache');
+  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
+  await page.getByRole('button', { name: '＋ 创建实例' }).click();
+  await page.getByLabel('协议模板').selectOption('gradle-http');
+  await page.getByLabel('实例名称', { exact: true }).fill('Gradle browser cache');
+  const creating = page.waitForResponse(r => r.url().endsWith('/instances') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '创建实例', exact: true }).click();
+  expect((await creating).status()).toBe(202);
+  await page.getByRole('button', { name: '已保存，关闭' }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Gradle browser cache' });
+  await expect(row).toContainText('Gradle HTTP');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+  await page.getByText('客户端连接指引').click();
+  await expect(page.getByText(/remote<HttpBuildCache>/)).toBeVisible();
+});
+
 test('two browser tabs cannot silently overwrite a stale quota revision', async ({ page }) => {
   await login(page);
   await createProject(page, 'Browser quota conflict');

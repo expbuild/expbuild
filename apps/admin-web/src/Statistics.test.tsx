@@ -71,3 +71,15 @@ it("labels WebDAV content snapshots without claiming cache hits or a hard quota"
   expect(screen.getByText("文件条目")).toBeDefined();
   expect(screen.getByText(/不代表缓存命中率/)).toBeDefined();
 });
+
+it("shows Gradle request counts without presenting GET hits as task hits", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    source: "gradle-http-status", observedAt: new Date().toISOString(),
+    usedBytes: 1024, capacityBytes: 3 * 1024 ** 3, itemCount: 7,
+    reservedBytes: null, requestCounts: { getHits: 4, getMisses: 2, putSuccess: 1, putRejected: 0 },
+  }))));
+  render(<Statistics path="/projects/p/instances/gradle" running />);
+  expect(await screen.findByText("GET 命中")).toBeDefined();
+  expect(screen.getByText("GET 缺失")).toBeDefined();
+  expect(screen.getByText(/不等同于构建任务命中率/)).toBeDefined();
+});

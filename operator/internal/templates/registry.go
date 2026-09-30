@@ -8,6 +8,7 @@ import (
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
+	"github.com/expbuild/expbuild/operator/internal/gradlecache"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	"github.com/expbuild/expbuild/operator/internal/webdav"
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +19,7 @@ import (
 // Zero GRPCPort or MetricsPort means unsupported; callers must not invent defaults.
 type Capabilities struct {
 	HTTPProtocol                 string
+	HTTPBasePath                 string
 	HTTPPort, GRPCPort           int32
 	MetricsPort                  int32
 	MetricsPortName, MetricsPath string
@@ -67,6 +69,16 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 				return []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", name, namespace)}}
 			},
 		},
+		{Name: "gradle-http", Version: "0.1.0"}: {
+			policy: "lru", render: gradlecache.Render,
+			capabilities: Capabilities{HTTPProtocol: "gradle-http", HTTPBasePath: "/cache/", HTTPPort: 8080},
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				return gradlecache.CheckProtocol(ctx, c, s, fmt.Sprintf("http://%s.%s.svc:8080", c.Name, c.Namespace))
+			},
+			endpoints: func(name, namespace string) []cachev1.Endpoint {
+				return []cachev1.Endpoint{{Protocol: "gradle-http", URL: fmt.Sprintf("http://%s.%s.svc:8080/cache/", name, namespace)}}
+			},
+		},
 	}
 	adapter, ok := adapters[ref]
 	if !ok {
@@ -76,17 +88,26 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 }
 
 // Resolve binds a compiled adapter to its administrator-approved image.
-func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage string) (Adapter, error) {
+func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradleImage string) (Adapter, error) {
 	adapter, err := lookup(ref)
 	if err != nil {
 		return Adapter{}, err
 	}
-	adapter.image = map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage}[ref.Name]
+	adapter.image = map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage, "gradle-http": gradleImage}[ref.Name]
 	adapter.statsImage = statsImage
 	if adapter.image == "" {
 		return Adapter{}, fmt.Errorf("template %s has no approved image", ref.Name)
 	}
 	return adapter, nil
+}
+
+// Policy reports the exact version's supported engine policy.
+func Policy(ref cachev1.TemplateRef) (string, error) {
+	adapter, err := lookup(ref)
+	if err != nil {
+		return "", err
+	}
+	return adapter.policy, nil
 }
 
 // Render enforces template policy and overwrites any caller-provided image.

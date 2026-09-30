@@ -8,6 +8,8 @@ test('catalog keeps deployment availability separate from existing template main
   assert.deepEqual(templateCatalog({}).map(t => t.name), ['bazel-remote']);
   assert.equal(templateEnabled('webdav-apache', {}), false);
   assert.equal(templateEnabled('webdav-apache', { webdavEnabled: true }), true);
+  assert.equal(templateEnabled('gradle-http', {}), false);
+  assert.equal(templateEnabled('gradle-http', { gradleEnabled: true }), true);
   const input = instanceInput.parse({ name: 'Retained DAV', template: 'webdav-apache', storageGiB: 3, cacheGiB: 0, desiredState: 'Suspended' });
   const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
   assert.deepEqual(desired.spec.templateRef, { name: 'webdav-apache', version: '0.2.0' });
@@ -19,10 +21,12 @@ test('catalog keeps deployment availability separate from existing template main
   assert.throws(() => templateDefinition('bazel-remote', 'latest'), /Unsupported template/);
   assert.equal(templateDefinition('webdav-apache', '0.1.0').capabilities.statistics, false);
   assert.throws(() => templateDefinition('webdav-apache', '0.3.0'), /Unsupported template/);
+  const gradle = instanceInput.parse({ name: 'Gradle', template: 'gradle-http', storageGiB: 3, cacheGiB: 1 });
+  assert.deepEqual(desiredObject(gradle, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash').spec.templateRef, { name: 'gradle-http', version: '0.1.0' });
 });
 
 test('published configuration contracts and generated instances match each registered template', () => {
-  const catalog = templateCatalog({ webdavEnabled: true, gatewayEnabled: true });
+  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true, gatewayEnabled: true });
   for (const template of catalog) {
     const input = instanceInput.parse({ name: 'CI', template: template.name, storageGiB: 3, cacheGiB: template.capabilities.capacity ? 1 : 0 });
     const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
@@ -44,7 +48,7 @@ test('published configuration contracts and generated instances match each regis
 
 test('API definitions satisfy the shared Operator template fixtures', () => {
   const fixtures = JSON.parse(readFileSync(new URL('../../../tests/contracts/templates.json', import.meta.url), 'utf8')) as Array<{name:string;version:string;enginePolicy:string;storageGiB:number;cacheGiB:number;protocols:string[];statistics:boolean}>;
-  const catalog = templateCatalog({ webdavEnabled: true });
+  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true });
   assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.filter(f => f.name !== 'webdav-apache' || f.version === '0.2.0').map(t => t.name).sort());
   for (const fixture of fixtures) {
     if (fixture.name === 'webdav-apache' && fixture.version === '0.1.0') {

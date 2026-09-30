@@ -66,6 +66,8 @@ export const templateLabel = (name: string) =>
     ? "WebDAV / HTTP"
     : name === "bazel-remote"
       ? "REAPI / Bazel HTTP"
+      : name === "gradle-http"
+        ? "Gradle HTTP"
       : name;
 export type Instance = {
   template_name: string;

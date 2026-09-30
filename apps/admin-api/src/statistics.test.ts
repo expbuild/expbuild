@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readEngineStatistics, readWebDAVStatistics } from "./statistics.js";
+import { readEngineStatistics, readWebDAVStatistics, readGradleStatistics } from "./statistics.js";
 
 test("statistics use the owned service address, authentication and explicit missing values", async () => {
   let requested = false;
@@ -88,4 +88,22 @@ test("invalid and oversized engine responses never become zero statistics", asyn
       async () => new Response(" ".repeat(65537)),
     ),
   );
+});
+
+test("Gradle statistics use owned service, authentication and applied budget", async () => {
+  const value = { sizeBytes: 7, capacityBytes: 1024, entries: 1, getHits: 2, getMisses: 1, putSuccess: 1, putRejected: 0 };
+  const fetcher: typeof fetch = async (url, options) => {
+    assert.equal(url, 'http://gradle.project.svc:8080/status');
+    assert.equal(new Headers(options?.headers).get('Authorization'), `Basic ${Buffer.from('builder:secret').toString('base64')}`);
+    assert.equal(options?.redirect, 'error');
+    return new Response(JSON.stringify(value));
+  };
+  const result = await readGradleStatistics('project', 'gradle', 'builder', 'secret', fetcher);
+  assert.equal(result.source, 'gradle-http-status');
+  assert.equal(result.usedBytes, 7);
+  assert.equal(result.itemCount, 1);
+  assert.deepEqual(result.requestCounts, { getHits: 2, getMisses: 1, putSuccess: 1, putRejected: 0 });
+  await assert.rejects(readGradleStatistics('../project', 'gradle', 'builder', 'secret', fetcher));
+  await assert.rejects(readGradleStatistics('project', 'gradle', 'builder', 'secret', async () => new Response(JSON.stringify({ ...value, sizeBytes: 2048 }))));
+  await assert.rejects(readGradleStatistics('project', 'gradle', 'builder', 'secret', async () => new Response(' '.repeat(65537))));
 });
