@@ -9,6 +9,7 @@ const projectId = "project-1";
 let projectState = "ready";
 let operations: Operation[] = [];
 let webdavEnabled = false;
+let catalogOverride: unknown[] | undefined;
 let gatewayEnabled = false;
 let webdavInstance = false;
 let policyGeneration: number | undefined;
@@ -25,6 +26,7 @@ beforeEach(() => {
   role = "admin";
   projectState = "ready";
   webdavEnabled = false;
+  catalogOverride = undefined;
   gatewayEnabled = false;
   webdavInstance = false;
   policyGeneration = undefined;
@@ -37,7 +39,7 @@ beforeEach(() => {
       requests.push({ path, options });
       if (path === "/v1/templates")
         return response({
-          items: [
+          items: catalogOverride ?? [
             {
               name: "bazel-remote",
               version: "0.1.0",
@@ -172,6 +174,49 @@ describe("management console", () => {
     },
   );
 
+  it("uses advertised capabilities and schema for a new template name", async () => {
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    catalogOverride = [{ name: "custom-cache", version: "1.0.0", capabilities: { capacity: true, lru: true, ttl: false }, exposures: ["ClusterInternal"], inputSchema: { properties: { cpuMillis: { minimum: 250, maximum: 2000 } } } }];
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await screen.findByRole("option", { name: "custom-cache" });
+    expect(screen.getByLabelText("缓存容量（GiB）")).toBeTruthy();
+    const cpu = screen.getByLabelText("CPU（毫核）") as HTMLInputElement;
+    expect(cpu.min).toBe("250");
+    expect(cpu.max).toBe("2000");
+    await user.type(screen.getByLabelText("实例名称"), "Custom");
+    await user.click(screen.getByRole("button", { name: "创建实例" }));
+    await screen.findByDisplayValue("one-time-password");
+    const sent = requests.find(r => r.options.method === "POST")!;
+    expect(JSON.parse(sent.options.body as string).template).toBe("custom-cache");
+  });
+  it("normalizes the initial budget for templates without capacity support", async () => {
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    catalogOverride = [{ name: "custom-files", version: "1.0.0", capabilities: { capacity: false }, exposures: ["ClusterInternal"] }];
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await screen.findByRole("option", { name: "custom-files" });
+    expect(screen.queryByLabelText("缓存容量（GiB）")).toBeNull();
+    await user.type(screen.getByLabelText("实例名称"), "Files");
+    await user.click(screen.getByRole("button", { name: "创建实例" }));
+    await screen.findByDisplayValue("one-time-password");
+    expect(JSON.parse(requests.find(r => r.options.method === "POST")!.options.body as string).cacheGiB).toBe(0);
+  });
+  it("clears unsupported Gateway exposure when switching templates", async () => {
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    webdavEnabled = true;
+    gatewayEnabled = true;
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await screen.findByRole("option", { name: "WebDAV / HTTP" });
+    await user.selectOptions(screen.getByLabelText("访问方式"), "Gateway");
+    await user.selectOptions(screen.getByLabelText("协议模板"), "webdav-apache");
+    expect((screen.getByLabelText("访问方式") as HTMLSelectElement).value).toBe("ClusterInternal");
+    expect(screen.queryByRole("option", { name: "独立域名（HTTPS / gRPC TLS）" })).toBeNull();
+  });
   it("creates WebDAV only from the enabled catalog without a cache budget", async () => {
     webdavEnabled = true;
     sessionStorage.setItem("expbuild-csrf", "csrf");

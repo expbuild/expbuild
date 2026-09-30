@@ -45,13 +45,15 @@ export type Project = {
   state: string;
   role?: string;
 };
-export type TemplateName = "bazel-remote" | "webdav-apache";
+export type TemplateName = string;
 export type Template = {
   name: TemplateName;
   version: string;
   protocols: string[];
   exposures?: ("ClusterInternal" | "Gateway")[];
+  inputSchema?: { properties?: Record<string, { minimum?: number; maximum?: number }> };
   capabilities: {
+    policyApplyMode?: "restart" | "unsupported";
     capacity: boolean;
     statistics: boolean;
     lru: boolean;

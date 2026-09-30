@@ -628,37 +628,38 @@ function InstanceForm({
     void api<{ items: Template[] }>("/templates", { signal: abort.signal })
       .then((value) => {
         if (abort.signal.aborted) return;
-        const supported = value.items.filter((t) =>
-          ["bazel-remote", "webdav-apache"].includes(t.name),
-        );
+        const supported = value.items;
         setTemplates(supported);
         if (baseline) return;
         if (!supported.length) setCatalogError("当前没有可创建的模板。");
         else
-          setInput((previous) =>
-            supported.some((t) => t.name === previous.template)
-              ? previous
-              : {
-                  ...previous,
-                  template: supported[0].name,
-                  cacheGiB: supported[0].capabilities.capacity ? 16 : 0,
-                },
-          );
+          setInput((previous) => {
+            const selected = supported.find(t => t.name === previous.template) ?? supported[0];
+            return {
+              ...previous,
+              template: selected.name,
+              exposure: selected.exposures?.includes(previous.exposure) ? previous.exposure : "ClusterInternal",
+              cacheGiB: selected.capabilities.capacity ? previous.cacheGiB : 0,
+            };
+          });
       })
       .catch((e) => {
         if (!abort.signal.aborted) setCatalogError(message(e));
       });
     return () => abort.abort();
   }, [baseline]);
-  const canSubmit =
-    !!baseline || templates.some((t) => t.name === input.template);
+  const selectedTemplate = templates.find(t => t.name === input.template && (!spec || t.version === spec.templateRef.version));
+  // Disabled templates remain editable; preserve the existing engine budget
+  // instead of inferring capabilities from a possibly newer catalog version.
+  const supportsCapacity = selectedTemplate?.capabilities.capacity ?? (!!spec && spec.eviction.maxCacheGiB > 0);
+  const canSubmit = !!baseline || !!selectedTemplate;
   const last = useRef({ body: "", key: "" });
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
     if (!canSubmit) return;
     if (
-      input.template === "bazel-remote" &&
+      supportsCapacity &&
       input.cacheGiB >= input.storageGiB
     ) {
       setError("缓存容量必须小于存储卷容量，以预留运行空间。");
@@ -706,6 +707,7 @@ function InstanceForm({
               setInput({
                 ...input,
                 template: selected.name,
+                exposure: selected.exposures?.includes(input.exposure) ? input.exposure : "ClusterInternal",
                 cacheGiB: selected.capabilities.capacity
                   ? Math.min(16, input.storageGiB - 1)
                   : 0,
@@ -750,7 +752,7 @@ function InstanceForm({
           ] as const
         )
           .filter(
-            ([key]) => key !== "cacheGiB" || input.template === "bazel-remote",
+            ([key]) => key !== "cacheGiB" || supportsCapacity,
           )
           .map(([key, label, min, max]) => (
             <label key={key}>
@@ -761,9 +763,9 @@ function InstanceForm({
                 min={
                   key === "storageGiB" && spec
                     ? parseInt(spec.storage.capacity)
-                    : min
+                    : selectedTemplate?.inputSchema?.properties?.[key]?.minimum ?? min
                 }
-                max={max}
+                max={selectedTemplate?.inputSchema?.properties?.[key]?.maximum ?? max}
                 step="1"
                 value={Number.isNaN(input[key]) ? "" : input[key]}
                 onChange={(e) =>
@@ -773,9 +775,11 @@ function InstanceForm({
             </label>
           ))}
         <p className="muted">
-          {input.template === "bazel-remote"
-            ? "引擎按 LRU 自动淘汰较少使用的数据。容量调整需要重启实例，期间可能短暂不可用；以策略生效状态为准。暂不支持 TTL。"
-            : "此模板不支持自动淘汰或 TTL。存储卷容量不是自动清理阈值，请预留空间并管理文件。"}
+          {supportsCapacity
+            ? "缓存预算必须小于存储卷容量。配置调整可能重启实例，以策略生效状态为准。"
+            : "此模板未提供引擎容量预算。存储卷容量不是自动清理阈值，请预留空间并管理文件。"}
+          {selectedTemplate?.capabilities.lru && " 引擎支持 LRU 淘汰。"}
+          {selectedTemplate && !selectedTemplate.capabilities.ttl && " 暂不支持 TTL。"}
         </p>
         <label>
           运行状态
