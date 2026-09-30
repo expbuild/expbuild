@@ -2,11 +2,15 @@ package templates
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -90,5 +94,44 @@ func TestProtocolLookupRejectsUnknownBeforeNetwork(t *testing.T) {
 		if err == nil || err.Error() != "probe credentials are missing" {
 			t.Fatalf("registered probe not invoked for %s: %v", name, err)
 		}
+	}
+}
+
+func TestSharedAPITemplateFixtures(t *testing.T) {
+	data, err := os.ReadFile("../../../tests/contracts/templates.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name, Version, EnginePolicy string
+		StorageGiB, CacheGiB        int64
+		EndpointProtocols           []string
+	}
+	if err := json.Unmarshal(data, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	if len(fixtures) == 0 {
+		t.Fatal("no shared fixtures")
+	}
+	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
+	for _, fixture := range fixtures {
+		t.Run(fixture.Name, func(t *testing.T) {
+			adapter, err := Resolve(cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}, image, image)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resources := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}
+			c := instance.Config{Name: "contract", Namespace: "project", InstanceID: "instance", ProjectID: "project", StorageClass: "standard", Capacity: fmt.Sprintf("%dGi", fixture.StorageGiB), MaxCacheGiB: fixture.CacheGiB, CredentialsSecret: "auth", DesiredState: "Running", Resources: corev1.ResourceRequirements{Requests: resources, Limits: resources}}
+			if _, err := adapter.Render(c, fixture.EnginePolicy); err != nil {
+				t.Fatal(err)
+			}
+			var protocols []string
+			for _, endpoint := range adapter.Endpoints(c.Name, c.Namespace) {
+				protocols = append(protocols, endpoint.Protocol)
+			}
+			if !reflect.DeepEqual(protocols, fixture.EndpointProtocols) {
+				t.Fatalf("endpoint contract: %v != %v", protocols, fixture.EndpointProtocols)
+			}
+		})
 	}
 }

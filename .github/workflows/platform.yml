@@ -1,9 +1,9 @@
 name: Kubernetes platform
 on:
   push:
-    paths: ['operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
+    paths: ['tests/contracts/**', 'operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
   pull_request:
-    paths: ['operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
+    paths: ['tests/contracts/**', 'operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
 permissions:
   contents: read
 jobs:

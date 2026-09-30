@@ -1,9 +1,9 @@
 name: Management API
 on:
   push:
-    paths: ['apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
   pull_request:
-    paths: ['apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
 permissions:
   contents: read
 jobs:

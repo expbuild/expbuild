@@ -1,3 +1,4 @@
+import { templateCatalog, templateEnabled } from './template-catalog.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
@@ -11,8 +12,6 @@ import { seal } from "./secrets.js";
 import {
   desiredObject,
   instanceInput,
-  bazelInput,
-  webdavInput,
   revision,
   type CacheObject,
 } from "./instance-contract.js";
@@ -165,23 +164,7 @@ export async function registerInstanceRoutes(
 
   app.get("/v1/templates", async (request) => {
     await auth.user(request);
-    return {
-      items: [
-        {
-          name: "bazel-remote",
-          version: "0.1.0",
-          exposures: options.gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"],
-          protocols: ["reapi", "bazel-http"],
-          capabilities: { capacity: true, statistics: true, lru: true, ttl: false, replicas: 1, policyApplyMode: "restart", policyCondition: "PolicyApplied" },
-          inputSchema: z.toJSONSchema(bazelInput, { io: "input" }),
-        },
-        ...(options.webdavEnabled ? [{
-          name: "webdav-apache", version: "0.1.0", exposures: options.gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"], protocols: ["webdav", "http"],
-          capabilities: { capacity: false, statistics: false, lru: false, ttl: false, replicas: 1, policyApplyMode: "unsupported", policyCondition: "PolicyApplied" },
-          inputSchema: z.toJSONSchema(webdavInput, { io: "input" }),
-        }] : []),
-      ],
-    };
+    return { items: templateCatalog(options) };
   });
   app.get("/v1/projects/:projectId/instances", async (request) => {
     const { projectId } = projectParams.parse(request.params);
@@ -291,8 +274,8 @@ export async function registerInstanceRoutes(
       );
       if (existing) return { operation: existing, replayed: true };
       if (input.exposure === "Gateway" && !options.gatewayEnabled) throw new HttpError(409, "Gateway exposure is not enabled");
-      if (input.template === "webdav-apache" && !options.webdavEnabled)
-        throw new HttpError(409, "WebDAV template is not enabled");
+      if (!templateEnabled(input.template, options))
+        throw new HttpError(409, "Template is not enabled");
       if (project.state !== "ready")
         throw new HttpError(409, "Project initialization is not complete");
       const desired = desiredObject(
