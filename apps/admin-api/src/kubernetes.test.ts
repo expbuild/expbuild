@@ -133,3 +133,58 @@ test('retained volume cleanup fences identity, ownership, active instances and e
     assert.equal(deletes.length, 1, 'missing volume replay must not delete anything else');
   } finally { await fixture.close(); }
 });
+
+test('project ResourceQuota reconciles quantities, rejects foreign ownership and fences writes', async () => {
+  const limits = {instances:2,storageGiB:4,cpuMillis:1000,memoryMiB:1024};
+  let current: any = null, foreignNamespace = false;
+  const writes: {method:string;body:any}[] = [];
+  const fixture = await endpoint(async (request,response)=>{
+    let raw=''; for await(const chunk of request) raw+=chunk;
+    const body=raw?JSON.parse(raw):undefined;
+    response.setHeader('Content-Type','application/json');
+    if(request.url==='/api/v1/namespaces/project-test') {
+      response.end(JSON.stringify({metadata:{labels:{'app.kubernetes.io/managed-by':'expbuild','cache.expbuild.io/project-id':foreignNamespace?'foreign':'project'}}})); return;
+    }
+    if(request.method==='GET') {
+      if(!current) { response.statusCode=404; response.end(JSON.stringify({code:404})); }
+      else response.end(JSON.stringify(current));
+      return;
+    }
+    writes.push({method:request.method!,body});
+    if(request.method==='DELETE') { current=null; response.end(JSON.stringify({status:'Success'})); return; }
+    current={...body,metadata:{...body.metadata,uid:'quota-uid',resourceVersion:'9'}};
+    response.end(JSON.stringify(current));
+  });
+  const allNull={instances:null,storageGiB:null,cpuMillis:null,memoryMiB:null};
+  try {
+    const kube = new KubernetesClient(fixture.config);
+    assert.equal(await kube.ensureProjectQuota('project-test','project','1',limits),false);
+    assert.equal(writes.length,1);
+    assert.deepEqual(current.spec.hard,{'count/cacheinstances.cache.expbuild.io':'2','requests.storage':'4Gi','requests.cpu':'1000m','limits.cpu':'1000m','requests.memory':'1024Mi','limits.memory':'1024Mi'});
+    // Kubernetes canonicalizes equivalent quantities. Reconciliation must be idle.
+    current.spec.hard['requests.cpu']='1'; current.spec.hard['limits.memory']='1Gi';
+    current.status={hard:structuredClone(current.spec.hard),used:Object.fromEntries(Object.keys(current.spec.hard).map(key=>[key,'0']))};
+    assert.equal(await kube.ensureProjectQuota('project-test','project','1',limits),true);
+    assert.equal(writes.length,1,'equivalent quantities must not cause writes');
+    delete current.status.used['requests.storage'];
+    assert.equal(await kube.ensureProjectQuota('project-test','project','1',limits),false,'incomplete accounting is not ready');
+    assert.equal(await kube.ensureProjectQuota('project-test','project','2',{...limits,cpuMillis:2000}),false);
+    assert.equal(writes[1].method,'PUT');
+    assert.equal(writes[1].body.metadata.uid,'quota-uid');
+    assert.equal(writes[1].body.metadata.resourceVersion,'9');
+    await assert.rejects(kube.ensureProjectQuota('project-test','project','1',limits), /quota_revision_conflict/);
+    current.metadata.labels['cache.expbuild.io/project-id']='foreign';
+    await assert.rejects(kube.ensureProjectQuota('project-test','project','2',allNull), /quota_ownership_conflict/);
+    current.metadata.labels['cache.expbuild.io/project-id']='project';
+    current.spec.scopes=['BestEffort'];
+    await assert.rejects(kube.ensureProjectQuota('project-test','project','2',allNull), /quota_scope_conflict/);
+    delete current.spec.scopes;
+    foreignNamespace=true;
+    await assert.rejects(kube.ensureProjectQuota('project-test','project','2',limits), /namespace_ownership_conflict/);
+    foreignNamespace=false;
+    assert.equal(await kube.ensureProjectQuota('project-test','project','3',allNull),false);
+    assert.deepEqual(writes.at(-1)!.body.preconditions,{uid:'quota-uid',resourceVersion:'9'});
+    assert.equal(await kube.ensureProjectQuota('project-test','project','3',allNull),true);
+    assert.equal(writes.length,3,'conflicts must not mutate resources');
+  } finally { await fixture.close(); }
+});

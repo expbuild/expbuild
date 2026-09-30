@@ -111,6 +111,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 initial_quota = api(quota_path)
                 quota_limits = {'instances': 1, 'storageGiB': 3, 'cpuMillis': 1000, 'memoryMiB': 1024}
                 api(quota_path, 'PUT', quota_limits, {'If-Match': initial_quota['revision']})
+                wait(lambda: api(quota_path)['synchronization']['state'] == 'Applied', 'Project ResourceQuota synchronized with Kubernetes accounting')
                 spec = {'name': 'WebDAV via API', 'template': 'webdav-apache', 'storageGiB': 2, 'cacheGiB': 0, 'cpuMillis': 100, 'memoryMiB': 128, 'deletionPolicy': 'Delete', 'desiredState': 'Running'}
                 if gateway: spec['exposure'] = 'Gateway'
                 created = submit(f'/projects/{pid}/instances', data=spec)
@@ -119,6 +120,20 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 rejected = api(f'/projects/{pid}/instances', 'POST', spec, {'Idempotency-Key': str(uuid.uuid4())}, 409)
                 assert rejected['error'] == 'Project quota exceeded: instances'
                 assert len(json.loads(kubectl('-n', ns, 'get', 'cacheinstances', '-o', 'json'))['items']) == 1
+                def quota_denied(body):
+                    response = subprocess.run(['kubectl', '--kubeconfig', config, '--context', 'kind-' + name, 'create', '--dry-run=server', '-f', '-'], input=json.dumps(body), text=True, capture_output=True, timeout=30)
+                    assert response.returncode != 0 and 'exceeded quota' in response.stderr, 'Expected quota admission denial: ' + response.stderr[:1024]
+                extra_cr = json.loads(kubectl('-n', ns, 'get', 'cacheinstances', '-o', 'json'))['items'][0]
+                extra_id = str(uuid.uuid4())
+                extra_cr['metadata'] = {'name': 'c-' + extra_id, 'namespace': ns}
+                extra_cr['spec']['instanceId'] = extra_id
+                extra_cr.pop('status', None)
+                quota_denied(extra_cr)
+                quota_denied({'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': {'name': 'quota-storage-probe', 'namespace': ns}, 'spec': {'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': '4Gi'}}}})
+                for resource in ['cpu', 'memory']:
+                    resources = {'cpu': '2000m' if resource == 'cpu' else '10m', 'memory': '2Gi' if resource == 'memory' else '16Mi'}
+                    quota_denied({'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': 'quota-' + resource + '-probe', 'namespace': ns}, 'spec': {'containers': [{'name': 'probe', 'image': 'expbuild/admin-api:test', 'resources': {'requests': resources, 'limits': resources}}]}})
+                print('Kubernetes admission rejected direct CR, storage, CPU and memory quota bypass attempts', flush=True)
                 iid = created['operation']['instance_id']
                 path = f'/projects/{pid}/instances/{iid}'
                 resource = 'c-' + iid
@@ -245,6 +260,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     try: print(kubectl(*args), flush=True)
                     except Exception: pass
             if gateway:
+                gateway.diagnose_transport()
                 for args in [('get', 'gateway,httproute,grpcroute', '-A', '-o', 'yaml'), ('-n', 'edge', 'logs', 'deployment/envoy-gateway', '--tail=80')]:
                     try: print(kubectl(*args), flush=True)
                     except Exception: pass

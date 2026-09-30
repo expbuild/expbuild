@@ -38,6 +38,7 @@ export class OperationWorker {
     private pool: pg.Pool,
     private kube: KubernetesPort,
     private key: Buffer,
+    private quotaGate?: (projectId: string) => Promise<boolean>,
   ) {}
 
   async tick(): Promise<boolean> {
@@ -149,6 +150,11 @@ export class OperationWorker {
     operation.target_generation = String(object.metadata.generation);
   }
   private async execute(operation: Operation) {
+    if (this.quotaGate && ['instance.create','instance.update','instance.rotate'].includes(operation.kind) &&
+        !(await this.quotaGate(operation.project_id))) {
+      await this.defer(operation, 'project_quota_not_ready');
+      return;
+    }
     if (operation.kind === "project.create") {
       if (!operation.request.namespace)
         throw new OperationError("invalid_operation");

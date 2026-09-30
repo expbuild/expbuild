@@ -7,6 +7,7 @@ import socket
 import ssl
 import subprocess
 import time
+import tempfile
 from cluster_lifecycle import run, wait
 
 VERSION = 'v1.8.5'
@@ -21,6 +22,7 @@ class GatewayFixture:
         self.root, self.config, self.context = pathlib.Path(directory), config, context
         self.process = None
         self.port = None
+        self.transport_logs = []
 
     @property
     def values(self):
@@ -52,7 +54,9 @@ class GatewayFixture:
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             self.port = sock.getsockname()[1]
-        self.process = subprocess.Popen(['kubectl', '--kubeconfig', self.config, '--context', self.context, '-n', 'edge', 'port-forward', 'service/' + service, f'{self.port}:443', '--address=127.0.0.1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with tempfile.NamedTemporaryFile(prefix='gateway-forward-', suffix='.log', dir=self.root, delete=False) as log:
+            self.transport_logs.append(pathlib.Path(log.name))
+            self.process = subprocess.Popen(['kubectl', '--kubeconfig', self.config, '--context', self.context, '-n', 'edge', 'port-forward', 'service/' + service, f'{self.port}:443', '--address=127.0.0.1'], stdout=subprocess.DEVNULL, stderr=log)
         def connected():
             with socket.create_connection(('127.0.0.1', self.port), timeout=2): return True
         wait(connected, 'TLS proxy forwarding established')
@@ -115,6 +119,15 @@ class GatewayFixture:
         status, body, _ = self.request(host, '/dav/blob', 'DELETE', headers={**auth, 'If': f'<https://{host}/dav/blob> ({token})'})
         assert status == 204, f'Locked WebDAV DELETE: {status} {body[:2048]!r}'
         print('Verified TLS hostname/trust, authentication, 16 MiB WebDAV transfer and locks', flush=True)
+
+    def diagnose_transport(self):
+        print('Gateway forwarder exit status:', None if self.process is None else self.process.poll(), flush=True)
+        # kubectl forwarding diagnostics contain transport errors, not HTTP
+        # payloads or credentials. Read a bounded tail of the last two sessions.
+        for path in self.transport_logs[-2:]:
+            with path.open('rb') as stream:
+                stream.seek(max(0, path.stat().st_size - 8192))
+                print(stream.read().decode('utf8', errors='replace'), flush=True)
 
     def close(self):
         if self.process:

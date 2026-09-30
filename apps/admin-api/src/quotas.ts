@@ -20,7 +20,7 @@ type Resources = { storageGiB: number; cpuMillis: number; memoryMiB: number };
 export async function quotaSnapshot(client: pg.PoolClient, projectId: string) {
   const project = (
     await client.query(
-      "SELECT quota_limits,quota_revision FROM projects WHERE id=$1",
+      "SELECT quota_limits,quota_revision,quota_observed_revision,quota_checked_at,quota_sync_error FROM projects WHERE id=$1",
       [projectId],
     )
   ).rows[0];
@@ -39,6 +39,12 @@ export async function quotaSnapshot(client: pg.PoolClient, projectId: string) {
     )
   ).rows[0];
   return {
+    synchronization: {
+      state: project.quota_sync_error ? 'Failed' : String(project.quota_observed_revision) === String(project.quota_revision) ? 'Applied' : 'Pending',
+      observedRevision: project.quota_observed_revision === null ? null : String(project.quota_observed_revision),
+      checkedAt: project.quota_checked_at?.toISOString() ?? null,
+      error: project.quota_sync_error,
+    },
     limits: quotaInput.parse(project.quota_limits),
     revision: String(project.quota_revision),
     reserved: {

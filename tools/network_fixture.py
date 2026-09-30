@@ -40,7 +40,7 @@ class NetworkFixture:
         self.apply({'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'namespace': namespace, 'name': name, 'labels': labels}, 'spec': {
             'automountServiceAccountToken': False,
             'securityContext': {'runAsNonRoot': True, 'runAsUser': 1000, 'runAsGroup': 1000, 'seccompProfile': {'type': 'RuntimeDefault'}},
-            'containers': [{'name': 'probe', 'image': 'expbuild/admin-api:test', 'imagePullPolicy': 'Never', 'command': ['node', '-e', 'setInterval(() => {}, 60000)'],
+            'containers': [{'resources': {'requests': {'cpu': '20m', 'memory': '64Mi'}, 'limits': {'cpu': '20m', 'memory': '64Mi'}}, 'name': 'probe', 'image': 'expbuild/admin-api:test', 'imagePullPolicy': 'Never', 'command': ['node', '-e', 'setInterval(() => {}, 60000)'],
                             'securityContext': {'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}, 'readOnlyRootFilesystem': True}}],
         }})
         self.kubectl('-n', namespace, 'wait', '--for=condition=Ready', 'pod/'+name, '--timeout=120s')

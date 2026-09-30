@@ -14,6 +14,12 @@ type Snapshot = {
   reserved: Record<Key, number>;
   unknownReservations: number;
   revision: string;
+  synchronization?: {
+    state: "Pending" | "Applied" | "Failed";
+    observedRevision: string | null;
+    checkedAt: string | null;
+    error: string | null;
+  };
 };
 const keys = Object.keys(fields) as Key[];
 export function ProjectQuota({
@@ -126,6 +132,23 @@ export function ProjectQuota({
           {saved && <p role="status">配额已保存</p>}
           {snapshot && (
             <>
+              <p role="status">
+                集群硬配额：
+                {snapshot.synchronization?.state === "Applied" &&
+                snapshot.synchronization.observedRevision === snapshot.revision
+                  ? "已同步"
+                  : snapshot.synchronization?.state === "Failed"
+                    ? "同步失败，后台会重试"
+                    : "待同步"}
+              </p>
+              {snapshot.synchronization?.checkedAt && (
+                <p className="muted">
+                  最近核对：
+                  {new Date(
+                    snapshot.synchronization.checkedAt,
+                  ).toLocaleString()}
+                </p>
+              )}
               {snapshot.unknownReservations > 0 && (
                 <p role="alert">
                   有 {snapshot.unknownReservations}{" "}

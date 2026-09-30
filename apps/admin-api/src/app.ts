@@ -209,7 +209,7 @@ export async function buildApp(pool: pg.Pool, options: { origin: string; secureC
       const current = await quotaSnapshot(client, projectId);
       if (current.revision !== expected) throw new HttpError(409, 'Project quota changed');
       checkQuota(limits, current.reserved, current.unknownReservations);
-      await client.query('UPDATE projects SET quota_limits=$2,quota_revision=quota_revision+1 WHERE id=$1', [projectId, JSON.stringify(limits)]);
+      await client.query('UPDATE projects SET quota_limits=$2,quota_revision=quota_revision+1,quota_observed_revision=NULL,quota_sync_error=NULL,quota_next_sync=now() WHERE id=$1', [projectId, JSON.stringify(limits)]);
       await client.query("INSERT INTO audit_events(id,actor_id,project_id,action,details) VALUES($1,$2,$3,'quota.update',$4)", [randomUUID(), actor.id, projectId, JSON.stringify({ before: current.limits, after: limits })]);
       return quotaSnapshot(client, projectId);
     });

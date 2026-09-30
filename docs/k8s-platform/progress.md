@@ -179,3 +179,7 @@ Cilium 首轮结果（提交 a83b85d）：[隔离集群 CI](https://github.com/e
 提交 bd49142 的[真实引擎与 Operator CI](https://github.com/expbuild/expbuild/actions/runs/36675328802)通过，固定 Bazel 客户端 HTTP/REAPI 构建及禁用缓存对照已在 CI 执行。镜像构建通过；完整 Cilium 集群任务仍待最终结果。
 
 Cilium 第二轮（提交 bd49142）：[集群 CI](https://github.com/expbuild/expbuild/actions/runs/36675328813)中内部、WebDAV、Gateway 成功；隔离模式再次通过完整流量矩阵和 REAPI TLS，但 HTTPS GET 断线重试后本机转发端口拒绝连接。测试传输层新增进程句柄检查，仅在 kubectl 已退出时重建转发，保留三次尝试上限、证书验证及精确 HTTP 状态断言。单元测试覆盖已退出/仍存活进程、重试上限、写入和证书错误不重试；真实集群结果待新 CI。
+
+Kubernetes 硬配额已接入：后台同步 namespace ResourceQuota，观察 spec/status.hard/used 的当前版本，实例写操作等待配额就绪，清理操作不被同步门槛阻断；归属、scope、数量等价与 UID/resourceVersion 保护已覆盖。管理界面区分保存与同步。真实 PostgreSQL 多副本/失败恢复/操作等待测试、SDK 请求契约、32 项界面测试和 envtest 最小权限检查通过；真实集群准入拒绝验收已加入，待 CI。
+
+Cilium 第三轮（提交 90a77c5）：[集群回归](https://github.com/expbuild/expbuild/actions/runs/36676376014)的内部、WebDAV、Gateway 成功。隔离流量矩阵和 REAPI TLS 通过后，HTTP CAS PUT 遭遇 RemoteDisconnected；写操作没有被重试，整项仍失败。新增私有临时文件保留端口转发进程的有限日志，下一轮失败将输出退出状态与有界错误尾部，以查明传输中断根因。没有将这一结果记为完整 Cilium 验收通过。

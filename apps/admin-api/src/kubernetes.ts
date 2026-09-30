@@ -1,4 +1,6 @@
-import { KubeConfig, CoreV1Api, CustomObjectsApi, NetworkingV1Api, createConfiguration, ServerConfiguration, type V1Secret } from '@kubernetes/client-node';
+import { quantityToScalar } from '@kubernetes/client-node/dist/util.js';
+import type { Quota } from "./quotas.js";
+import { KubeConfig, CoreV1Api, CustomObjectsApi, NetworkingV1Api, createConfiguration, ServerConfiguration, type V1Secret, type V1ResourceQuota } from '@kubernetes/client-node';
 import { isDeepStrictEqual } from 'node:util';
 import { labels, revision, type CacheObject } from './instance-contract.js';
 import { OperationError } from './errors.js';
@@ -71,6 +73,45 @@ export class KubernetesClient implements KubernetesPort {
       if (current.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || current.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('policy_ownership_conflict');
       if (current.metadata.deletionTimestamp || !isDeepStrictEqual(JSON.parse(JSON.stringify(current.spec ?? null)), JSON.parse(JSON.stringify(access.spec)))) throw new OperationError('client_policy_configuration_conflict');
     }
+  }
+  async ensureProjectQuota(namespace: string, projectId: string, desiredRevision: string, limits: Quota): Promise<boolean> {
+    const ns = await this.core.readNamespace({name: namespace});
+    if (ns.metadata?.deletionTimestamp || ns.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || ns.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('namespace_ownership_conflict');
+    const name = 'expbuild-resources', revisionKey = 'cache.expbuild.io/quota-revision';
+    const hard: Record<string,string> = {};
+    if (limits.instances !== null) hard['count/cacheinstances.cache.expbuild.io'] = String(limits.instances);
+    if (limits.storageGiB !== null) hard['requests.storage'] = `${limits.storageGiB}Gi`;
+    if (limits.cpuMillis !== null) { hard['requests.cpu'] = `${limits.cpuMillis}m`; hard['limits.cpu'] = `${limits.cpuMillis}m`; }
+    if (limits.memoryMiB !== null) { hard['requests.memory'] = `${limits.memoryMiB}Mi`; hard['limits.memory'] = `${limits.memoryMiB}Mi`; }
+    let current: V1ResourceQuota | null;
+    try { current = await this.core.readNamespacedResourceQuota({namespace,name}); }
+    catch(error) { if(statusCode(error) !== 404) throw error; current = null; }
+    if (current) {
+      const meta = current.metadata;
+      if (!meta?.uid || !meta.resourceVersion || meta.ownerReferences?.length || meta.labels?.['cache.expbuild.io/project-id'] !== projectId || meta.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('quota_ownership_conflict');
+      if (current.spec?.scopes?.length || current.spec?.scopeSelector) throw new OperationError('quota_scope_conflict');
+      if (meta.deletionTimestamp) return false;
+      const previous = meta.annotations?.[revisionKey];
+      if (previous && (!/^[1-9][0-9]*$/.test(previous) || BigInt(previous) > BigInt(desiredRevision))) throw new OperationError('quota_revision_conflict');
+    }
+    if (Object.keys(hard).length === 0) {
+      if (!current) return true;
+      await this.core.deleteNamespacedResourceQuota({namespace,name,body:{preconditions:{uid:current.metadata!.uid,resourceVersion:current.metadata!.resourceVersion}}});
+      return false; // Confirm absence on the next observation.
+    }
+    const equal = (actual: Record<string,string> | undefined) => {
+      if (!actual || Object.keys(actual).length !== Object.keys(hard).length) return false;
+      try { return Object.entries(hard).every(([key,value]) => actual[key] !== undefined && quantityToScalar(actual[key]).toString() === quantityToScalar(value).toString()); }
+      catch { return false; }
+    };
+    const body: V1ResourceQuota = {apiVersion:'v1',kind:'ResourceQuota',metadata:{name,namespace,labels:labels(projectId),annotations:{[revisionKey]:desiredRevision}},spec:{hard}};
+    if (!current) { await this.core.createNamespacedResourceQuota({namespace,body}); return false; }
+    if (!equal(current.spec?.hard) || current.metadata?.annotations?.[revisionKey] !== desiredRevision) {
+      body.metadata = {...current.metadata, annotations:{...current.metadata?.annotations,[revisionKey]:desiredRevision}};
+      await this.core.replaceNamespacedResourceQuota({namespace,name,body});
+      return false;
+    }
+    return equal(current.status?.hard) && Object.keys(hard).every(key => current!.status?.used?.[key] !== undefined);
   }
   async ensureCredentials(namespace: string, name: string, projectId: string, instanceId: string, operationId: string, data: CredentialData) {
     const body: V1Secret = { metadata: { name, namespace, labels: labels(projectId, instanceId), annotations: { [opKey]: operationId } }, type: 'Opaque', immutable: true, data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, Buffer.from(v).toString('base64')])) };
