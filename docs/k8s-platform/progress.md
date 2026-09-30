@@ -177,3 +177,5 @@ Cilium 首轮结果（提交 a83b85d）：[隔离集群 CI](https://github.com/e
 项目配额第一阶段：新增实例数、存储、CPU、内存四项额度，平台管理员可调整，项目成员可查看；请求受理与预留在同一事务中，worker 完成后按生命周期释放，失败资源和保留卷不提前释放。升级按历史配置最大值回填，未知预留不当零。已补配额界面、OpenAPI、审计与版本保护；本地 PostgreSQL 并发/迁移测试、原 worker 生命周期配额断言及界面组件测试通过。真实 Helm/API 场景已增加超额拒绝、暂停预留和保留卷清理释放断言，待 CI 验证。当前是管理 API 限额，Kubernetes ResourceQuota 和资源对账尚待接入，见 [配额说明](quotas.md)。
 
 提交 bd49142 的[真实引擎与 Operator CI](https://github.com/expbuild/expbuild/actions/runs/36675328802)通过，固定 Bazel 客户端 HTTP/REAPI 构建及禁用缓存对照已在 CI 执行。镜像构建通过；完整 Cilium 集群任务仍待最终结果。
+
+Cilium 第二轮（提交 bd49142）：[集群 CI](https://github.com/expbuild/expbuild/actions/runs/36675328813)中内部、WebDAV、Gateway 成功；隔离模式再次通过完整流量矩阵和 REAPI TLS，但 HTTPS GET 断线重试后本机转发端口拒绝连接。测试传输层新增进程句柄检查，仅在 kubectl 已退出时重建转发，保留三次尝试上限、证书验证及精确 HTTP 状态断言。单元测试覆盖已退出/仍存活进程、重试上限、写入和证书错误不重试；真实集群结果待新 CI。

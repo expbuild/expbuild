@@ -59,10 +59,9 @@ class GatewayFixture:
 
     def request(self, host, path='/', method='GET', body=None, headers=None, trusted=True):
         context = ssl.create_default_context(cafile=str(self.root / 'ca.crt')) if trusted else ssl.create_default_context()
-        port = self.port
         class LocalTLSConnection(http.client.HTTPConnection):
             def connect(connection):
-                connection.sock = context.wrap_socket(socket.create_connection(('127.0.0.1', port), timeout=30), server_hostname=host)
+                connection.sock = context.wrap_socket(socket.create_connection(('127.0.0.1', self.port), timeout=30), server_hostname=host)
         # Read-only probes may encounter a transport disconnect during rollout.
         # Never retry writes, TLS verification failures, or an HTTP response:
         # callers must still assert the exact authorization/status outcome.
@@ -73,11 +72,17 @@ class GatewayFixture:
                 connection.request(method, path, body=body, headers=headers or {})
                 response = connection.getresponse()
                 return response.status, response.read(), dict(response.getheaders())
-            except (http.client.RemoteDisconnected, ConnectionResetError):
+            except (http.client.RemoteDisconnected, ConnectionResetError, ConnectionRefusedError):
                 if attempt + 1 == attempts:
                     raise
                 print('TLS GET transport disconnected; retrying read-only probe', flush=True)
                 time.sleep(1)
+                # Inspect the actual handle; a live forwarder is never restarted
+                # just because observing a response failed.
+                if self.process is not None and self.process.poll() is not None:
+                    print('Gateway port-forward exited; recreating the test transport', flush=True)
+                    self.close()
+                    self.forward()
             finally:
                 connection.close()
 
