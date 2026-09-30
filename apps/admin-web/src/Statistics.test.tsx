@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { Statistics } from "./Statistics";
 afterEach(() => {
   cleanup();
@@ -26,4 +26,36 @@ it("does not scrape a suspended instance", () => {
   render(<Statistics path="/projects/p/instances/i" running={false} />);
   expect(screen.getByText("实例未运行，实时统计不可用。")).toBeDefined();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("does not display a late result from the previously selected instance", async () => {
+  let finishOld!: (response: Response) => void;
+  const old = new Promise<Response>((resolve) => {
+    finishOld = resolve;
+  });
+  const snapshot = (items: number) =>
+    new Response(
+      JSON.stringify({
+        observedAt: "2026-09-30T00:00:00Z",
+        usedBytes: 1024,
+        capacityBytes: 2048,
+        itemCount: items,
+        reservedBytes: 0,
+      }),
+    );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) =>
+      url.includes("/instances/old/") ? old : snapshot(22),
+    ),
+  );
+  const view = render(<Statistics path="/projects/p/instances/old" running />);
+  view.rerender(<Statistics path="/projects/p/instances/new" running />);
+  await screen.findByText("22");
+  await act(async () => {
+    finishOld(snapshot(111));
+    await old;
+  });
+  expect(screen.getByText("22")).toBeDefined();
+  expect(screen.queryByText("111")).toBeNull();
 });

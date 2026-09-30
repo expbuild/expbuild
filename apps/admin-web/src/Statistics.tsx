@@ -29,8 +29,10 @@ export function Statistics({
         const value = await api<Snapshot>(`${path}/statistics`, {
           signal: abort.signal,
         });
-        setData(value);
-        setError("");
+        if (!abort.signal.aborted) {
+          setData(value);
+          setError("");
+        }
       } catch (e) {
         if (!abort.signal.aborted)
           setError(e instanceof Error ? e.message : "统计暂不可用");

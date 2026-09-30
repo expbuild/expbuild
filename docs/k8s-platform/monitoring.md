@@ -37,7 +37,7 @@ Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.sv
 
 ## 验证范围与后续工作
 
-单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。本地已通过固定 Prometheus v3.15.0 的真实认证采集与范围查询测试：受控 exporter 为三个项目/UID 组合提供不同计数速率，确认项目及 UID 分别隔离，缺失实例为空序列、有效零值仍为零。该测试验证真实 PromQL/HTTP 行为，采集源是合约 fixture，尚未覆盖真实缓存引擎自动采集。实例采集自动化、网络入口、凭据轮换和长期负载仍待验收。资源指标、延迟、流量和 WebDAV 指标仍未接入。
+单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。本地已通过固定 Prometheus v3.15.0 的真实认证采集与范围查询测试：受控 exporter 为三个项目/UID 组合提供不同计数速率，确认项目及 UID 分别隔离，缺失实例为空序列、有效零值仍为零。该测试验证真实 PromQL/HTTP 行为，采集源是合约 fixture，尚未覆盖真实缓存引擎自动采集。实例采集自动化和凭据轮换另由本文末尾的真实 kind 测试验收；实际 CNI 隔离与长期负载仍待验证。资源指标、延迟、流量和 WebDAV 指标仍未接入。
 
 
 ## 复现真实 Prometheus 测试
@@ -51,7 +51,7 @@ PROMETHEUS_BIN=/tmp/expbuild-prometheus npx tsx --test apps/admin-api/src/histor
 
 ## 可选的实例采集自动化
 
-部署方先安装兼容的 Prometheus Operator 与 ServiceMonitor CRD。本平台的 CRD 契约测试固定官方 v0.94.1 CRD 和 SHA256；尚未完成 Prometheus Operator 容器到真实缓存引擎的全链路验收。启用示例：
+部署方先安装兼容的 Prometheus Operator 与 ServiceMonitor CRD。本平台的 CRD 契约测试固定官方 v0.94.1 CRD 和 SHA256；已通过本文末尾记录的 Prometheus Operator 容器到真实缓存引擎全链路验收。启用示例：
 
 ```yaml
 monitoring:
@@ -75,4 +75,6 @@ expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTT
 
 ## 隔离集群采集验收
 
-Gateway 集群任务新增固定 Prometheus Operator v0.94.1 部署包 SHA256，以及 Operator、config-reloader 和 Prometheus v3.15.0 镜像摘要。只在脚本创建的临时 kind/context 中安装，使用临时监控数据，不修改现有集群。脚本要求一个实例仅有一个活跃目标，指标端点匿名/旧凭据被拒绝，管理 API 历史包含当前项目/UID 的真实 CAS 读取速率；轮换后必须出现新的成功采样和新的历史时间点，删除后目标移除。该新增完整链路尚待远程 CI 验证，不能以既有 CRD 或受控 exporter 测试代替。
+Gateway 集群任务新增固定 Prometheus Operator v0.94.1 部署包 SHA256，以及 Operator、config-reloader 和 Prometheus v3.15.0 镜像摘要。只在脚本创建的临时 kind/context 中安装，使用临时监控数据，不修改现有集群。脚本要求一个实例仅有一个活跃目标，指标端点匿名/旧凭据被拒绝，管理 API 历史包含当前项目/UID 的真实 CAS 读取速率；轮换后必须出现新的成功采样和新的历史时间点，删除后目标移除。该完整链路已在[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36672925904)通过（提交 6966aec）。实际日志分别确认轮换前后真实 CAS 查询历史、唯一健康目标、轮换后新采样时间，以及删除后目标移除。
+
+验收边界：本次使用单副本 Prometheus、临时 TSDB 和 kind 默认网络，没有验证实际 NetworkPolicy 拦截、监控持久存储、高可用、长期数据保留或大规模采集。API 查询及界面组件分别通过测试，尚未做真实浏览器端到端验收。

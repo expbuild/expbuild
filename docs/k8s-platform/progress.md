@@ -163,3 +163,7 @@ ServiceMonitor 补充验证：暂停/恢复、实例删除后的采集对象清�
 ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https://github.com/expbuild/expbuild/actions/runs/36672451980)通过。新增真实集群监控 fixture，固定官方 Prometheus Operator 部署包与三个镜像摘要，在已有 Gateway 场景中接入实际 bazel-remote 指标、认证轮换、管理历史 API、采集目标去重及删除撤销；完整链路结果等待 CI。
 
 原生淘汰补充验证：本地固定 bazel-remote v2.6.2、默认压缩存储、1 GiB 预算通过三个 400 MiB 不可压缩 CAS 块的超预算测试。完整读取刷新 LRU 后，较旧块被淘汰，保留块 SHA256、最终条目数和实际容量正确。已接入原生引擎 CI；不代表并发、磁盘满或生产存储认证。自动采集完整集群任务 36672925904 仍在运行，等待实际结果。
+
+自动采集完整验收（提交 6966aec）：[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36672925904)三个任务全部成功。固定 Prometheus Operator/Prometheus 镜像实际运行，真实 bazel-remote 的唯一采集目标与管理 API CAS 历史通过；轮换后旧指标凭据拒绝、新凭据成功，并出现晚于轮换完成时间的新健康采样和历史点；删除后 ServiceMonitor 与活跃目标移除。未验证真实 CNI 执行、监控 HA/持久存储和浏览器端到端。
+
+原生 LRU 的[远程 Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36673243140)通过（提交 940e507），包含超过 1 GiB 预算的不可压缩数据淘汰测试。统计界面另修复实例切换后旧请求晚到覆盖当前数据的竞态，并增加回归。
