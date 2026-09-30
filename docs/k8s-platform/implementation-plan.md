@@ -1,14 +1,14 @@
 # expbuild Kubernetes 平台实现方案
 
-日期：2026-09-29。状态：实现基线，首批代码已启动，尚未部署。配套 [架构与产品说明](README.md)。
+日期：2026-09-29。状态：原始实现基线，不代表当前完成度；一次性集群验收和现行未完成项见[实施状态](progress.md#当前未完成工作)。配套[架构与产品说明](README.md)。
 
-当前进度见 [实施状态](progress.md)。`feat/k8s-cache-platform` 已有 [Operator](../../operator/README.md) 与 [新管理 API](../../apps/admin-api/README.md)。完成部分资源调谐、权限和数据库基础不等于端到端平台完成；引擎认证、实例操作队列、管理界面、多引擎及交付验收仍需继续。
+当前进度见[实施状态](progress.md)。`feat/k8s-cache-platform` 已有 [Operator](../../operator/README.md)、[管理 API](../../apps/admin-api/README.md)和管理界面。此处的阶段顺序与首期范围保留为设计背景；后续验收结果和用户对 WebDAV 暂不扩展的决定以实施状态为准。
 
 ## 1. 交付目标与决策
 
 实现一个企业自托管的缓存服务管理平台：用户在控制台选择引擎模板，创建独立实例，获得访问地址与客户端配置，查看实例统计，调整缓存策略，并管理暂停、恢复、升级和删除。
 
-首期正式交付需要两种引擎适配：bazel-remote（REAPI 与 Bazel HTTP）和经过验证的 WebDAV 引擎。只有 bazel-remote 的版本属于可演示里程碑，不称为首期全部完成。Gradle HTTP、HTTP 上游代理、更多 REAPI 引擎后续扩展。
+原始首期基线包含 bazel-remote（REAPI 与 Bazel HTTP）和 WebDAV。当前已经接入 Gradle HTTP；WebDAV 现有实现保持不变，替代服务由用户后续选型。HTTP 上游代理及更多 REAPI 引擎仍属后续扩展。具体完成度和交付门槛以[当前未完成工作](progress.md#当前未完成工作)为准。
 
 | 决策 | 实现基线 |
 |---|---|

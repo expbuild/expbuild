@@ -1,6 +1,6 @@
 # expbuild：Kubernetes 缓存服务管理平台
 
-更新日期：2026-09-30。状态：实现进行中；Operator/WebDAV 已通过隔离集群生命周期测试，完整产品验收仍未完成。实际边界见 [实施状态](progress.md)，验证方式见 [测试说明](testing.md)。
+更新日期：2026-09-30。状态：实现进行中；REAPI、WebDAV 与 Gradle 的指定链路已通过一次性集群验收，完整产品与生产环境认证仍未完成。当前待开发项和验证边界见[实施状态中的未完成工作](progress.md#当前未完成工作)，验证方式见[测试说明](testing.md)。WebDAV 暂维持现状，后续替代服务待选型。
 
 实施契约与任务拆分见 [implementation-plan.md](implementation-plan.md)。本文定义产品与架构，实现契约定义模块、数据、状态机和交付门槛；两者共同构成当前实现基线。
 
