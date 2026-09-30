@@ -145,6 +145,32 @@ func TestAPIServerContract(t *testing.T) {
 			t.Fatal("WebDAV incorrectly exposed additional protocols")
 		}
 	})
+	t.Run("versioned WebDAV admission", func(t *testing.T) {
+		valid := c.DeepCopy()
+		valid.Name, valid.ResourceVersion, valid.UID = "dav-stats", "", ""
+		valid.Generation = 0
+		valid.Finalizers = nil
+		valid.Status = cachev1.CacheInstanceStatus{}
+		valid.Spec.InstanceID = "dav-stats"
+		valid.Spec.TemplateRef = cachev1.TemplateRef{Name: "webdav-apache", Version: "0.2.0"}
+		valid.Spec.Eviction.EnginePolicy = "none"
+		valid.Spec.Eviction.MaxCacheGiB = 0
+		if err := cl.Create(ctx, valid); err != nil {
+			t.Fatalf("WebDAV 0.2.0 rejected: %v", err)
+		}
+		invalid := valid.DeepCopy()
+		invalid.Name, invalid.ResourceVersion, invalid.UID = "invalid-bazel-version", "", ""
+		invalid.Generation = 0
+		invalid.Finalizers = nil
+		invalid.Status = cachev1.CacheInstanceStatus{}
+		invalid.Spec.InstanceID = "invalid-bazel-version"
+		invalid.Spec.TemplateRef.Name = "bazel-remote"
+		invalid.Spec.Eviction.EnginePolicy = "lru"
+		invalid.Spec.Eviction.MaxCacheGiB = 1
+		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+			t.Fatalf("unsupported bazel-remote version accepted: %v", err)
+		}
+	})
 }
 
 func checkRBAC(t *testing.T, ctx context.Context, cl client.Client) {

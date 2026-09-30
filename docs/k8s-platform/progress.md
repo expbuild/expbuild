@@ -235,3 +235,5 @@ API 模板目录统一：新增 template-catalog.ts，将配置 schema、版本�
 提交 9048b17 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36698708924)四个任务全部成功，覆盖 WebDAV、Helm 内部、Gateway 和 Cilium 模式。Helm/API 真实领回场景确认同一个 PVC UID 与内容保留，新旧 CR UID 不同，PVC 归属转移，新凭据可读取原文件，随后再次 Retain 删除及显式清理成功。管理 API、平台测试和四镜像构建也成功；生产 CSI 的多节点重挂与故障恢复仍待认证。
 
 WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1.0 精确版本继续维护。受信 Operator 镜像加入只读扫描程序，通过独立受认证端口报告文件数、大小和申请卷容量；sidecar 与 Apache 分摊实例原有 CPU/内存预算，管理 API 与界面按版本显示近似快照，不宣称硬配额或命中率。单元测试及真实 kind/Helm/API 断言已加入，完整验收以新 CI 结果为准。WebDAV 淘汰与请求指标仍未实现。
+
+提交 78b7d62 的[集群 CI](https://github.com/expbuild/expbuild/actions/runs/36703169393)四项均失败：WebDAV 示例被 CRD admission 拒绝，三个 Helm 场景在首个 WebDAV 创建操作返回 `kubernetes_422`。根因是 CRD 的模板版本枚举仍只有 `0.1.0`。已扩展版本枚举并用 CEL 限定 Bazel 仍只接受 `0.1.0`，两份 CRD 清单重新生成；实际 API Server 测试同时覆盖新版本接受和不支持版本拒绝。需等待修复后的完整集群 CI，不能把本地测试视为新功能真实通过。

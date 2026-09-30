@@ -20,7 +20,7 @@ func AddToScheme(s *runtime.Scheme) error {
 type TemplateRef struct {
 	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache
 	Name string `json:"name"`
-	// +kubebuilder:validation:Enum="0.1.0"
+	// +kubebuilder:validation:Enum="0.1.0";"0.2.0"
 	Version string `json:"version"`
 }
 
@@ -58,6 +58,7 @@ type EvictionSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.instanceId == oldSelf.instanceId",message="instanceId is immutable"
 // +kubebuilder:validation:XValidation:rule="self.projectId == oldSelf.projectId",message="projectId is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef == oldSelf.templateRef",message="template changes require a supported upgrade operation"
+// +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'bazel-remote' || self.templateRef.version == '0.1.0'",message="unsupported bazel-remote template version"
 // +kubebuilder:validation:XValidation:rule="self.storage.className == oldSelf.storage.className",message="storage class is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim) || self.storage.reclaim == oldSelf.storage.reclaim)",message="retained volume identity is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"

@@ -185,6 +185,7 @@ spec:
                   version:
                     enum:
                     - 0.1.0
+                    - 0.2.0
                     type: string
                 required:
                 - name
@@ -207,6 +208,9 @@ spec:
               rule: self.projectId == oldSelf.projectId
             - message: template changes require a supported upgrade operation
               rule: self.templateRef == oldSelf.templateRef
+            - message: unsupported bazel-remote template version
+              rule: self.templateRef.name != 'bazel-remote' || self.templateRef.version
+                == '0.1.0'
             - message: storage class is immutable
               rule: self.storage.className == oldSelf.storage.className
             - message: retained volume identity is immutable
