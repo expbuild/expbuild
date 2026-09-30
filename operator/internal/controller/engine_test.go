@@ -191,6 +191,10 @@ func TestRealBazelRemoteContract(t *testing.T) {
 	if code, body := request(http.MethodGet, "new-health"); code != 200 || !bytes.Equal(body, payload) {
 		t.Fatalf("persistent read with rotated credential: %d %q", code, body)
 	}
+	if bazel := os.Getenv("BAZEL_BIN"); bazel != "" {
+		t.Run("Bazel HTTP client", func(t *testing.T) { verifyBazelClient(t, bazel, "http://"+httpAddress, "new-health") })
+		t.Run("Bazel REAPI client", func(t *testing.T) { verifyBazelClient(t, bazel, "grpc://"+grpcAddress, "new-health") })
+	}
 	if os.Getenv("BAZEL_LRU_TEST") == "1" {
 		t.Run("native LRU budget", func(t *testing.T) { verifyRealLRU(t, httpAddress, "new-health") })
 	}

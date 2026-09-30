@@ -169,3 +169,7 @@ ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https
 原生 LRU 的[远程 Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36673243140)通过（提交 940e507），包含超过 1 GiB 预算的不可压缩数据淘汰测试。统计界面另修复实例切换后旧请求晚到覆盖当前数据的竞态，并增加回归。
 
 网络隔离验收已接入独立 CI 模式：kind 禁用默认 CNI，安装兼容 Kubernetes 1.32 的固定 Cilium 1.19.7 Chart/镜像摘要；真实 Pod 分别对 Service/Pod IP 验证项目、客户端、Gateway、监控的 AND 选择器与端口范围，并撤销/恢复 namespace 和 Pod 标签测试新连接。已有 TLS/监控链路在相同 CNI 环境继续执行。本地渲染和连接探针分类通过，实际 CNI 结果待远程任务，尚不宣称已完成隔离验收。
+
+Cilium 首轮结果（提交 a83b85d）：[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36674390223)的内部、WebDAV、Gateway 三个任务成功。isolation 任务中 Service/Pod IP 的全部隔离矩阵与 namespace/Pod 授权撤销恢复通过，随后 REAPI TLS、预算更新、真实指标和轮换后 REAPI 也通过；在旧指标凭据的 HTTPS 请求遭遇 RemoteDisconnected 后整项失败，不能记录为完整成功。测试客户端现对 GET 的连接中断最多重试两次，每次重新建连；不重试写入、证书验证失败或 HTTP 状态响应，认证断言仍要求精确状态。待新 CI 验证。
+
+真实 Bazel 客户端新增本地验收：固定 8.8.1 对 HTTP 与 REAPI 分别执行首次构建、全新本地缓存的远程命中构建、禁用远程缓存的失败对照，六次构建全部符合预期，确认 ActionCache/CAS 产物恢复而非本地复用。已接入原生引擎 CI；该客户端尚未经 Gateway/TLS，详见引擎验证记录。

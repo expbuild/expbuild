@@ -6,6 +6,7 @@ import pathlib
 import socket
 import ssl
 import subprocess
+import time
 from cluster_lifecycle import run, wait
 
 VERSION = 'v1.8.5'
@@ -62,13 +63,23 @@ class GatewayFixture:
         class LocalTLSConnection(http.client.HTTPConnection):
             def connect(connection):
                 connection.sock = context.wrap_socket(socket.create_connection(('127.0.0.1', port), timeout=30), server_hostname=host)
-        connection = LocalTLSConnection(host, timeout=30)
-        try:
-            connection.request(method, path, body=body, headers=headers or {})
-            response = connection.getresponse()
-            return response.status, response.read(), dict(response.getheaders())
-        finally:
-            connection.close()
+        # Read-only probes may encounter a transport disconnect during rollout.
+        # Never retry writes, TLS verification failures, or an HTTP response:
+        # callers must still assert the exact authorization/status outcome.
+        attempts = 3 if method == 'GET' and trusted else 1
+        for attempt in range(attempts):
+            connection = LocalTLSConnection(host, timeout=30)
+            try:
+                connection.request(method, path, body=body, headers=headers or {})
+                response = connection.getresponse()
+                return response.status, response.read(), dict(response.getheaders())
+            except (http.client.RemoteDisconnected, ConnectionResetError):
+                if attempt + 1 == attempts:
+                    raise
+                print('TLS GET transport disconnected; retrying read-only probe', flush=True)
+                time.sleep(1)
+            finally:
+                connection.close()
 
     def verify(self, host, auth):
         wait(lambda: self.request(host)[0] == 401, 'Anonymous HTTPS access rejected')

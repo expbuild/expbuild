@@ -44,9 +44,9 @@ FindMissingBlobs 测试使用官方 [REAPI protobuf 字段定义](https://github
 ## 仍需完成
 
 - 多架构、生产 PVC 权限、磁盘满、故障恢复和单写者边界。
-- 真实 Bazel 客户端、ActionCache、压缩及 FindMissing 批量负载。
+- 真实 Bazel 经 TLS Gateway 的构建、压缩及 FindMissing 批量负载。
 - 淘汰策略边界、存储容量变化、指标与平台统计的一致性。
-- 公网 DNS、实际网络策略隔离、轮换期间并发客户端行为与性能基线。
+- 公网 DNS、多节点网络隔离、轮换期间并发客户端行为与性能基线。
 
 测试不将已通过的 RPC 扩大为完整性能或生产可用性结论。
 
@@ -61,3 +61,17 @@ BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote BAZEL_LRU_TEST=1 go test ./internal/
 ```
 
 命令从 operator 目录运行。磁盘较小的临时目录可通过 TMPDIR 指向独立测试目录。CI 已加入此项，本地实际执行通过；它验证该预算和访问序列下的原生 LRU，不替代磁盘满、并发上传、重启排序或吞吐基准。
+
+## 真实 Bazel 构建客户端
+
+本地已通过固定 SHA256 的 Bazel 8.8.1 Linux amd64 客户端测试，分别使用 HTTP 与 REAPI gRPC 连接上述实际引擎。首次构建上传 ActionCache/CAS；第二次构建使用全新的 output_base，正确恢复产物且不重新执行动作。第三次使用另一个新目录并关闭远程缓存，必须触发动作的退出码 42，排除本地缓存或测试规则误判。
+
+测试规则的未声明 guard/marker 是刻意设置的测试探针：首次构建后删除 guard，让重复执行必然失败。它不作为生产构建规则示例。凭据写入权限 0600 的临时配置，不作为进程参数。
+
+```sh
+python3 tools/download_bazel_client.py /tmp/expbuild-bazel
+# 在 operator 目录运行，先按上文下载引擎。
+BAZEL_BIN=/tmp/expbuild-bazel BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
+```
+
+需要为临时目录预留约 2 GiB 磁盘空间。此项使用回环 HTTP/gRPC，尚不证明实际 Bazel 经 TLS Gateway、多版本兼容、压缩协商或远程执行。已加入 CI，新增客户端部分的远程结果待确认。
