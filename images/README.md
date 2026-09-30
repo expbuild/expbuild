@@ -6,6 +6,7 @@
 docker build -f images/admin-api/Dockerfile -t registry.example.com/expbuild/admin-api:0.1.0 .
 docker build -f images/admin-web/Dockerfile -t registry.example.com/expbuild/admin-web:0.1.0 .
 docker build -f images/operator/Dockerfile -t registry.example.com/expbuild/operator:0.1.0 .
+docker build -f images/webdav/Dockerfile -t registry.example.com/expbuild/webdav:0.1.0 .
 ```
 
 三个 Dockerfile 使用多阶段构建。API 镜像包含编译代码、生产依赖及 SQL migrations，
@@ -16,5 +17,7 @@ docker build -f images/operator/Dockerfile -t registry.example.com/expbuild/oper
 values；生产环境建议对三个平台镜像也使用 digest。当前基础镜像使用版本 tag，
 企业可在验证供应链后固定其 digest。缓存引擎镜像独立管理，必须使用 digest。
 
-本地环境目前没有 Docker/Podman，因此没有在这里执行容器构建。CI 构建定义
-不能视为已通过的构建结果；部署验收还需要拉取、启动及真实客户端测试。
+本地环境没有 Docker/Podman。提交 d90d0a7 的四个镜像已在
+[GitHub Actions](https://github.com/expbuild/expbuild/actions/runs/36662004310) 实际构建通过，未发布。
+WebDAV 基于固定摘要的 Apache 2.4.68 trixie，运行时由 Operator 挂载配置、认证文件和数据卷。
+部署验收仍需要容器启动、卷权限及真实客户端测试。

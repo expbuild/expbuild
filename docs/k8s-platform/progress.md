@@ -44,13 +44,13 @@
 - 隔离 API Server 上安装 RBAC 清单并通过 SubjectAccessReview 验证允许/拒绝边界，包括 Secret 只读、禁止删除 PV、选主仅限控制面 namespace。
 - Helm 渲染后的身份和权限也在隔离 API Server 中安装验证：22 项授权检查覆盖跨 namespace 实例管理、Secret 读写职责、状态更新、选主范围，以及管理页面无资源权限；不启动工作负载，不应用到实际集群。
 - 前后端生产构建；界面组件测试覆盖登录、只读用户、容量校验、CSRF 与一次性凭据清除。操作列表有真实 PostgreSQL 的跨项目权限测试。尚未做真实浏览器视觉验收。
-- Helm strict lint、资源渲染、隔离 API Server 的 Deployment/Service/Job/Ingress/RBAC dry-run 校验、错误配置拒绝与 CRD 同步检查。容器构建仅有 CI 定义，本机没有容器运行时，尚未实际构建镜像。
+- Helm strict lint、资源渲染、隔离 API Server 的 Deployment/Service/Job/Ingress/RBAC dry-run 校验、错误配置拒绝与 CRD 同步检查。本机没有容器运行时；提交 d90d0a7 的四个容器镜像已通过 GitHub Actions 实际构建，尚未进行容器启动及完整集群验收。
 - 用户管理确认交互、按邮箱添加成员、移除成员后的即时权限撤销、唯一管理员不可移除和审计落库；最近验证：API 16 项、界面 18 项测试通过。
 - 轮换切换响应丢失后的恢复、就绪前保留旧凭据、就绪后清理、普通更新不回退密码，以及 UI 重试保留原版本/幂等键。真实引擎拒绝旧密码仍待完整集群验收。
 
 以上 API Server 测试没有 kubelet，不证明缓存容器启动、挂载或真实存储故障行为。已完成 bazel-remote v2.6.2 官方二进制的真实 HTTP CAS、REAPI FindMissing、认证和重启持久性测试，详见 [引擎验证记录](engine-validation.md)；仍不替代镜像/PVC/真实集群 PoC。当前没有认证生产镜像或完整集群安装。
 
-真实引擎测试已加入 CI 定义，未将未运行的远程 CI 当作已通过结果。
+真实引擎测试已在提交 d90d0a7 的 Kubernetes platform 远程 CI 中执行通过。
 
 OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 与运行时契约一致性测试已通过。
 
@@ -63,7 +63,7 @@ OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 
 3. bazel-remote 固定镜像与真实客户端验证；WebDAV 浏览器联调、淘汰和指标适配。
 4. 管理界面补齐模板扩展、统计与策略页面；浏览器联调与连接配置验证。
 5. TLS/独立域名入口、NetworkPolicy、指标采集和授权查询。
-6. 实际构建并验证容器、Helm 完整安装升级卸载联调、API/SDK 真实集群 E2E 与兼容矩阵。
+6. 验证容器实际启动、Helm 完整安装升级卸载联调、API/SDK 真实集群 E2E 与兼容矩阵。
 
 完整目标保持进行中；不能以当前模块测试通过代替上述验收。
 
@@ -77,4 +77,12 @@ OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 
 
 客户端网络入口：项目初始化及创建实例前补齐项目客户端 NetworkPolicy，要求管理员授予 namespace 项目标签并且 Pod 标记 client=true，仅放行 TCP 8080/9092。SDK HTTP 测试覆盖 AND 选择器序列化、重复创建恢复及异属/篡改策略拒绝。未在真实 CNI 验证流量隔离，已有项目不创建新实例时仍需补装策略。
 
-远程 CI 核验（提交 7fa6b92）：Kubernetes platform 成功；Management API 在 npm ci 阶段因锁文件的环境内镜像源无法解析而失败；容器构建因 httpd:2.4.66-bookworm 不存在失败，并取消了其他镜像任务。已将依赖地址改为公共 npm Registry，WebDAV 基础镜像更新为官方确认存在的 2.4.68-trixie 固定摘要，并关闭构建矩阵 fail-fast；修复后的远程运行结果待确认。
+远程 CI 核验（提交 7fa6b92）：Kubernetes platform 成功；Management API 在 npm ci 阶段因锁文件的环境内镜像源无法解析而失败；容器构建因 httpd:2.4.66-bookworm 不存在失败，并取消了其他镜像任务。已将依赖地址改为公共 npm Registry，WebDAV 基础镜像更新为官方确认存在的 2.4.68-trixie 固定摘要，并关闭构建矩阵 fail-fast；修复后的提交 d90d0a7 已完成全部远程任务，结果如下。
+
+远程验收记录（2026-09-30，提交 d90d0a7）：
+
+- [管理 API 与界面构建、测试](https://github.com/expbuild/expbuild/actions/runs/36662004293)：成功。
+- [Kubernetes、Helm、真实引擎协议测试](https://github.com/expbuild/expbuild/actions/runs/36662004283)：成功。
+- [admin-api、admin-web、operator、webdav 四镜像构建](https://github.com/expbuild/expbuild/actions/runs/36662004310)：全部成功。
+
+构建流程 push=false，未发布镜像。构建成功不证明入口命令、非 root 卷权限或完整集群运行成功。
