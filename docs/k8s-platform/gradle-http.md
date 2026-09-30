@@ -6,4 +6,4 @@ Gradle 官方 HTTP build cache 通过 GET 读取 opaque task-output archive，�
 
 模板 `gradle-http@0.1.0` 已编入 Operator 注册表和 CRD。安装时必须配置受信的 `images.gradle` SHA256 镜像，管理 API 才允许新建；已有实例仍可管理。每实例使用单副本 StatefulSet、独立 PVC、独立 Secret 和 Service；Operator 在工作负载版本就绪后读取带认证的 `/status`，确认容量预算才报告 Ready/PolicyApplied。Gateway HTTPS 入口的连接地址保留 `/cache/` 路径。管理 API/界面提供容量、条目和请求计数，并生成 Gradle Kotlin 初始化脚本；CI 用户可上传，开发机默认只读取。模板和界面已通过本地 PostgreSQL、真实浏览器、Kubernetes API Server admission 与 Helm 渲染测试。
 
-本地已使用官方 Gradle 8.14.3（校验 SHA256）验证首次上传、第二个全新项目和 Gradle 用户目录的 `FROM-CACHE` 命中、禁用缓存的重新执行；测试客户端 Kotlin 初始化脚本与控制台指引保持相同结构。此验证已加入平台 CI。新模板还没有通过真实 kind PVC/Service/入口、暂停恢复、凭据轮换和删除验收，不能把本地原生测试视为完整集群认证。支持的存储必须提供同一文件系统内的原子硬链接；其它 CSI 需单独认证。还需根据真实负载测 bcrypt 验证、访问时间更新和重启索引扫描开销。
+本地已使用官方 Gradle 8.14.3（校验 SHA256）验证首次上传、第二个全新项目和 Gradle 用户目录的 `FROM-CACHE` 命中、禁用缓存的重新执行；测试客户端 Kotlin 初始化脚本与控制台指引保持相同结构。此验证已加入平台 CI。一次性 kind 集群还验证了 PVC/Service 上的读写、Pod 重建持久化、暂停恢复、凭据轮换和 Retain/Delete 行为；Helm/API 内部模式验证创建、统计、轮换和删除，Gateway 模式验证 `/cache/` HTTPS 访问和路由撤销。支持的存储必须提供同一文件系统内的原子硬链接；生产 CSI、多节点重挂、真实 DNS 和高负载性能仍需单独认证。还需根据真实负载测 bcrypt 验证、访问时间更新和重启索引扫描开销。

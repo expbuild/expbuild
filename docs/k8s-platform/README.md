@@ -45,7 +45,7 @@ HTTP 是传输方式，不能单独定义一种缓存语义。模板必须说明
 | HTTP proxy cache | 配置上游并缓存响应 | cache-control、认证响应隔离、重验证、上游限制 |
 | WebDAV cache | 客户端写入/读取文件与目录 | 客户端所需方法、锁、并发写、可安全清理方式 |
 
-首期目标覆盖 REAPI cache、HTTP artifact cache、WebDAV cache 三类能力。第一条可交付链路采用 bazel-remote，同时提供 REAPI 与 Bazel HTTP 接口；二者可以是同一实例的两个访问方式，不必重复部署两份引擎。WebDAV 为第二个独立引擎适配，Gradle HTTP 等按客户端需求后续认证。HTTP proxy cache 为下一批独立模板，不混用表单和命中率定义。版本和实际能力需做 PoC 后锁定，不因协议名称就宣称兼容。
+首期目标覆盖 REAPI cache、HTTP artifact cache、WebDAV cache 三类能力。第一条可交付链路采用 bazel-remote，同时提供 REAPI 与 Bazel HTTP 接口；二者可以是同一实例的两个访问方式，不必重复部署两份引擎。WebDAV 为第二个独立引擎适配；Gradle HTTP 已作为第三个精确版本模板接入，并通过一次性 kind 的 PVC、Helm/API 与 HTTPS Gateway 验收，生产 CSI 和性能认证仍待完成。HTTP proxy cache 为下一批独立模板，不混用表单和命中率定义。版本和实际能力需做 PoC 后锁定，不因协议名称就宣称兼容。
 
 ## 3. 控制面和运行面
 
