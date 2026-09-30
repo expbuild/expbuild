@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -29,31 +30,67 @@ type snapshot struct {
 func scan(root string, capacityBytes int64, now time.Time) (snapshot, error) {
 	result := snapshot{CapacityBytes: capacityBytes, ObservedAt: now.UTC()}
 	deadline := now.Add(15 * time.Second)
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	rootInfo, err := os.Lstat(root)
+	if err != nil {
+		return result, err
+	}
+	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
+		return result, errors.New("content root is not a directory")
+	}
+	var visited int64
+	var walk func(string, int) error
+	walk = func(directory string, depth int) error {
+		if depth > 128 {
+			return errors.New("content directory nesting exceeds supported depth")
 		}
-		if time.Now().After(deadline) {
-			return errors.New("content scan exceeded time limit")
-		}
-		if path == root || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		info, err := entry.Info()
+		file, err := os.Open(directory)
 		if err != nil {
 			return err
 		}
-		if result.ItemCount >= maxEntries || info.Size() < 0 || result.UsedBytes > int64(^uint64(0)>>1)-info.Size() {
-			return errors.New("content scan exceeds supported size")
+		defer file.Close()
+		for {
+			// File.ReadDir(n) bounds memory even for a large flat DAV directory.
+			entries, readErr := file.ReadDir(256)
+			for _, entry := range entries {
+				visited++
+				if visited > maxEntries {
+					return errors.New("content scan exceeds supported entry count")
+				}
+				if time.Now().After(deadline) {
+					return errors.New("content scan exceeded time limit")
+				}
+				if entry.Type()&os.ModeSymlink != 0 {
+					continue
+				}
+				path := filepath.Join(directory, entry.Name())
+				if entry.IsDir() {
+					if err := walk(path, depth+1); err != nil {
+						return err
+					}
+					continue
+				}
+				info, err := entry.Info()
+				if err != nil {
+					return err
+				}
+				if !info.Mode().IsRegular() {
+					continue
+				}
+				if info.Size() < 0 || result.UsedBytes > int64(^uint64(0)>>1)-info.Size() {
+					return errors.New("content scan exceeds supported size")
+				}
+				result.ItemCount++
+				result.UsedBytes += info.Size()
+			}
+			if readErr == io.EOF {
+				return nil
+			}
+			if readErr != nil {
+				return readErr
+			}
 		}
-		result.ItemCount++
-		result.UsedBytes += info.Size()
-		return nil
-	})
-	return result, err
+	}
+	return result, walk(root, 0)
 }
 
 type server struct {

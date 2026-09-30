@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -30,6 +31,22 @@ func TestScanDoesNotFollowLinks(t *testing.T) {
 	}
 	if value.UsedBytes != 9 || value.ItemCount != 2 || value.CapacityBytes != 1<<30 {
 		t.Fatalf("unexpected snapshot: %+v", value)
+	}
+}
+
+func TestScanReadsLargeFlatDirectoriesInBatches(t *testing.T) {
+	root := t.TempDir()
+	for i := 0; i < 300; i++ {
+		if err := os.WriteFile(filepath.Join(root, "entry-"+strconv.Itoa(i)), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	value, err := scan(root, 1<<30, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ItemCount != 300 || value.UsedBytes != 300 {
+		t.Fatalf("incomplete batched scan: %+v", value)
 	}
 }
 
