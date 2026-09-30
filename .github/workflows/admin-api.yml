@@ -1,9 +1,9 @@
 name: Management API
 on:
   push:
-    paths: ['tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
   pull_request:
-    paths: ['tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
 permissions:
   contents: read
 jobs:
@@ -37,3 +37,7 @@ jobs:
       - run: npm test
         env:
           PROMETHEUS_BIN: ${{ runner.temp }}/prometheus
+      - name: Install Chromium for browser acceptance
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: Verify browser, production UI and real API/database
+        run: npm run test:browser

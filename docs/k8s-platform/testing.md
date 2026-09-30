@@ -62,3 +62,20 @@ CI 增加 isolation 模式，包含原有 Gateway/TLS、Prometheus 自动采集�
 - 删除 namespace 授权或 Pod 客户端标签后，新连接被阻断；恢复标签后可重新连接。
 
 负向断言要求 TCP 超时，DNS 错误、连接拒绝或进程错误不算策略拦截。正向检查在撤销前后验证服务仍可达。既有连接的处理、多节点跨节点流量、IPv6、其他 CNI 和生产网络环境不在本项覆盖范围。当前新任务已编码，真实通过状态以实施记录和 CI 为准。
+
+## 真实浏览器管理流程
+
+`npm run test:browser` 使用固定 Playwright/Chromium、已构建的 admin-web、实际 Fastify API 和 PostgreSQL。启动器创建随机命名的专用数据库并执行全部 migrations，退出时仅删除自己创建的数据库；不复用运行中的服务，不读取业务 kubeconfig，也不安装 Kubernetes client/worker。项目创建后保持 pending，不能把这套测试记为缓存实例部署成功。
+
+在专用测试 PostgreSQL 上设置 `TEST_DATABASE_URL`（账号需具备创建测试数据库权限），在仓库根目录执行：
+
+```sh
+npm ci
+npm run build
+npx playwright install --with-deps chromium --only-shell
+npm run test:browser
+```
+
+本地运行需空闲的 127.0.0.1:4173。浏览器和数据库连接使用实际网络请求，不拦截或伪造 API 响应；测试仅创建公开的测试账号与临时数据。测试覆盖登录退出、HttpOnly 会话、项目创建、配额保存及刷新后的持久化、缺失 CSRF 拒绝、跨项目权限拒绝，以及新标签页继承会话后的旧版本配额写入冲突。截图和 trace 只在失败时保留在本地 `test-results/browser`，未配置自动上传。
+
+管理 API CI 已增加浏览器安装与执行步骤。当前未覆盖浏览器创建真实缓存实例、文件读写、真实域名和生产入口；这些需要继续与隔离 Kubernetes 链路结合。浏览器运行失败不能用组件测试结果替代。

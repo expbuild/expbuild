@@ -211,3 +211,5 @@ API 模板目录统一：新增 template-catalog.ts，将配置 schema、版本�
 模板探测重构的完整集群回归：提交 6246d9d 的任务 36684833656 中 WebDAV、internal、Gateway 成功，Cilium isolation 失败。失败发生在 REAPI 后的 HTTP CAS PUT，RemoteDisconnected；新增转发日志确认 kubectl 以 1 退出，Pod 内 127.0.0.1:10443 返回 connection reset by peer，代理 Pod 为 Running 且无重启。不能据此断言是 Operator 回归，也不能据此证明代理无问题。保持写请求不重试、严格 HTTP 状态断言不变；失败现场新增 Envoy Pod 状态与最近 100 条日志中的传输字段白名单输出，省略原始日志、请求头和路径，诊断异常不会覆盖原始错误。五项传输恢复/诊断测试通过，仍需真实失败现场或完整成功结果确认。实例详情统计能力统一暂缓，优先补充此验收问题的可观测信息。
 
 实例能力与版本持久化：migration 008 为绑定记录增加 template_version，新建时与操作请求同时保存；旧数据从名称匹配的创建请求回填，缺失或冲突版本保持 NULL。详情发布 templateVersion 和可空 capabilities，按实际 CR 精确版本或删除后绑定版本解析；未知版本不回退最新版。历史查询按持久化版本的 lookupHistory 能力授权，实时查询按实际版本 statistics 能力，读写拒绝已记录版本与 CR 不一致。UI 按详情能力显示实时统计、历史入口与策略，未知能力不请求指标。迁移幂等/缺失/冲突/未来版本及 PostgreSQL 生命周期、删除后历史授权测试通过；界面新增不同模板名与未知能力场景，OpenAPI 已同步。该变更不实现引擎升级，未来升级需事务性更新版本绑定；未接入 WebDAV 指标。
+
+真实浏览器第一阶段完成本地验收：固定 @playwright/test 1.63.0 与配套无头 Chromium，使用生产前端构建、实际管理 API 和独立 PostgreSQL 数据库；两条浏览器流程通过登录退出、项目创建、配额持久化、CSRF/跨项目拒绝、多标签页旧配额版本冲突。启动器只管理随机测试数据库，未接入 Kubernetes，项目保持 pending；CI 已加入同一入口。首次本机缺少浏览器运行库和临时空间，已通过隔离目录补齐后实际执行成功。浏览器创建缓存实例和数据面操作仍待后续。自动审批拒绝了失败截图/trace 的外部上传，因此 CI 仅执行测试，没有上传步骤。

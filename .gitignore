@@ -7,3 +7,5 @@ operator/bin/
 coverage/
 *.tsbuildinfo
 __pycache__/
+test-results/
+playwright-report/
