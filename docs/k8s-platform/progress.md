@@ -245,3 +245,5 @@ WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1
 Gradle HTTP 构建缓存引擎开发启动：新增独立 Go 数据面与非 root 镜像，支持认证 GET/PUT opaque archive、原子发布、条目上限、实例预算和最近访问淘汰；Go 协议/并发/重启测试和容器 smoke 已接入。当前未接入模板/管理 API/Helm，也未做原生 Gradle 或真实 PVC 验收，不作为已发布协议。详见 [Gradle HTTP 引擎记录](gradle-http.md)。
 
 Gradle 模板接入阶段：Operator `gradle-http@0.1.0` 注册表、PVC/StatefulSet/Service、认证预算探测、CRD 版本/策略准入、Gateway `/cache/` 端点、Helm 可选摘要镜像和管理 API 模板/统计均已编码。管理界面创建、容量/请求计数及 Kotlin 客户端指引已接入。真实 Gradle 8.14.3 本地三阶段构建通过远程上传、全新目录命中与禁用缓存对照；真实 API Server、PostgreSQL、浏览器与 Helm 本地测试通过。完整 kind 集群与生产 CSI 尚未验收，不能据此宣布 Gradle 模板生产可用。
+
+Gradle kind 验收已加入一次性 Operator 生命周期任务：加载当前提交的 Gradle 镜像并按实际 manifest 摘要固定引用，测试 PVC 上的读写与 Pod 重建持久化、暂停恢复、凭据轮换和 Retain/Delete 卷行为。脚本语法与补丁格式已检查；完整集群结果须以新提交的 CI 为准。

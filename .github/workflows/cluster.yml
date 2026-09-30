@@ -36,7 +36,16 @@ jobs:
           tags: expbuild/operator:test
           cache-from: type=gha,scope=operator
           cache-to: type=gha,mode=max,scope=operator
-      - name: Verify Operator lifecycle on a disposable kind cluster
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/gradle-cache/Dockerfile
+          load: true
+          push: false
+          tags: expbuild/gradle-cache:test
+          cache-from: type=gha,scope=gradle-cache
+          cache-to: type=gha,mode=max,scope=gradle-cache
+      - name: Verify WebDAV and Gradle lifecycle on a disposable kind cluster
         run: python3 tools/cluster_lifecycle.py
   helm:
     strategy:
