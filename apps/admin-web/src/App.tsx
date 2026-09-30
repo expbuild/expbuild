@@ -570,7 +570,7 @@ function ProjectView({ project, user }: { project: Project; user: User }) {
           <p className="muted">暂无操作记录</p>
         )}
       </section>
-      <ResourceInventory key={"inventory-" + base} base={base} />
+      <ResourceInventory key={"inventory-" + base} base={base} canReconcile={user.platform_admin} />
       <ProjectQuota key={base} base={base} canEdit={user.platform_admin} />
       {canAdmin && <ProjectManagement base={base} />}
     </>

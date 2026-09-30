@@ -99,3 +99,20 @@ it("explains template and reservation differences", async () => {
   await screen.findByText("模板名称或版本与平台绑定不一致");
   await screen.findByText("实际资源配置超过账面预留");
 });
+it("offers a guarded reservation correction only to platform administrators",async()=>{
+  vi.mocked(api).mockImplementation(async path => path.endsWith('/inventory') ? {
+    checkedAt:new Date().toISOString(),
+    result:{...result,state:"Drift",issueCount:1,issues:[{code:"ResourceReservationInsufficient",kind:"PersistentVolumeClaim",resourceName:"cache-data",instanceId:"instance"}]},
+  } : {reserved:{storageGiB:"4",cpuMillis:"500",memoryMiB:"512"}});
+  const confirm=vi.spyOn(window,"confirm").mockReturnValue(true);
+  const view=render(<ResourceInventory base="/projects/one" />);
+  fireEvent.click(screen.getByText("查看资源对账"));
+  await screen.findByText("实际资源配置超过账面预留");
+  expect(screen.queryByText("校正资源预留")).toBeNull();
+  view.rerender(<ResourceInventory base="/projects/one" canReconcile />);
+  fireEvent.click(screen.getByText("校正资源预留"));
+  await screen.findByText("已安排对账，结果将自动刷新。");
+  expect(confirm).toHaveBeenCalled();
+  expect(vi.mocked(api).mock.calls.some(([path,options])=>path==="/projects/one/instances/instance/reservations/reconcile" && options?.method==="POST")).toBe(true);
+  confirm.mockRestore();
+});

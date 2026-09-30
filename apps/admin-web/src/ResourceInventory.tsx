@@ -40,7 +40,7 @@ const messages: Record<string, string> = {
   UntrackedInstance: "发现未登记的实例",
   UntrackedVolume: "发现未登记的存储卷",
 };
-export function ResourceInventory({ base }: { base: string }) {
+export function ResourceInventory({ base, canReconcile = false }: { base: string; canReconcile?: boolean }) {
   const [open, setOpen] = useState(false),
     [snapshot, setSnapshot] = useState<Snapshot | null>(null),
     [error, setError] = useState("");
@@ -84,6 +84,20 @@ export function ResourceInventory({ base }: { base: string }) {
       setRefresh((x) => x + 1);
     } catch (e) {
       setError(e instanceof Error ? e.message : "对账请求失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function reconcile(instanceId: string) {
+    if (!window.confirm("重新核对实际资源，并只增加该实例的资源预留？如果超出项目额度，后续创建和扩容会被阻止。")) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(base + "/instances/" + encodeURIComponent(instanceId) + "/reservations/reconcile", { method: "POST" });
+      setScheduled(true);
+      setRefresh((x) => x + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "资源预留校正失败");
     } finally {
       setBusy(false);
     }
@@ -145,6 +159,7 @@ export function ResourceInventory({ base }: { base: string }) {
                       <th>资源</th>
                       <th>类型</th>
                       <th>差异</th>
+                      {canReconcile && <th>处理</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -155,6 +170,13 @@ export function ResourceInventory({ base }: { base: string }) {
                           {issue.kind === "CacheInstance" ? "实例" : "存储卷"}
                         </td>
                         <td>{messages[issue.code] ?? issue.code}</td>
+                        {canReconcile && <td>
+                          {issue.instanceId &&
+                          !stale && !result.truncated &&
+                          ["ResourceReservationUnknown", "ResourceReservationInsufficient"].includes(issue.code) &&
+                          !result.issues.some(other => other.instanceId === issue.instanceId && !["ResourceReservationUnknown", "ResourceReservationInsufficient"].includes(other.code)) &&
+                          <button disabled={busy} onClick={() => void reconcile(issue.instanceId!)}>校正资源预留</button>}
+                        </td>}
                       </tr>
                     ))}
                   </tbody>

@@ -9,6 +9,8 @@ import { transaction } from './db.js';
 import { HttpError } from './errors.js';
 import { openapi } from './openapi.js';
 import { registerInstanceRoutes, type InstanceOptions } from './instance-routes.js';
+import { bindingSQL, fingerprint, type InventoryBinding } from './inventory.js';
+import { reservationFloor } from './reservation-reconcile.js';
 
 type User = { id: string; email: string; platform_admin: boolean };
 type Role = 'admin' | 'maintainer' | 'viewer';
@@ -197,6 +199,44 @@ export async function buildApp(pool: pg.Pool, options: { origin: string; secureC
     await projectAccess(request,projectId,['admin','maintainer','viewer']);
     await pool.query("UPDATE projects SET inventory_next_scan=least(inventory_next_scan,greatest(now(),coalesce(inventory_checked_at,now()-interval '10 seconds')+interval '10 seconds')) WHERE id=$1",[projectId]);
     return reply.code(202).send({scheduled:true});
+  });
+  app.post('/v1/projects/:projectId/instances/:instanceId/reservations/reconcile', async (request, reply) => {
+    const {projectId,instanceId}=z.object({projectId:uuid,instanceId:uuid}).parse(request.params);
+    const actor=await projectAccess(request,projectId,['admin']);
+    if (!actor.platform_admin) throw new HttpError(403,'Platform administrator required');
+    if (!options.kube?.inspectProjectResources) throw new HttpError(503,'Resource inventory is not configured');
+    const project=(await pool.query('SELECT namespace,state FROM projects WHERE id=$1',[projectId])).rows[0];
+    if (project?.state!=='ready') throw new HttpError(409,'Project is not ready');
+    const before=(await pool.query(bindingSQL,[projectId])).rows as InventoryBinding[];
+    if(before.length>1000)throw new HttpError(409,'Project inventory exceeds the scan limit');
+    const binding=before.find(item=>item.id===instanceId);
+    if(!binding)throw new HttpError(404,'Instance not found');
+    let observed;
+    try { observed=await options.kube.inspectProjectResources(project.namespace,projectId); }
+    catch { throw new HttpError(503,'Kubernetes resource inventory is unavailable'); }
+    const floor=reservationFloor(projectId,binding,observed);
+    const result=await transaction(pool,async client=>{
+      await client.query('SELECT pg_advisory_xact_lock(73942102)');
+      const locked=(await client.query('SELECT namespace,state FROM projects WHERE id=$1 FOR UPDATE',[projectId])).rows[0];
+      const fresh=(await client.query('SELECT active,platform_admin FROM users WHERE id=$1',[actor.id])).rows[0];
+      if(!fresh?.active || !fresh.platform_admin)throw new HttpError(403,'Platform administrator required');
+      if(locked?.namespace!==project.namespace || locked.state!=='ready')throw new HttpError(409,'Project changed during resource scan');
+      const current=(await client.query(bindingSQL,[projectId])).rows as InventoryBinding[];
+      if(current.length>1000 || fingerprint(current)!==fingerprint(before))throw new HttpError(409,'Project changed during resource scan');
+      const updated=(await client.query(`UPDATE instance_bindings SET
+        reserved_storage_gib=greatest(coalesce(reserved_storage_gib,0),$3),
+        reserved_cpu_millis=CASE WHEN lifecycle='detached' THEN reserved_cpu_millis ELSE greatest(coalesce(reserved_cpu_millis,0),$4) END,
+        reserved_memory_mib=CASE WHEN lifecycle='detached' THEN reserved_memory_mib ELSE greatest(coalesce(reserved_memory_mib,0),$5) END
+        WHERE project_id=$1 AND id=$2 AND lifecycle IN ('active','detached')
+        RETURNING reserved_storage_gib,reserved_cpu_millis,reserved_memory_mib`,
+        [projectId,instanceId,floor.storageGiB,floor.cpuMillis,floor.memoryMiB])).rows[0];
+      if(!updated)throw new HttpError(409,'Instance changed during resource scan');
+      await client.query("UPDATE projects SET inventory_next_scan=now() WHERE id=$1",[projectId]);
+      await client.query("INSERT INTO audit_events(id,actor_id,project_id,instance_id,action,details) VALUES($1,$2,$3,$4,'reservation.reconcile',$5)",
+        [randomUUID(),actor.id,projectId,instanceId,JSON.stringify({before:{storageGiB:binding.reserved_storage_gib,cpuMillis:binding.reserved_cpu_millis,memoryMiB:binding.reserved_memory_mib},floor,after:{storageGiB:updated.reserved_storage_gib,cpuMillis:updated.reserved_cpu_millis,memoryMiB:updated.reserved_memory_mib}})]);
+      return {reserved:{storageGiB:updated.reserved_storage_gib,cpuMillis:updated.reserved_cpu_millis,memoryMiB:updated.reserved_memory_mib}};
+    });
+    return reply.header('Cache-Control','no-store').send(result);
   });
   app.get('/v1/projects/:projectId/quota', async (request, reply) => {
     const { projectId } = z.object({ projectId: uuid }).parse(request.params);

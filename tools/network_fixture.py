@@ -2,6 +2,8 @@
 import hashlib
 import json
 import pathlib
+import subprocess
+import time
 from cluster_lifecycle import run, wait
 
 VERSION = '1.19.7'
@@ -23,7 +25,14 @@ class NetworkFixture:
         self.root, self.config, self.context = pathlib.Path(directory), config, context
 
     def install(self):
-        run('helm', 'pull', 'cilium', '--repo', 'https://helm.cilium.io', '--version', VERSION, '--destination', str(self.root))
+        for attempt in range(3):
+            try:
+                run('helm', 'pull', 'cilium', '--repo', 'https://helm.cilium.io', '--version', VERSION, '--destination', str(self.root))
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 2:
+                    raise
+                time.sleep(2 ** attempt)
         chart = self.root / f'cilium-{VERSION}.tgz'
         assert hashlib.sha256(chart.read_bytes()).hexdigest() == CHART_SHA, 'Cilium Chart digest mismatch'
         values = self.root / 'cilium-values.json'

@@ -47,3 +47,15 @@ export function quantityExceeds(actual: string, reserved: string): boolean {
     [r, rd] = rational(reserved);
   return a * rd > r * ad;
 }
+
+export function quantityCeil(actual: string, unit: string): number {
+  const [a, ad] = rational(actual),
+    [u, ud] = rational(unit);
+  if (u <= 0n) throw new Error("Invalid resource unit");
+  const numerator = a * ud,
+    denominator = ad * u;
+  const rounded = (numerator + denominator - 1n) / denominator;
+  // The public quota schema and admission totals use bounded JS numbers.
+  if (rounded > 2147483647n) throw new Error("Resource quantity exceeds platform limit");
+  return Number(rounded);
+}

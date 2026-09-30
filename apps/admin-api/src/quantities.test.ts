@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { quantityExceeds } from "./quantities.js";
+import { quantityExceeds, quantityCeil } from "./quantities.js";
 test("resource comparisons preserve decimal, binary and large integer quantities", () => {
   for (const [a, b] of [
     [".5", "500m"],
@@ -34,4 +34,10 @@ test("resource comparisons preserve decimal, binary and large integer quantities
     "x".repeat(129),
   ])
     assert.throws(() => quantityExceeds(value, "1"));
+});
+test("resource reservations round upward without losing exact units",()=>{
+  assert.equal(quantityCeil("500.1m","1m"),501);
+  assert.equal(quantityCeil("3500Mi","1Gi"),4);
+  assert.equal(quantityCeil("1e3","1"),1000);
+  assert.throws(()=>quantityCeil("2147483648m","1m"));
 });

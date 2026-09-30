@@ -406,6 +406,10 @@ route('get','/v1/projects/{projectId}/inventory','getProjectInventory','Project 
 route('post','/v1/projects/{projectId}/inventory/refresh','refreshProjectInventory','Project member: schedule a read-only inventory scan',{
   code:202,response:object({scheduled:{const:true}}),description:'Coalesced refresh requests, at least 10 seconds after the previous scan. Does not mutate Kubernetes resources or release resource reservations.',
 });
+route('post','/v1/projects/{projectId}/instances/{instanceId}/reservations/reconcile','reconcileInstanceReservation','Platform administrator: raise an instance reservation to observed resource requirements',{
+  response:object({reserved:object({storageGiB:string,cpuMillis:nullable(string),memoryMiB:nullable(string)})}),
+  description:'Freshly scans the project namespace and checks instance/PVC ownership, UID, template and configuration. Refuses busy or ambiguous instances and concurrent platform changes. Only increases high-water reservations; detached volumes update storage only. May record usage above a configured quota, blocking new admissions until resolved. Does not modify Kubernetes resources or lower reservations.',
+});
 route('get', '/v1/projects/{projectId}/quota', 'getProjectQuota', 'Project member: read resource reservations and limits', { response: ref('QuotaSnapshot') });
 route('put', '/v1/projects/{projectId}/quota', 'updateProjectQuota', 'Platform administrator: update project resource limits', {
   body: ref('QuotaLimits'), response: ref('QuotaSnapshot'), revision: true, revisionDescription: 'Quota revision from GET project quota; not an instance revision.',

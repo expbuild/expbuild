@@ -12,6 +12,7 @@ export type CredentialData = { htpasswd: string; 'probe-username': string; 'prob
 export type RetainedVolumeIdentity = { namespace: string; name: string; projectId: string; instanceId: string; instanceUid: string };
 export type RetainedVolume = { name: string; namespace: string; uid: string; capacity: string; storageClass: string; phase: string; deleting: boolean };
 export interface KubernetesPort {
+  inspectProjectResources?(namespace: string, projectId: string): Promise<InventoryResources>;
   getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null>;
   deleteRetainedVolume(identity: RetainedVolumeIdentity, uid: string): Promise<void>;
   ensureProject(namespace: string, projectId: string): Promise<void>;

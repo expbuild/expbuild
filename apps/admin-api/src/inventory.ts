@@ -254,13 +254,13 @@ export function compareInventory(
   };
 }
 
-const bindingSQL = `SELECT i.id,i.resource_name,i.kubernetes_uid,i.lifecycle,i.template_name,i.template_version,i.reserved_storage_gib,i.reserved_cpu_millis,i.reserved_memory_mib,
+export const bindingSQL = `SELECT i.id,i.resource_name,i.kubernetes_uid,i.lifecycle,i.template_name,i.template_version,i.reserved_storage_gib,i.reserved_cpu_millis,i.reserved_memory_mib,
   EXISTS(SELECT 1 FROM operations o WHERE o.instance_id=i.id AND o.state IN ('pending','applying','reconciling')) AS busy,
   last.request #> '{desired,spec}' AS expected_spec,
   (SELECT string_agg(o.id::text||':'||o.state||':'||o.updated_at::text,',' ORDER BY o.created_at,o.id) FROM operations o WHERE o.instance_id=i.id) AS operation_stamp
   FROM instance_bindings i LEFT JOIN LATERAL (SELECT request FROM operations WHERE instance_id=i.id AND request ? 'desired' ORDER BY created_at DESC,id DESC LIMIT 1) last ON true
   WHERE i.project_id=$1 ORDER BY i.id LIMIT 1001`;
-const fingerprint = (rows: InventoryBinding[]) =>
+export const fingerprint = (rows: InventoryBinding[]) =>
   createHash("sha256").update(JSON.stringify(rows)).digest("hex");
 export class ResourceInventory {
   constructor(
