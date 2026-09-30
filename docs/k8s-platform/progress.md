@@ -153,3 +153,5 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 策略状态真实集群验收：提交 94be03a 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36670160457)三个任务全部成功。Gateway 日志确认容量预算从 1 GiB 调整到 2 GiB 后，PolicyApplied 版本匹配、实际引擎容量更新且数据保留。
 
 独立历史统计第一阶段：新增可选 Prometheus 查询适配、按项目/原 CR UID 授权的历史 API 与按需查看界面；区分 AC/CAS、get/contains、hit/miss，缺失数据不转成零。支持已删除实例的授权历史查询。自动采集部署和真实 Prometheus 联调尚未完成，部署与验证边界见 [监控说明](monitoring.md)。
+
+历史统计真实查询验证：本地使用 SHA256 锁定的 Prometheus v3.15.0 启动独立 TSDB 和受控认证 exporter；三组项目/CR UID 计数速率通过实际采集和 PromQL range 查询验证隔离，缺失序列与有效零值保持区分。已加入 Management API CI，远程运行结果待确认。这不是真实缓存引擎自动采集验收；下一步仍需采集对象生成、网络授权及凭据同步。

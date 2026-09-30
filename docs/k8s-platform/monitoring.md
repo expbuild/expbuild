@@ -37,4 +37,14 @@ Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.sv
 
 ## 验证范围与后续工作
 
-单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。真实 Prometheus 采集/查询、实例采集自动化、网络入口、凭据轮换和长期负载尚待验收。资源指标、延迟、流量和 WebDAV 指标仍未接入。
+单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。本地已通过固定 Prometheus v3.15.0 的真实认证采集与范围查询测试：受控 exporter 为三个项目/UID 组合提供不同计数速率，确认项目及 UID 分别隔离，缺失实例为空序列、有效零值仍为零。该测试验证真实 PromQL/HTTP 行为，采集源是合约 fixture，尚未覆盖真实缓存引擎自动采集。实例采集自动化、网络入口、凭据轮换和长期负载仍待验收。资源指标、延迟、流量和 WebDAV 指标仍未接入。
+
+
+## 复现真实 Prometheus 测试
+
+```sh
+python3 tools/download_prometheus.py /tmp/expbuild-prometheus
+PROMETHEUS_BIN=/tmp/expbuild-prometheus npx tsx --test apps/admin-api/src/history-engine.test.ts
+```
+
+下载器锁定[官方 v3.15.0 Linux amd64 发布资产](https://github.com/prometheus/prometheus/releases/tag/v3.15.0)及 SHA256；仅提取校验过归档中的指定普通二进制文件。测试创建临时配置/TSDB、随机本地端口和独立进程，退出后清理。需要等待真实采样进入分钟对齐的查询窗口，通常几十秒；缺少 PROMETHEUS_BIN 时明确跳过，CI 下载后强制执行。不连接默认或生产 Prometheus。

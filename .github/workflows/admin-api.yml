@@ -1,9 +1,9 @@
 name: Management API
 on:
   push:
-    paths: ['apps/**', 'package.json', 'package-lock.json', '.github/workflows/admin-api.yml']
+    paths: ['apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
   pull_request:
-    paths: ['apps/**', 'package.json', 'package-lock.json', '.github/workflows/admin-api.yml']
+    paths: ['apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
 permissions:
   contents: read
 jobs:
@@ -32,4 +32,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Install pinned Prometheus test fixture
+        run: python3 tools/download_prometheus.py "$RUNNER_TEMP/prometheus"
       - run: npm test
+        env:
+          PROMETHEUS_BIN: ${{ runner.temp }}/prometheus
