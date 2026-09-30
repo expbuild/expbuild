@@ -195,3 +195,5 @@ Cilium 第三轮（提交 90a77c5）：[集群回归](https://github.com/expbuil
 提交 3872cfe 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36679678906)四项全部成功：WebDAV、Helm internal、Gateway、Cilium isolation。包含只读资源对账的孤立 PVC 检测、不自动删除、人工移除后恢复，以及首次硬配额初始化等待窗口的回归。管理 API、平台回归和四镜像构建亦成功。
 
 模板扩展第一步：Operator 新增 internal/templates 注册表，以完整名称/版本选择编译内适配器，统一受信镜像、淘汰策略校验、资源渲染和内部端点生成。未知版本不回退，调用者无法覆盖安装配置中的镜像。控制器与双引擎回归和模板边界测试通过。当前不支持动态插件；API schema/能力目录、探测、入口和监控仍需进一步统一，不能将这一阶段视为完整模板扩展框架。
+
+模板探测适配：认证 WebDAV 和 REAPI/容量探测已从通用 controller 移入各自引擎包，由模板注册表按名称及精确版本选择。未知模板或版本直接拒绝，不再隐式回退到 REAPI；镜像是否启用仍在渲染阶段独立检查。测试覆盖未知版本在网络访问前拒绝、已注册模板调用认证探测、真实 Apache 正确/错误凭据和既有协议断言；真实 bazel-remote、隔离 API Server 契约和受影响模块 race 检查通过。API 能力/schema、Gateway、监控和策略状态仍有引擎相关分支，继续统一；这次改动不增加新的协议或淘汰能力。

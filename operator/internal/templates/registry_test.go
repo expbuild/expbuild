@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	appsv1 "k8s.io/api/apps/v1"
@@ -69,5 +70,25 @@ func TestRegistryTrustBoundary(t *testing.T) {
 				t.Fatal("engine budget validation bypassed")
 			}
 		})
+	}
+}
+
+func TestProtocolLookupRejectsUnknownBeforeNetwork(t *testing.T) {
+	for _, ref := range []cachev1.TemplateRef{{Name: "unknown", Version: "0.1.0"}, {Name: "bazel-remote", Version: "0.2.0"}, {Name: "webdav-apache", Version: "latest"}} {
+		c := &cachev1.CacheInstance{}
+		c.Spec.TemplateRef = ref
+		// A nil Secret would panic if execution fell through to an engine probe.
+		err := CheckProtocol(context.Background(), c, nil)
+		if err == nil || !strings.Contains(err.Error(), "unsupported template") {
+			t.Fatalf("expected template rejection, got %v", err)
+		}
+	}
+	for _, name := range []string{"bazel-remote", "webdav-apache"} {
+		c := &cachev1.CacheInstance{}
+		c.Spec.TemplateRef = cachev1.TemplateRef{Name: name, Version: "0.1.0"}
+		err := CheckProtocol(context.Background(), c, &corev1.Secret{})
+		if err == nil || err.Error() != "probe credentials are missing" {
+			t.Fatalf("registered probe not invoked for %s: %v", name, err)
+		}
 	}
 }

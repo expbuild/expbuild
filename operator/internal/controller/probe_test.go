@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/expbuild/expbuild/operator/internal/bazelremote"
+	"github.com/expbuild/expbuild/operator/internal/webdav"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,7 +36,7 @@ func TestWebDAVProbeChecksAuthenticationAndMultistatus(t *testing.T) {
 				_, _ = w.Write([]byte(scenario.body))
 			}))
 			defer server.Close()
-			err := checkWebDAV(context.Background(), secret, server.URL)
+			err := webdav.CheckProtocol(context.Background(), secret, server.URL)
 			if (err == nil) != scenario.ok {
 				t.Fatalf("probe result: %v", err)
 			}
@@ -73,16 +75,16 @@ func TestAuthenticatedProtocolProbe(t *testing.T) {
 	}}}}, struct{}{})
 	go func() { _ = g.Serve(l) }()
 	defer g.Stop()
-	if err = checkProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err != nil {
+	if err = bazelremote.CheckProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err != nil {
 		t.Fatal(err)
 	}
 	c.Spec.Eviction.MaxCacheGiB = 7
-	if err = checkProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err == nil {
+	if err = bazelremote.CheckProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err == nil {
 		t.Fatal("wrong cache budget accepted")
 	}
 	c.Spec.Eviction.MaxCacheGiB = 8
 	s.Data["probe-password"] = []byte("wrong")
-	if err = checkProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err == nil {
+	if err = bazelremote.CheckProtocol(context.Background(), c, s, h.URL, l.Addr().String()); err == nil {
 		t.Fatal("wrong credentials accepted")
 	}
 }

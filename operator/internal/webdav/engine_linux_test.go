@@ -2,6 +2,7 @@ package webdav
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestApacheWebDAVContract(t *testing.T) {
@@ -87,6 +90,14 @@ func TestApacheWebDAVContract(t *testing.T) {
 	if !ready {
 		output, _ := os.ReadFile(log.Name())
 		t.Fatalf("Apache did not start: %s", output)
+	}
+	secret := &corev1.Secret{Data: map[string][]byte{"probe-username": []byte("cache"), "probe-password": []byte("engine-test-only")}}
+	if err := CheckProtocol(context.Background(), secret, "http://"+address+"/"); err != nil {
+		t.Fatalf("authenticated adapter probe: %v", err)
+	}
+	secret.Data["probe-password"] = []byte("incorrect")
+	if err := CheckProtocol(context.Background(), secret, "http://"+address+"/"); err == nil {
+		t.Fatal("adapter probe accepted wrong credentials")
 	}
 	request := func(method, path string, body []byte, authenticated bool, headers map[string]string) (int, []byte, http.Header) {
 		req, err := http.NewRequest(method, "http://"+address+path, bytes.NewReader(body))

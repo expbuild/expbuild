@@ -3,32 +3,43 @@
 package templates
 
 import (
+	"context"
 	"fmt"
+
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	"github.com/expbuild/expbuild/operator/internal/webdav"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
 type Adapter struct {
 	image     string
+	probe     func(context.Context, *cachev1.CacheInstance, *corev1.Secret) error
 	policy    string
 	render    func(instance.Config) ([]runtime.Object, error)
 	endpoints func(string, string) []cachev1.Endpoint
 }
 
-// Resolve fails closed on unknown versions; there is no fallback to latest.
-func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage string) (Adapter, error) {
+// lookup fails closed on unknown versions; there is no fallback to latest.
+func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 	adapters := map[cachev1.TemplateRef]Adapter{
 		{Name: "bazel-remote", Version: "0.1.0"}: {
-			image: bazelImage, policy: "lru", render: bazelremote.Render,
+			policy: "lru", render: bazelremote.Render,
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				host := fmt.Sprintf("%s.%s.svc", c.Name, c.Namespace)
+				return bazelremote.CheckProtocol(ctx, c, s, "http://"+host+":8080", host+":9092")
+			},
 			endpoints: func(name, namespace string) []cachev1.Endpoint {
 				return []cachev1.Endpoint{{Protocol: "reapi", URL: fmt.Sprintf("grpc://%s.%s.svc:9092", name, namespace)}, {Protocol: "bazel-http", URL: fmt.Sprintf("http://%s.%s.svc:8080", name, namespace)}}
 			},
 		},
 		{Name: "webdav-apache", Version: "0.1.0"}: {
-			image: webdavImage, policy: "none", render: webdav.Render,
+			policy: "none", render: webdav.Render,
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				return webdav.CheckProtocol(ctx, s, fmt.Sprintf("http://%s.%s.svc:8080/", c.Name, c.Namespace))
+			},
 			endpoints: func(name, namespace string) []cachev1.Endpoint {
 				return []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", name, namespace)}}
 			},
@@ -38,6 +49,16 @@ func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage string) (Adapter, 
 	if !ok {
 		return Adapter{}, fmt.Errorf("unsupported template %s@%s", ref.Name, ref.Version)
 	}
+	return adapter, nil
+}
+
+// Resolve binds a compiled adapter to its administrator-approved image.
+func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage string) (Adapter, error) {
+	adapter, err := lookup(ref)
+	if err != nil {
+		return Adapter{}, err
+	}
+	adapter.image = map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage}[ref.Name]
 	if adapter.image == "" {
 		return Adapter{}, fmt.Errorf("template %s has no approved image", ref.Name)
 	}
@@ -62,4 +83,13 @@ func (a Adapter) Endpoints(name, namespace string) []cachev1.Endpoint {
 		return nil
 	}
 	return a.endpoints(name, namespace)
+}
+
+// CheckProtocol rejects unknown versions before making any network request.
+func CheckProtocol(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+	adapter, err := lookup(c.Spec.TemplateRef)
+	if err != nil {
+		return err
+	}
+	return adapter.probe(ctx, c, s)
 }

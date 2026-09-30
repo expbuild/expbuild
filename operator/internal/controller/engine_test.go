@@ -108,7 +108,7 @@ func TestRealBazelRemoteContract(t *testing.T) {
 				t.Fatalf("engine exited: %s", output)
 			default:
 			}
-			if checkProtocol(context.Background(), c, secret, "http://"+httpAddress, grpcAddress) == nil {
+			if bazelremote.CheckProtocol(context.Background(), c, secret, "http://"+httpAddress, grpcAddress) == nil {
 				return stop
 			}
 			time.Sleep(100 * time.Millisecond)
