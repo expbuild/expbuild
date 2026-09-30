@@ -107,10 +107,18 @@ def main(gateway_enabled=False, isolation_enabled=False):
                         assert operation['state'] != 'failed', f'Operation failed: {operation.get("error_code")}'
                         return operation['state'] == 'succeeded'
                     wait(check, 'Operation succeeded: ' + op)
+                quota_path = f'/projects/{pid}/quota'
+                initial_quota = api(quota_path)
+                quota_limits = {'instances': 1, 'storageGiB': 3, 'cpuMillis': 1000, 'memoryMiB': 1024}
+                api(quota_path, 'PUT', quota_limits, {'If-Match': initial_quota['revision']})
                 spec = {'name': 'WebDAV via API', 'template': 'webdav-apache', 'storageGiB': 2, 'cacheGiB': 0, 'cpuMillis': 100, 'memoryMiB': 128, 'deletionPolicy': 'Delete', 'desiredState': 'Running'}
                 if gateway: spec['exposure'] = 'Gateway'
                 created = submit(f'/projects/{pid}/instances', data=spec)
                 complete(created)
+                assert api(quota_path)['reserved'] == {'instances': 1, 'storageGiB': 2, 'cpuMillis': 100, 'memoryMiB': 128}
+                rejected = api(f'/projects/{pid}/instances', 'POST', spec, {'Idempotency-Key': str(uuid.uuid4())}, 409)
+                assert rejected['error'] == 'Project quota exceeded: instances'
+                assert len(json.loads(kubectl('-n', ns, 'get', 'cacheinstances', '-o', 'json'))['items']) == 1
                 iid = created['operation']['instance_id']
                 path = f'/projects/{pid}/instances/{iid}'
                 resource = 'c-' + iid
@@ -125,6 +133,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     gateway.verify(host, basic(created['credentials']))
                 for state in ('Suspended', 'Running'):
                     complete(submit(path, 'PATCH', {**spec, 'desiredState': state}, api(path)['revision']))
+                    assert api(quota_path)['reserved']['cpuMillis'] == 100, 'Suspension retains compute reservations'
                     if gateway:
                         if state == 'Suspended':
                             assert kubectl('-n', ns, 'get', 'httproute', resource + '-http', '--ignore-not-found', '-o', 'name') == ''
@@ -161,11 +170,14 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 retained_path = f'/projects/{pid}/instances/{retained_id}'
                 complete(submit(retained_path, 'DELETE'))
                 volume = api(retained_path + '/retained-volume')
+                assert api(quota_path)['reserved'] == {'instances': 0, 'storageGiB': 2, 'cpuMillis': 0, 'memoryMiB': 0}
                 actual = json.loads(kubectl('-n', ns, 'get', 'pvc', volume['name'], '-o', 'json'))
                 assert volume['uid'] == actual['metadata']['uid']
                 complete(submit(retained_path + '/retained-volume', 'DELETE', revision=volume['uid']))
                 assert kubectl('-n', ns, 'get', 'pvc', volume['name'], '--ignore-not-found', '-o', 'name') == ''
                 assert api(retained_path)['lifecycle'] == 'deleted'
+                assert api(quota_path)['reserved'] == {'instances': 0, 'storageGiB': 0, 'cpuMillis': 0, 'memoryMiB': 0}
+                print('Project quotas rejected excess admission and released reservations after confirmed cleanup', flush=True)
                 print('Retain storage inspection and explicit API cleanup passed', flush=True)
                 if gateway:
                     reapi_spec = {**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'storageGiB': 3, 'cacheGiB': 1, 'memoryMiB': 512}

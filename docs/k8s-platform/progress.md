@@ -173,3 +173,7 @@ ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https
 Cilium 首轮结果（提交 a83b85d）：[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36674390223)的内部、WebDAV、Gateway 三个任务成功。isolation 任务中 Service/Pod IP 的全部隔离矩阵与 namespace/Pod 授权撤销恢复通过，随后 REAPI TLS、预算更新、真实指标和轮换后 REAPI 也通过；在旧指标凭据的 HTTPS 请求遭遇 RemoteDisconnected 后整项失败，不能记录为完整成功。测试客户端现对 GET 的连接中断最多重试两次，每次重新建连；不重试写入、证书验证失败或 HTTP 状态响应，认证断言仍要求精确状态。待新 CI 验证。
 
 真实 Bazel 客户端新增本地验收：固定 8.8.1 对 HTTP 与 REAPI 分别执行首次构建、全新本地缓存的远程命中构建、禁用远程缓存的失败对照，六次构建全部符合预期，确认 ActionCache/CAS 产物恢复而非本地复用。已接入原生引擎 CI；该客户端尚未经 Gateway/TLS，详见引擎验证记录。
+
+项目配额第一阶段：新增实例数、存储、CPU、内存四项额度，平台管理员可调整，项目成员可查看；请求受理与预留在同一事务中，worker 完成后按生命周期释放，失败资源和保留卷不提前释放。升级按历史配置最大值回填，未知预留不当零。已补配额界面、OpenAPI、审计与版本保护；本地 PostgreSQL 并发/迁移测试、原 worker 生命周期配额断言及界面组件测试通过。真实 Helm/API 场景已增加超额拒绝、暂停预留和保留卷清理释放断言，待 CI 验证。当前是管理 API 限额，Kubernetes ResourceQuota 和资源对账尚待接入，见 [配额说明](quotas.md)。
+
+提交 bd49142 的[真实引擎与 Operator CI](https://github.com/expbuild/expbuild/actions/runs/36675328802)通过，固定 Bazel 客户端 HTTP/REAPI 构建及禁用缓存对照已在 CI 执行。镜像构建通过；完整 Cilium 集群任务仍待最终结果。

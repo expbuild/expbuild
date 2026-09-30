@@ -1,3 +1,4 @@
+import { ProjectQuota } from "./ProjectQuota";
 import { LookupHistory } from "./LookupHistory";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
@@ -567,6 +568,7 @@ function ProjectView({ project, user }: { project: Project; user: User }) {
           <p className="muted">暂无操作记录</p>
         )}
       </section>
+      <ProjectQuota key={base} base={base} canEdit={user.platform_admin} />
       {canAdmin && <ProjectManagement base={base} />}
     </>
   );

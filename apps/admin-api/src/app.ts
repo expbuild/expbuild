@@ -4,6 +4,7 @@ import type pg from 'pg';
 import { randomUUID } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { digest, hashPassword, token, verifyPassword } from './security.js';
+import { quotaInput, quotaSnapshot, checkQuota } from './quotas.js';
 import { transaction } from './db.js';
 import { HttpError } from './errors.js';
 import { openapi } from './openapi.js';
@@ -184,6 +185,35 @@ export async function buildApp(pool: pg.Pool, options: { origin: string; secureC
       await client.query("INSERT INTO audit_events(id,actor_id,project_id,action) VALUES($1,$2,$3,'project.create')", [randomUUID(), actor.id, id]);
     });
     return reply.code(202).send({ id, namespace, state: 'pending' });
+  });
+  app.get('/v1/projects/:projectId/quota', async (request, reply) => {
+    const { projectId } = z.object({ projectId: uuid }).parse(request.params);
+    await projectAccess(request, projectId, ['admin', 'maintainer', 'viewer']);
+    const snapshot = await transaction(pool, async client => {
+      await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [projectId]);
+      return quotaSnapshot(client, projectId);
+    });
+    return reply.header('Cache-Control', 'no-store').header('ETag', `"${snapshot.revision}"`).send(snapshot);
+  });
+  app.put('/v1/projects/:projectId/quota', async (request, reply) => {
+    const { projectId } = z.object({ projectId: uuid }).parse(request.params);
+    const actor = await projectAccess(request, projectId, ['admin']);
+    if (!actor.platform_admin) throw new HttpError(403, 'Platform administrator required');
+    const limits = quotaInput.parse(request.body);
+    const expected = z.string().regex(/^"?[1-9][0-9]*"?$/).parse(request.headers['if-match']).replaceAll('"', '');
+    const snapshot = await transaction(pool, async client => {
+      await client.query('SELECT pg_advisory_xact_lock(73942102)');
+      await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [projectId]);
+      const fresh = (await client.query('SELECT active,platform_admin FROM users WHERE id=$1', [actor.id])).rows[0];
+      if (!fresh?.active || !fresh.platform_admin) throw new HttpError(403, 'Platform administrator required');
+      const current = await quotaSnapshot(client, projectId);
+      if (current.revision !== expected) throw new HttpError(409, 'Project quota changed');
+      checkQuota(limits, current.reserved, current.unknownReservations);
+      await client.query('UPDATE projects SET quota_limits=$2,quota_revision=quota_revision+1 WHERE id=$1', [projectId, JSON.stringify(limits)]);
+      await client.query("INSERT INTO audit_events(id,actor_id,project_id,action,details) VALUES($1,$2,$3,'quota.update',$4)", [randomUUID(), actor.id, projectId, JSON.stringify({ before: current.limits, after: limits })]);
+      return quotaSnapshot(client, projectId);
+    });
+    return reply.header('Cache-Control', 'no-store').header('ETag', `"${snapshot.revision}"`).send(snapshot);
   });
   app.post('/v1/projects/:projectId/retry',async(request,reply)=>{
     const projectId=uuid.parse((request.params as {projectId:string}).projectId);

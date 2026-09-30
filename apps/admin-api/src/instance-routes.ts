@@ -3,6 +3,7 @@ import type pg from "pg";
 import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { z } from "zod";
+import { reserveResources } from "./quotas.js";
 import { transaction } from "./db.js";
 import { HttpError, OperationError } from "./errors.js";
 import { digest, token } from "./security.js";
@@ -307,6 +308,7 @@ export async function registerInstanceRoutes(
         "INSERT INTO instance_bindings(id,project_id,resource_name,display_name,created_by,template_name) VALUES($1,$2,$3,$4,$5,$6)",
         [id, projectId, desired.metadata.name, input.name, actor.id, input.template],
       );
+      await reserveResources(client, projectId, id, input, true);
       await client.query(
         "INSERT INTO instance_credentials(id,instance_id,name,secret_name,state) VALUES($1,$2,'default',$3,'pending')",
         [randomUUID(), id, desired.spec.access.credentialsSecretRef],
@@ -405,6 +407,7 @@ export async function registerInstanceRoutes(
           requestHash,
         );
         if (existing) return existing;
+        await reserveResources(client, projectId, instanceId, input);
         const row = await client.query(
           `INSERT INTO operations(id,project_id,instance_id,kind,idempotency_key,request_hash,request,created_by) VALUES($1,$2,$3,'instance.update',$4,$5,$6,$7) RETURNING ${opSummary}`,
           [

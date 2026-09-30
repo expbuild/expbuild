@@ -1,3 +1,4 @@
+import { settleResources } from "./quotas.js";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -89,8 +90,13 @@ export class OperationWorker {
     apply?: (client: pg.PoolClient) => Promise<void>,
   ) {
     await transaction(this.pool, async (client) => {
+      // Admission takes project then operation locks; use the same order.
+      await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [operation.project_id]);
       if (!(await this.held(client, operation))) return;
       if (apply) await apply(client);
+      if (state === 'succeeded' && operation.instance_id && operation.request.desired &&
+          ['instance.create', 'instance.update'].includes(operation.kind))
+        await settleResources(client, operation.instance_id, operation.request.desired);
       await client.query(
         "UPDATE operations SET state=$3,error_code=$4,secret_payload=NULL,worker_id=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND worker_id=$2",
         [operation.id, operation.worker_id, state, code],

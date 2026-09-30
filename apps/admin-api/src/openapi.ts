@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { quotaInput } from "./quotas.js";
 import { instanceInput } from "./instance-contract.js";
 
 type Schema = Record<string, unknown>;
@@ -73,6 +74,10 @@ const accepted = object(
 const instanceSchema = z.toJSONSchema(instanceInput, { io: "input" });
 delete instanceSchema.$schema;
 const schemas: Record<string, Schema> = {
+  QuotaLimits: z.toJSONSchema(quotaInput),
+  QuotaSnapshot: object({ limits: ref('QuotaLimits'), revision: string,
+    reserved: object(Object.fromEntries(['instances','storageGiB','cpuMillis','memoryMiB'].map(key => [key, {type: 'integer', minimum: 0}]))),
+    unknownReservations: {type: 'integer', minimum: 0} }),
   Error: object(
     {
       error: string,
@@ -380,6 +385,11 @@ route(
       "Creates project membership and queues namespace initialization. This route does not support idempotency; inspect project list before retrying an ambiguous response.",
   },
 );
+route('get', '/v1/projects/{projectId}/quota', 'getProjectQuota', 'Project member: read resource reservations and limits', { response: ref('QuotaSnapshot') });
+route('put', '/v1/projects/{projectId}/quota', 'updateProjectQuota', 'Platform administrator: update project resource limits', {
+  body: ref('QuotaLimits'), response: ref('QuotaSnapshot'), revision: true, revisionDescription: 'Quota revision from GET project quota; not an instance revision.',
+  description: 'If-Match is the quota revision. Null means unlimited; zero prevents new reservations. Rejects limits below current reservations or unresolved legacy usage. Admission is enforced by the management API, not a Kubernetes ResourceQuota.',
+});
 route(
   "post",
   "/v1/projects/{projectId}/retry",

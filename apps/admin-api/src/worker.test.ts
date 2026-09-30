@@ -154,6 +154,11 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const rotatedSecret=[...kube.objects.values()][0]!.spec.access.credentialsSecretRef;
     const detail = await app.inject({ url: `${path}/${instanceId}`, headers });
     assert.equal(detail.json().lifecycle, 'active');
+    const quota = async () => (await app.inject({url:`/v1/projects/${projectId}/quota`,headers})).json();
+    const activeReservation = (await quota()).reserved;
+    assert.equal(activeReservation.instances,1);
+    assert.equal(activeReservation.storageGiB,input.storageGiB);
+
     const snapshot=await app.inject({url:`${path}/${instanceId}/statistics`,headers});assert.equal(snapshot.statusCode,200,snapshot.body);assert.equal(snapshot.json().usedBytes,1024);assert.equal(statisticsCalls,1);
     const updateHeaders = { ...headers, 'idempotency-key': 'suspend-cache-1', 'if-match': detail.headers.etag as string };
     const update = await app.inject({ method: 'PATCH', url: `${path}/${instanceId}`, headers: updateHeaders, payload: { ...input, desiredState: 'Suspended' } });
@@ -168,6 +173,7 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const deletion = await app.inject({ method: 'DELETE', url: `${path}/${instanceId}`, headers: { ...headers, 'idempotency-key': 'delete-cache-1' } });
     assert.equal(deletion.statusCode, 202, deletion.body);
     const original = structuredClone([...kube.objects.values()][0]!);
+    assert.deepEqual((await quota()).reserved,activeReservation,'suspension and queued deletion keep resource reservations');
     await tick(); // CR deleted; credential cleanup is still pending.
     const deleteId = deletion.json().operation.id;
     await pool.query("UPDATE operations SET deadline_at=now()-interval '1 second' WHERE id=$1", [deleteId]);
@@ -197,6 +203,7 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal(replayedDelete.json().replayed, true);
     assert.equal((await pool.query('SELECT request FROM operations WHERE id=$1', [deleteId])).rows[0].request.deletionPolicy, 'Retain');
     assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1', [instanceId])).rows[0].lifecycle, 'detached');
+    assert.deepEqual((await quota()).reserved,{instances:0,storageGiB:input.storageGiB,cpuMillis:0,memoryMiB:0},'confirmed Retain deletion releases compute only');
     assert.equal(kube.secrets.size, 0);
     assert.equal(await worker.tick(), false);
     const volumePath = `${path}/${instanceId}/retained-volume`;
@@ -239,6 +246,7 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal((await removeVolume('cleanup-volume-delete', 'another-uid')).statusCode, 409);
     assert.equal((await removeVolume('new-volume-delete')).statusCode, 409);
     assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1', [instanceId])).rows[0].lifecycle, 'deleted');
+    assert.deepEqual((await quota()).reserved,{instances:0,storageGiB:0,cpuMillis:0,memoryMiB:0},'confirmed retained-volume cleanup releases storage');
     assert.equal((await pool.query("SELECT count(*)::int AS total FROM audit_events WHERE operation_id=$1 AND action='volume.delete'", [cleanup.json().operation.id])).rows[0].total, 1);
     kube.onProject=async()=>{throw new OperationError('namespace_ownership_conflict');};
     const failedProject=await app.inject({method:'POST',url:'/v1/projects',headers,payload:{name:'Retry project'}});
