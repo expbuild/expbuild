@@ -110,9 +110,9 @@ func TestClientAndProbeCredentialsFromManagementAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	check := func(user, password string, want int) {
+	check := func(user, password, method, path string, want int) {
 		t.Helper()
-		r := httptest.NewRequest(http.MethodGet, "/status", nil)
+		r := httptest.NewRequest(method, path, nil)
 		r.SetBasicAuth(user, password)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
@@ -120,14 +120,18 @@ func TestClientAndProbeCredentialsFromManagementAPI(t *testing.T) {
 			t.Fatalf("user %q: got %d, want %d", user, w.Code, want)
 		}
 	}
-	check("cache", "client-password", 200)
-	check("health", "probe-password", 200)
-	check("cache", "probe-password", 401)
-	check("health", "client-password", 401)
+	check("cache", "client-password", http.MethodGet, "/status", 200)
+	check("health", "probe-password", http.MethodGet, "/status", 200)
+	check("cache", "client-password", http.MethodPut, "/cache/"+keyA, 201)
+	check("health", "probe-password", http.MethodGet, "/cache/"+keyA, 403)
+	check("health", "probe-password", http.MethodPut, "/cache/"+keyB, 403)
+	check("cache", "client-password", http.MethodGet, "/cache/"+keyA, 200)
+	check("cache", "probe-password", http.MethodGet, "/status", 401)
+	check("health", "client-password", http.MethodGet, "/status", 401)
 	write("cache:" + string(clientHash) + "\nhealth:" + string(probeHash) + "\nother:" + string(probeHash) + "\n")
-	check("cache", "client-password", 503)
+	check("cache", "client-password", http.MethodGet, "/status", 503)
 	write("cache:" + string(clientHash) + "\ncache:" + string(probeHash) + "\n")
-	check("cache", "client-password", 503)
+	check("cache", "client-password", http.MethodGet, "/status", 503)
 }
 
 func TestAuthenticatedStatusReportsRequestsAndCapacity(t *testing.T) {

@@ -271,6 +271,9 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     gradle_id = gradle['operation']['instance_id']
                     gradle_path = f'/projects/{pid}/instances/{gradle_id}'
                     gradle_resource = 'c-' + gradle_id
+                    gradle_cr = json.loads(kubectl('-n', ns, 'get', 'cacheinstance', gradle_resource, '-o', 'json'))
+                    gradle_secret = json.loads(kubectl('-n', ns, 'get', 'secret', gradle_cr['spec']['access']['credentialsSecretRef'], '-o', 'json'))
+                    probe_credentials = {'username': base64.b64decode(gradle_secret['data']['probe-username']).decode(), 'password': base64.b64decode(gradle_secret['data']['probe-password']).decode()}
                     key = 'b' * 64
                     payload = b'Gradle archive through management API'
                     gradle_host = None
@@ -279,6 +282,9 @@ def main(gateway_enabled=False, isolation_enabled=False):
                         assert urlparse(endpoint).path == '/cache/'
                         gradle_host = urlparse(endpoint).hostname
                     with connection(ns, gradle_resource, 8080) as cache:
+                        assert request(cache + '/status', headers=basic(probe_credentials))[0] == 200
+                        assert request(cache + '/cache/' + key, headers=basic(probe_credentials))[0] == 403
+                        assert request(cache + '/cache/' + key, 'PUT', payload, basic(probe_credentials))[0] == 403
                         assert request(cache + '/cache/' + key, 'PUT', payload, basic(gradle['credentials']))[0] == 201
                         assert request(cache + '/cache/' + key, headers=basic(gradle['credentials']))[:2] == (200, payload)
                     if gateway:

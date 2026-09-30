@@ -257,3 +257,7 @@ Helm 内部模式新增 Gradle 管理链路：同一次性集群安装可选摘�
 双身份修复 ce15a84 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36720727344)四项全部成功；内部模式日志明确记录 Gradle 容量和请求计数到达管理 API，以及实例创建、轮换和删除完成。Go/Kubernetes 平台测试、Gradle 等容器构建亦成功。
 
 提交 dced8e9 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36721116900)四项全部成功，Gateway 日志确认 Gradle 的 `/cache/` HTTPS 端点、认证读写、轮换后旧凭据拒绝和删除后的路由撤销实际通过；Operator、Helm 内部和 Cilium 隔离模式也通过。以上使用 kind 默认本地卷及一次性 Envoy Gateway，尚未认证生产 CSI、真实 DNS 和多节点故障恢复。
+
+WebDAV 暂维持现状：用户将后续选择更合适的服务。新的 WebDAV 淘汰原型未提交且已撤回；在选型明确前不继续扩展现有 Apache WebDAV 引擎。
+
+Gradle 探测凭据最小权限：引擎现在只允许 `health` 身份读取 `/status`，拒绝用它 GET/PUT 缓存条目；管理 API 创建的真实 Secret 会在 Helm 集群验收中验证这一点。客户端身份维持缓存读写。Go 并发测试通过，完整集群结果以新 CI 为准。

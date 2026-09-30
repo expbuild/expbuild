@@ -89,19 +89,19 @@ func validKey(key string) bool {
 	return err == nil && key == strings.ToLower(key)
 }
 
-func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) (string, bool) {
 	user, password, ok := r.BasicAuth()
 	data, err := os.ReadFile(s.credentials)
 	if err != nil {
 		http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
-		return false
+		return "", false
 	}
 	// The management API supplies one client identity and one probe identity.
 	// Validate the entire bounded file before accepting either identity.
 	lines := strings.Split(strings.TrimSuffix(string(data), "\n"), "\n")
 	if len(data) > 4096 || len(lines) == 0 || len(lines) > 2 {
 		http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
-		return false
+		return "", false
 	}
 	seen := map[string]bool{}
 	hash := ""
@@ -109,7 +109,7 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 		parts := strings.Split(line, ":")
 		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(parts[0], "\r\n\t ") || strings.ContainsAny(parts[1], "\r\n\t ") || seen[parts[0]] {
 			http.Error(w, "credentials unavailable", http.StatusServiceUnavailable)
-			return false
+			return "", false
 		}
 		seen[parts[0]] = true
 		if ok && subtle.ConstantTimeCompare([]byte(user), []byte(parts[0])) == 1 {
@@ -119,13 +119,14 @@ func (s *Server) authenticate(w http.ResponseWriter, r *http.Request) bool {
 	if hash == "" || bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
 		w.Header().Set("WWW-Authenticate", `Basic realm="expbuild Gradle cache"`)
 		http.Error(w, "authentication required", http.StatusUnauthorized)
-		return false
+		return "", false
 	}
-	return true
+	return user, true
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(w, r) {
+	user, authenticated := s.authenticate(w, r)
+	if !authenticated {
 		return
 	}
 	if r.URL.Path == "/status" && r.URL.RawQuery == "" {
@@ -141,6 +142,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(w).Encode(map[string]any{"sizeBytes": used, "capacityBytes": s.maxTotal, "entries": count,
 			"getHits": s.getHits.Load(), "getMisses": s.getMisses.Load(), "putSuccess": s.putSuccess.Load(), "putRejected": s.putRejected.Load()})
+		return
+	}
+	// The health identity is stored in the same Secret for Operator and API
+	// probes, but it cannot read or mutate build-cache archives.
+	if user == "health" {
+		http.Error(w, "probe identity cannot access cache content", http.StatusForbidden)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/cache/") || !validKey(strings.TrimPrefix(r.URL.Path, "/cache/")) || r.URL.RawQuery != "" {
