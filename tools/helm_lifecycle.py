@@ -11,6 +11,7 @@ import sys
 from urllib.parse import urlparse
 from gateway_fixture import GatewayFixture
 from monitoring_fixture import MonitoringFixture
+from network_fixture import NetworkFixture
 from datetime import datetime, timezone
 import subprocess
 import tempfile
@@ -19,7 +20,7 @@ from cluster_lifecycle import APACHE, NODE, run, wait
 from container_smoke import request
 
 
-def main(gateway_enabled=False):
+def main(gateway_enabled=False, isolation_enabled=False):
     name = 'expbuild-helm-' + uuid.uuid4().hex[:10]
     namespace = 'expbuild-system'
     origin = 'https://console.example.test'
@@ -27,6 +28,7 @@ def main(gateway_enabled=False):
         config = str(pathlib.Path(directory) / 'kubeconfig')
         gateway = None
         monitoring = None
+        network = None
         def kubectl(*args, data=None):
             return run('kubectl', '--kubeconfig', config, '--context', 'kind-' + name, *args, data=data)
         def apply(obj):
@@ -48,7 +50,15 @@ def main(gateway_enabled=False):
                 try: process.wait(timeout=10)
                 except subprocess.TimeoutExpired: process.kill(); process.wait()
         try:
-            run('kind', 'create', 'cluster', '--name', name, '--kubeconfig', config, '--image', NODE, '--wait', '180s', timeout=480)
+            extra = []
+            if isolation_enabled:
+                kind_config = pathlib.Path(directory) / 'kind.json'
+                kind_config.write_text(json.dumps({'kind': 'Cluster', 'apiVersion': 'kind.x-k8s.io/v1alpha4', 'networking': {'disableDefaultCNI': True}, 'nodes': [{'role': 'control-plane'}]}))
+                extra = ['--config', str(kind_config)]
+            run('kind', 'create', 'cluster', '--name', name, '--kubeconfig', config, '--image', NODE, '--wait', '0s' if isolation_enabled else '180s', *extra, timeout=480)
+            if isolation_enabled:
+                network = NetworkFixture(kubectl, apply, directory, config, 'kind-' + name)
+                network.install()
             run('kind', 'load', 'docker-image', 'expbuild/operator:test', 'expbuild/admin-api:test', 'expbuild/admin-web:test', '--name', name)
             apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': namespace, 'labels': {'cache.expbuild.io/control-plane': 'true'}}})
             # Ephemeral test database, never a developer or production database.
@@ -176,6 +186,7 @@ def main(gateway_enabled=False):
                         try:
                             subprocess.run(['go', 'test', './internal/controller', '-run', '^TestGatewayREAPIContract$', '-count=1', '-v'], cwd='operator', env={**os.environ, 'GATEWAY_REAPI_FIXTURE': str(fixture)}, check=True, timeout=180)
                         finally: fixture.unlink(missing_ok=True)
+                    if network: network.verify(pid, ns, 'c-' + reapi_id)
                     grpc_contract(reapi['credentials'], 'write')
                     artifact = b'Bazel HTTP through TLS'
                     cas_path = '/cas/' + hashlib.sha256(artifact).hexdigest()
@@ -213,6 +224,10 @@ def main(gateway_enabled=False):
             assert kubectl('get', 'crd', 'cacheinstances.cache.expbuild.io', '-o', 'name')
             print('Helm uninstall passed; isolated control-plane E2E passed', flush=True)
         except BaseException:
+            if network:
+                for args in [('-n', 'kube-system', 'logs', 'daemonset/cilium', '--tail=80'), ('get', 'networkpolicies,ciliumendpoints', '-A', '-o', 'wide')]:
+                    try: print(kubectl(*args), flush=True)
+                    except Exception: pass
             if monitoring:
                 for args in [('-n', 'default', 'logs', 'deployment/prometheus-operator', '--tail=60'), ('-n', 'monitoring', 'get', 'prometheus,pods', '-o', 'wide'), ('get', 'servicemonitors', '-A', '-o', 'yaml')]:
                     try: print(kubectl(*args), flush=True)
@@ -232,5 +247,5 @@ def main(gateway_enabled=False):
 
 
 if __name__ == '__main__':
-    if sys.argv[1:] not in ([], ['--gateway']): raise SystemExit('Usage: helm_lifecycle.py [--gateway]')
-    main(gateway_enabled=bool(sys.argv[1:]))
+    if sys.argv[1:] not in ([], ['--gateway'], ['--gateway', '--isolation']): raise SystemExit('Usage: helm_lifecycle.py [--gateway [--isolation]]')
+    main(gateway_enabled='--gateway' in sys.argv, isolation_enabled='--isolation' in sys.argv)

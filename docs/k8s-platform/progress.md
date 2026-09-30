@@ -167,3 +167,5 @@ ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https
 自动采集完整验收（提交 6966aec）：[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36672925904)三个任务全部成功。固定 Prometheus Operator/Prometheus 镜像实际运行，真实 bazel-remote 的唯一采集目标与管理 API CAS 历史通过；轮换后旧指标凭据拒绝、新凭据成功，并出现晚于轮换完成时间的新健康采样和历史点；删除后 ServiceMonitor 与活跃目标移除。未验证真实 CNI 执行、监控 HA/持久存储和浏览器端到端。
 
 原生 LRU 的[远程 Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36673243140)通过（提交 940e507），包含超过 1 GiB 预算的不可压缩数据淘汰测试。统计界面另修复实例切换后旧请求晚到覆盖当前数据的竞态，并增加回归。
+
+网络隔离验收已接入独立 CI 模式：kind 禁用默认 CNI，安装兼容 Kubernetes 1.32 的固定 Cilium 1.19.7 Chart/镜像摘要；真实 Pod 分别对 Service/Pod IP 验证项目、客户端、Gateway、监控的 AND 选择器与端口范围，并撤销/恢复 namespace 和 Pod 标签测试新连接。已有 TLS/监控链路在相同 CNI 环境继续执行。本地渲染和连接探针分类通过，实际 CNI 结果待远程任务，尚不宣称已完成隔离验收。

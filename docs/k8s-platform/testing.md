@@ -48,3 +48,17 @@ WebDAV 检查包括匿名拒绝、错误 hostname/不受信任 CA 拒绝、16 Mi
 同一任务再创建固定镜像摘要的 bazel-remote v2.6.2 实例。Go 合约客户端通过受信任 TLS 和 gRPC authority 验证 capabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载、匿名和旧密码拒绝，并在凭据滚动更新后读取原数据。它使用标准 protobuf 字段构造 wire message，不代表完整 Bazel 构建客户端、ActionCache 或压缩协议已经认证。凭据通过权限 0600 的临时文件交接，调用后删除，不出现在命令行参数或日志中。
 
 该测试没有公网 DNS、外部负载均衡器或执行 NetworkPolicy 的 CNI，因而不证明这些设施可用。实际通过状态与失败记录见 [实施状态](progress.md)。
+
+## 执行 NetworkPolicy 的隔离集群
+
+`python3 tools/helm_lifecycle.py --gateway --isolation` 创建禁用默认 CNI 的独立 kind 集群，安装固定 Chart SHA256 的 Cilium 1.19.7，并核对渲染出的组件镜像均为摘要引用。版本依据[官方 v1.19.7 兼容矩阵](https://github.com/cilium/cilium/blob/v1.19.7/Documentation/network/kubernetes/compatibility.rst)，包含当前测试使用的 Kubernetes 1.32。测试保留 kube-proxy，使用 Kubernetes IPAM，不开启 Cilium 的 Gateway 或额外 L7 代理。
+
+CI 增加 isolation 模式，包含原有 Gateway/TLS、Prometheus 自动采集与轮换链路，以及直接从测试 Pod 发起的新 TCP 连接。它不通过端口转发判断 NetworkPolicy。覆盖 Service IP 与 Pod IP 两种目标：
+
+- namespace 授权与 client=true 同时存在才能访问缓存 8080/9092。
+- 只有 namespace 授权、只有 Pod 标签、其他项目授权或同项目无授权的 Pod 均不能连接。
+- 伪造 Gateway/监控 Pod 标签不能绕过 namespace 限制。
+- 指定 Gateway namespace 内对应标签的 Pod 可访问两个端口；监控 namespace 内对应标签只能访问 8080。
+- 删除 namespace 授权或 Pod 客户端标签后，新连接被阻断；恢复标签后可重新连接。
+
+负向断言要求 TCP 超时，DNS 错误、连接拒绝或进程错误不算策略拦截。正向检查在撤销前后验证服务仍可达。既有连接的处理、多节点跨节点流量、IPv6、其他 CNI 和生产网络环境不在本项覆盖范围。当前新任务已编码，真实通过状态以实施记录和 CI 为准。
