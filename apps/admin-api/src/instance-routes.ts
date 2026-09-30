@@ -1,4 +1,4 @@
-import { templateCatalog, templateEnabled, templateDefinition, instanceCapabilities } from './template-catalog.js';
+import { templateCatalog, templateEnabled, instanceCapabilities } from './template-catalog.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
@@ -264,7 +264,7 @@ export async function registerInstanceRoutes(
     const b=await binding(projectId,instanceId);
     if(!['detached','failed'].includes(b.lifecycle) || !b.kubernetes_uid || b.template_name!==input.template ||
       !b.template_version || !templateEnabled(input.template,options) ||
-      templateDefinition(input.template).version!==b.template_version)throw new HttpError(409,'Instance is not eligible for retained volume reclaim');
+      !instanceCapabilities(input.template,b.template_version))throw new HttpError(409,'Instance is not eligible for retained volume reclaim');
     let volume:Awaited<ReturnType<KubernetesPort['getRetainedVolume']>>;
     try {volume=await kube().getRetainedVolume({namespace:b.namespace,name:b.resource_name,projectId,instanceId,instanceUid:b.kubernetes_uid});}
     catch(error){if(error instanceof OperationError)throw new HttpError(409,error.code);throw new HttpError(503,'Storage observation is temporarily unavailable');}
@@ -279,6 +279,7 @@ export async function registerInstanceRoutes(
     const operationId=randomUUID(),password=token(),probePassword=token();
     const credentials={htpasswd:`cache:${await hash(password,10)}\nhealth:${await hash(probePassword,10)}\n`,'probe-username':'health','probe-password':probePassword};
     const desired=desiredObject(input,projectId,b.namespace,instanceId,options.storageClass,operationId,requestHash);
+    desired.spec.templateRef.version=b.template_version;
     desired.spec.storage.reclaim={previousInstanceUID:b.kubernetes_uid,volumeUID:volumeUid};
     desired.spec.access.credentialsSecretRef=`auth-${operationId}`;
     const result=await transaction(pool,async client=>{

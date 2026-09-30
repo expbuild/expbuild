@@ -345,7 +345,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
   const options = { origin, secureCookies: false, kube, encryptionKey: key, storageClass: 'test' };
   const disabled = await buildApp(pool, options);
   let statisticsCalls = 0;
-  const app = await buildApp(pool, { ...options, webdavEnabled: true, statistics: { readStatistics: async () => { statisticsCalls++; throw new Error('unsupported'); } } });
+  const app = await buildApp(pool, { ...options, webdavEnabled: true, statistics: { readStatistics: async () => { statisticsCalls++; return {source:'webdav-content-scan',observedAt:new Date().toISOString(),usedBytes:1024,capacityBytes:10*1024**3,itemCount:2,reservedBytes:null,uncompressedBytes:null}; } } });
   const worker = new OperationWorker(pool, kube, key);
   const tick = async () => {
     await pool.query("UPDATE operations SET next_attempt_at=now()-interval '1 second'");
@@ -386,7 +386,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
 
     const catalog = (await app.inject({ url: '/v1/templates', headers })).json().items;
     assert.equal(catalog[1].name, 'webdav-apache');
-    assert.equal(catalog[1].capabilities.statistics, false);
+    assert.equal(catalog[1].capabilities.statistics, true);
     assert.equal(catalog[1].capabilities.policyApplyMode, "unsupported");
     assert.equal((await create(app, { ...payload, cacheGiB: 8 })).statusCode, 400);
     const accepted = await create(app);
@@ -458,8 +458,10 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     const detail = await app.inject({ url: `${path}/${id}`, headers });
     assert.equal(detail.json().spec.templateRef.name, 'webdav-apache');
     assert.deepEqual(detail.json().spec.eviction, { enginePolicy: 'none', maxCacheGiB: 0 });
-    assert.equal((await app.inject({ url: `${path}/${id}/statistics`, headers })).statusCode, 409);
-    assert.equal(statisticsCalls, 0);
+    const davStats=await app.inject({ url: `${path}/${id}/statistics`, headers });
+    assert.equal(davStats.statusCode, 200, davStats.body);
+    assert.equal(davStats.json().source,'webdav-content-scan');
+    assert.equal(statisticsCalls, 1);
     const updateHeaders = { ...headers, 'idempotency-key': 'webdav-update', 'if-match': detail.headers.etag as string };
     const switched = await app.inject({ method: 'PATCH', url: `${path}/${id}`, headers: updateHeaders, payload: { ...payload, template: 'bazel-remote', cacheGiB: 8 } });
     assert.equal(switched.statusCode, 400);
@@ -473,6 +475,21 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     await pool.query("UPDATE operations SET state='failed' WHERE id=$1", [createOperation]);
     const obsolete = await app.inject({ method: 'POST', url: retryPath, headers: { ...headers, 'idempotency-key': 'retry-obsolete-operation' } });
     assert.equal(obsolete.statusCode, 409);
+
+    // An instance created before the statistics template was introduced must
+    // retain its original version when reclaiming an existing volume.
+    const oldWebDAV=[...kube.objects.values()][0]!;
+    oldWebDAV.spec.templateRef.version='0.1.0';
+    await pool.query("UPDATE instance_bindings SET template_version='0.1.0' WHERE id=$1",[id]);
+    const removed=await app.inject({method:'DELETE',url:`${path}/${id}`,headers:{...headers,'idempotency-key':'delete-legacy-webdav'}});
+    assert.equal(removed.statusCode,202,removed.body);
+    await tick();await tick();
+    assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1',[id])).rows[0].lifecycle,'detached');
+    kube.volume={name:oldWebDAV.metadata.name+'-data',namespace:oldWebDAV.metadata.namespace,uid:randomUUID(),capacity:'10Gi',allocatedCapacity:'10Gi',storageClass:'test',phase:'Bound',deleting:false};
+    const legacyReclaim=await app.inject({method:'POST',url:`${path}/${id}/retained-volume/reclaim`,headers:{...headers,'idempotency-key':'reclaim-legacy-webdav','if-match':kube.volume.uid},payload});
+    assert.equal(legacyReclaim.statusCode,202,legacyReclaim.body);
+    const queuedLegacy=(await pool.query('SELECT request FROM operations WHERE id=$1',[legacyReclaim.json().operation.id])).rows[0].request;
+    assert.equal(queuedLegacy.desired.spec.templateRef.version,'0.1.0');
 
   } finally {
     await app.close(); await disabled.close(); await pool.end();

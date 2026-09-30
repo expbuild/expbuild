@@ -29,10 +29,16 @@ const templates = [
     enabled: (_options: TemplateOptions) => true,
   },
   {
+    name: 'webdav-apache', version: '0.2.0', enginePolicy: 'none',
+    protocols: ['webdav', 'http'], input: webdavInput,
+    capabilities: { capacity: false, statistics: true, lookupHistory: false, lru: false, ttl: false, replicas: 1, policyApplyMode: 'unsupported', policyCondition: 'PolicyApplied' },
+    enabled: (options: TemplateOptions) => options.webdavEnabled === true,
+  },
+  {
     name: 'webdav-apache', version: '0.1.0', enginePolicy: 'none',
     protocols: ['webdav', 'http'], input: webdavInput,
     capabilities: { capacity: false, statistics: false, lookupHistory: false, lru: false, ttl: false, replicas: 1, policyApplyMode: 'unsupported', policyCondition: 'PolicyApplied' },
-    enabled: (options: TemplateOptions) => options.webdavEnabled === true,
+    enabled: (_options: TemplateOptions) => false,
   },
 ] as const;
 

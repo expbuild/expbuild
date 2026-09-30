@@ -53,14 +53,14 @@ def main():
         def auth(user):
             return {'Authorization': 'Basic ' + base64.b64encode((user + ':engine-test-only').encode()).decode()}
         @contextlib.contextmanager
-        def connection():
+        def connection(remote_port=8080):
             with socket.socket() as sock:
                 sock.bind(('127.0.0.1', 0))
                 port = sock.getsockname()[1]
-            process = subprocess.Popen(['kubectl', '--kubeconfig', config, '--context', 'kind-' + name, '-n', 'expbuild-demo', 'port-forward', 'service/webdav-demo', f'{port}:8080', '--address=127.0.0.1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(['kubectl', '--kubeconfig', config, '--context', 'kind-' + name, '-n', 'expbuild-demo', 'port-forward', 'service/webdav-demo', f'{port}:{remote_port}', '--address=127.0.0.1'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 url = f'http://127.0.0.1:{port}'
-                wait(lambda: request(url + '/')[0] == 401, 'HTTP access established')
+                wait(lambda: request(url + ('/status' if remote_port == 9093 else '/'))[0] == 401, 'HTTP access established')
                 yield url
             finally:
                 process.terminate()
@@ -74,7 +74,7 @@ def main():
             kubectl('apply', '-f', 'operator/config/crd/cache.expbuild.io_cacheinstances.yaml')
             kubectl('wait', '--for=condition=Established', 'crd/cacheinstances.cache.expbuild.io', '--timeout=60s')
             kubectl('apply', '-f', 'operator/config/rbac.yaml')
-            apply({'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': 'operator', 'namespace': 'expbuild-system'}, 'spec': {'replicas': 2, 'selector': {'matchLabels': {'app': 'operator'}}, 'template': {'metadata': {'labels': {'app': 'operator'}}, 'spec': {'serviceAccountName': 'expbuild-operator', 'securityContext': {'runAsNonRoot': True, 'runAsUser': 65532, 'seccompProfile': {'type': 'RuntimeDefault'}}, 'containers': [{'name': 'operator', 'image': 'expbuild/operator:test', 'imagePullPolicy': 'Never', 'args': ['--bazel-remote-image=example.invalid/unused@sha256:' + 'a'*64, '--webdav-image=' + APACHE], 'securityContext': {'readOnlyRootFilesystem': True, 'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}}}]}}}})
+            apply({'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': {'name': 'operator', 'namespace': 'expbuild-system'}, 'spec': {'replicas': 2, 'selector': {'matchLabels': {'app': 'operator'}}, 'template': {'metadata': {'labels': {'app': 'operator'}}, 'spec': {'serviceAccountName': 'expbuild-operator', 'securityContext': {'runAsNonRoot': True, 'runAsUser': 65532, 'seccompProfile': {'type': 'RuntimeDefault'}}, 'containers': [{'name': 'operator', 'image': 'expbuild/operator:test', 'imagePullPolicy': 'Never', 'args': ['--bazel-remote-image=example.invalid/unused@sha256:' + 'a'*64, '--webdav-image=' + APACHE, '--webdav-stats-image=expbuild/operator:test'], 'securityContext': {'readOnlyRootFilesystem': True, 'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}}}]}}}})
             secret('webdav-demo-auth', 'cache')
             kubectl('apply', '-f', 'operator/examples/webdav.yaml')
             wait(ready, 'WebDAV ready through authenticated Operator probe')
@@ -83,6 +83,8 @@ def main():
             with connection() as url:
                 assert request(url + '/artifact', 'PUT', b'persistent payload', auth('cache'))[0] == 201
                 assert request(url + '/artifact', headers=auth('cache'))[:2] == (200, b'persistent payload')
+            with connection(9093) as url:
+                wait(lambda: (lambda status, body: status == 200 and json.loads(body)['itemCount'] == 1 and json.loads(body)['usedBytes'] == len(b'persistent payload'))(*request(url + '/status', headers=auth('cache'))[:2]), 'WebDAV content statistics sampled')
             # Remove a cache Pod: StatefulSet must restore it and preserve PVC data.
             pod_uid = get('pod', 'webdav-demo-0')['metadata']['uid']
             kubectl('-n', 'expbuild-demo', 'delete', 'pod', 'webdav-demo-0', '--wait=true')
@@ -100,6 +102,9 @@ def main():
             with connection() as url:
                 assert request(url + '/artifact', headers=auth('cache'))[0] == 401
                 assert request(url + '/artifact', headers=auth('new-cache'))[:2] == (200, b'persistent payload')
+            with connection(9093) as url:
+                assert request(url + '/status', headers=auth('cache'))[0] == 401
+                assert request(url + '/status', headers=auth('new-cache'))[0] == 200
             lease = get('lease', 'expbuild-cache-operator', 'expbuild-system')
             holder = lease['spec']['holderIdentity']
             pods = json.loads(kubectl('-n', 'expbuild-system', 'get', 'pods', '-o', 'json'))['items']

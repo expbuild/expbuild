@@ -59,3 +59,15 @@ it("does not display a late result from the previously selected instance", async
   expect(screen.getByText("22")).toBeDefined();
   expect(screen.queryByText("111")).toBeNull();
 });
+
+it("labels WebDAV content snapshots without claiming cache hits or a hard quota", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    source: "webdav-content-scan", observedAt: new Date().toISOString(),
+    usedBytes: 1024, capacityBytes: 3 * 1024 ** 3, itemCount: 7,
+    reservedBytes: null,
+  }))));
+  render(<Statistics path="/projects/p/instances/dav" running />);
+  expect(await screen.findByText("申请卷容量")).toBeDefined();
+  expect(screen.getByText("文件条目")).toBeDefined();
+  expect(screen.getByText(/不代表缓存命中率/)).toBeDefined();
+});

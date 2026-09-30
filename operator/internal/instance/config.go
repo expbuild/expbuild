@@ -18,6 +18,7 @@ type Config struct {
 	InstanceID        string                      `json:"instanceId"`
 	ProjectID         string                      `json:"projectId"`
 	Image             string                      `json:"image"`
+	StatsImage        string                      `json:"statsImage,omitempty"`
 	StorageClass      string                      `json:"storageClass"`
 	Capacity          string                      `json:"capacity"`
 	MaxCacheGiB       int64                       `json:"maxCacheGiB"`

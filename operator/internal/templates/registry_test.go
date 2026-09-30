@@ -18,16 +18,16 @@ import (
 func TestRegistryTrustBoundary(t *testing.T) {
 	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
 	for _, ref := range []cachev1.TemplateRef{{Name: "unknown", Version: "0.1.0"}, {Name: "bazel-remote", Version: "latest"}, {Name: "bazel-remote", Version: "0.2.0"}} {
-		if _, err := Resolve(ref, image, image); err == nil {
+		if _, err := Resolve(ref, image, image, image); err == nil {
 			t.Fatalf("accepted unknown template: %+v", ref)
 		}
 	}
-	if _, err := Resolve(cachev1.TemplateRef{Name: "webdav-apache", Version: "0.1.0"}, image, ""); err == nil {
+	if _, err := Resolve(cachev1.TemplateRef{Name: "webdav-apache", Version: "0.1.0"}, image, "", image); err == nil {
 		t.Fatal("accepted disabled engine")
 	}
 	for _, name := range []string{"bazel-remote", "webdav-apache"} {
 		t.Run(name, func(t *testing.T) {
-			adapter, err := Resolve(cachev1.TemplateRef{Name: name, Version: "0.1.0"}, image, image)
+			adapter, err := Resolve(cachev1.TemplateRef{Name: name, Version: "0.1.0"}, image, image, image)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -116,14 +116,22 @@ func TestSharedAPITemplateFixtures(t *testing.T) {
 	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
 	for _, fixture := range fixtures {
 		t.Run(fixture.Name, func(t *testing.T) {
-			adapter, err := Resolve(cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}, image, image)
+			adapter, err := Resolve(cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}, image, image, image)
 			if err != nil {
 				t.Fatal(err)
 			}
 			resources := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}
 			c := instance.Config{Name: "contract", Namespace: "project", InstanceID: "instance", ProjectID: "project", StorageClass: "standard", Capacity: fmt.Sprintf("%dGi", fixture.StorageGiB), MaxCacheGiB: fixture.CacheGiB, CredentialsSecret: "auth", DesiredState: "Running", Resources: corev1.ResourceRequirements{Requests: resources, Limits: resources}}
-			if _, err := adapter.Render(c, fixture.EnginePolicy); err != nil {
+			c.StatsImage = "untrusted:latest"
+			objects, err := adapter.Render(c, fixture.EnginePolicy)
+			if err != nil {
 				t.Fatal(err)
+			}
+			if fixture.Name == "webdav-apache" && fixture.Version == "0.2.0" {
+				sts := objects[4].(*appsv1.StatefulSet)
+				if sts.Spec.Template.Spec.Containers[1].Image != image {
+					t.Fatal("caller replaced approved statistics image")
+				}
 			}
 			var protocols []string
 			for _, endpoint := range adapter.Endpoints(c.Name, c.Namespace) {
@@ -142,10 +150,10 @@ func TestIntegrationCapabilitiesMatchRenderedService(t *testing.T) {
 		t.Fatal(err)
 	}
 	var fixtures []struct {
-		Name, Version, EnginePolicy string
-		StorageGiB, CacheGiB        int64
-		HTTPPort, GRPCPort          int32
-		Statistics                  bool
+		Name, Version, EnginePolicy   string
+		StorageGiB, CacheGiB          int64
+		HTTPPort, GRPCPort            int32
+		Statistics, PrometheusMetrics bool
 	}
 	if err := json.Unmarshal(data, &fixtures); err != nil {
 		t.Fatal(err)
@@ -157,10 +165,10 @@ func TestIntegrationCapabilitiesMatchRenderedService(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if capabilities.HTTPPort != fixture.HTTPPort || capabilities.GRPCPort != fixture.GRPCPort || (capabilities.MetricsPort > 0) != fixture.Statistics {
+		if capabilities.HTTPPort != fixture.HTTPPort || capabilities.GRPCPort != fixture.GRPCPort || (capabilities.MetricsPort > 0) != fixture.PrometheusMetrics {
 			t.Fatalf("capability contract drift for %s", fixture.Name)
 		}
-		adapter, err := Resolve(ref, image, image)
+		adapter, err := Resolve(ref, image, image, image)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,6 +191,9 @@ func TestIntegrationCapabilitiesMatchRenderedService(t *testing.T) {
 		}
 		if capabilities.MetricsPort > 0 && (ports[capabilities.MetricsPortName] != capabilities.MetricsPort || capabilities.MetricsPath != "/metrics") {
 			t.Fatal("metrics endpoint not served")
+		}
+		if fixture.Name == "webdav-apache" && fixture.Version == "0.2.0" && ports["stats"] != 9093 {
+			t.Fatal("WebDAV content statistics endpoint not served")
 		}
 	}
 	if _, err := Describe(cachev1.TemplateRef{Name: "bazel-remote", Version: "unknown"}); err == nil {

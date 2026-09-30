@@ -26,6 +26,7 @@ type Capabilities struct {
 type Adapter struct {
 	capabilities Capabilities
 	image        string
+	statsImage   string
 	probe        func(context.Context, *cachev1.CacheInstance, *corev1.Secret) error
 	policy       string
 	render       func(instance.Config) ([]runtime.Object, error)
@@ -56,6 +57,16 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 				return []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", name, namespace)}}
 			},
 		},
+		{Name: "webdav-apache", Version: "0.2.0"}: {
+			policy: "none", render: webdav.RenderWithStats,
+			capabilities: Capabilities{HTTPProtocol: "webdav", HTTPPort: 8080},
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				return webdav.CheckProtocol(ctx, s, fmt.Sprintf("http://%s.%s.svc:8080/", c.Name, c.Namespace))
+			},
+			endpoints: func(name, namespace string) []cachev1.Endpoint {
+				return []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", name, namespace)}}
+			},
+		},
 	}
 	adapter, ok := adapters[ref]
 	if !ok {
@@ -65,12 +76,13 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 }
 
 // Resolve binds a compiled adapter to its administrator-approved image.
-func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage string) (Adapter, error) {
+func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage string) (Adapter, error) {
 	adapter, err := lookup(ref)
 	if err != nil {
 		return Adapter{}, err
 	}
 	adapter.image = map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage}[ref.Name]
+	adapter.statsImage = statsImage
 	if adapter.image == "" {
 		return Adapter{}, fmt.Errorf("template %s has no approved image", ref.Name)
 	}
@@ -87,6 +99,7 @@ func (a Adapter) Render(c instance.Config, policy string) ([]runtime.Object, err
 		return nil, fmt.Errorf("template requires %s eviction policy", a.policy)
 	}
 	c.Image = a.image
+	c.StatsImage = a.statsImage
 	return a.render(c)
 }
 

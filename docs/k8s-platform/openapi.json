@@ -6623,7 +6623,11 @@
         "type": "object",
         "properties": {
           "source": {
-            "const": "bazel-remote-status"
+            "type": "string",
+            "enum": [
+              "bazel-remote-status",
+              "webdav-content-scan"
+            ]
           },
           "observedAt": {
             "type": "string",

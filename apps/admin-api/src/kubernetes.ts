@@ -5,7 +5,7 @@ import { KubeConfig, CoreV1Api, CustomObjectsApi, NetworkingV1Api, createConfigu
 import { isDeepStrictEqual } from 'node:util';
 import { labels, revision, type CacheObject } from './instance-contract.js';
 import { OperationError } from './errors.js';
-import { readEngineStatistics } from './statistics.js';
+import { readEngineStatistics, readWebDAVStatistics } from './statistics.js';
 import { clientAccessPolicy } from './network-policy.js';
 
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
@@ -42,7 +42,11 @@ export class KubernetesClient implements KubernetesPort {
     if(secret.metadata?.labels?.['cache.expbuild.io/project-id']!==object.spec.projectId || secret.metadata?.labels?.['cache.expbuild.io/instance-id']!==object.spec.instanceId)throw new OperationError('credential_ownership_conflict');
     const username=Buffer.from(secret.data?.['probe-username']??'','base64').toString('utf8');
     const password=Buffer.from(secret.data?.['probe-password']??'','base64').toString('utf8');
-    return readEngineStatistics(object.metadata.namespace,object.metadata.name,username,password);
+    if (object.spec.templateRef.name === 'webdav-apache' && object.spec.templateRef.version === '0.2.0')
+      return readWebDAVStatistics(object.metadata.namespace,object.metadata.name,username,password);
+    if (object.spec.templateRef.name === 'bazel-remote' && object.spec.templateRef.version === '0.1.0')
+      return readEngineStatistics(object.metadata.namespace,object.metadata.name,username,password);
+    throw new OperationError('statistics_template_unsupported');
   }
   constructor(config?: KubeConfig, timeoutMs = 10_000) {
     const kc = config ?? new KubeConfig(); if (!config) kc.loadFromDefault();

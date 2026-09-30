@@ -156,7 +156,7 @@ const schemas: Record<string, Schema> = {
     observedAt: { type: "string", format: "date-time" },
   }),
   Statistics: object({
-    source: { const: "bazel-remote-status" },
+    source: { type: "string", enum: ["bazel-remote-status", "webdav-content-scan"] },
     observedAt: { type: "string", format: "date-time" },
     usedBytes: { type: "integer", minimum: 0 },
     capacityBytes: { type: "integer", minimum: 1 },

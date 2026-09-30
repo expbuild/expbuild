@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 type Snapshot = {
+  source?: "bazel-remote-status" | "webdav-content-scan";
   observedAt: string;
   usedBytes: number;
   capacityBytes: number;
@@ -62,10 +63,10 @@ export function Statistics({
               已使用<strong>{size(data.usedBytes)}</strong>
             </p>
             <p>
-              引擎容量<strong>{size(data.capacityBytes)}</strong>
+              {data.source === "webdav-content-scan" ? "申请卷容量" : "引擎容量"}<strong>{size(data.capacityBytes)}</strong>
             </p>
             <p>
-              缓存条目<strong>{data.itemCount.toLocaleString()}</strong>
+              {data.source === "webdav-content-scan" ? "文件条目" : "缓存条目"}<strong>{data.itemCount.toLocaleString()}</strong>
             </p>
           </div>
           <progress
@@ -74,9 +75,9 @@ export function Statistics({
             value={data.usedBytes}
           />
           <p className="muted">
-            采集于 {new Date(data.observedAt).toLocaleString()} · 已预留{" "}
-            {data.reservedBytes === null ? "未知" : size(data.reservedBytes)}
-            。这是引擎缓存统计，不代表整个存储卷的使用量。
+            采集于 {new Date(data.observedAt).toLocaleString()}。
+            {data.source === "webdav-content-scan" ? "内容目录扫描是近似快照；申请卷容量不保证是底层存储硬上限，也不代表缓存命中率。" :
+              <>已预留 {data.reservedBytes === null ? "未知" : size(data.reservedBytes)}。这是引擎缓存统计，不代表整个存储卷的使用量。</>}
           </p>
         </>
       ) : (

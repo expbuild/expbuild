@@ -15,7 +15,26 @@
     ],
     "httpPort": 8080,
     "grpcPort": 9092,
-    "statistics": true
+    "statistics": true,
+    "prometheusMetrics": true
+  },
+  {
+    "name": "webdav-apache",
+    "version": "0.2.0",
+    "enginePolicy": "none",
+    "storageGiB": 3,
+    "cacheGiB": 0,
+    "protocols": [
+      "webdav",
+      "http"
+    ],
+    "endpointProtocols": [
+      "webdav"
+    ],
+    "httpPort": 8080,
+    "grpcPort": 0,
+    "statistics": true,
+    "prometheusMetrics": false
   },
   {
     "name": "webdav-apache",
@@ -32,6 +51,7 @@
     ],
     "httpPort": 8080,
     "grpcPort": 0,
-    "statistics": false
+    "statistics": false,
+    "prometheusMetrics": false
   }
 ]

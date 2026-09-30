@@ -6,7 +6,7 @@ metadata:
 spec:
   instanceId: webdav-demo
   projectId: demo
-  templateRef: {name: webdav-apache, version: 0.1.0}
+  templateRef: {name: webdav-apache, version: 0.2.0}
   desiredState: Running
   storage: {className: standard, capacity: 10Gi, deletionPolicy: Retain}
   access: {exposure: ClusterInternal, credentialsSecretRef: webdav-demo-auth}

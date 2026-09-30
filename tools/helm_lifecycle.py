@@ -184,6 +184,12 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     return {'Authorization': 'Basic ' + token}
                 with connection(ns, resource, 8080) as cache:
                     assert request(cache + '/artifact', 'PUT', b'created through API', basic(created['credentials']))[0] == 201
+                def webdav_sampled():
+                    code, body, _ = request(url + '/v1' + path + '/statistics', headers=auth)
+                    if code != 200: return False
+                    snapshot = json.loads(body)
+                    return snapshot['source'] == 'webdav-content-scan' and snapshot['itemCount'] == 1 and snapshot['usedBytes'] == len(b'created through API') and snapshot['capacityBytes'] == 2 * 1024**3
+                wait(webdav_sampled, 'WebDAV content statistics reached management API')
                 if gateway:
                     host = urlparse(api(path)['status']['endpoints'][0]['url']).hostname
                     gateway.forward()

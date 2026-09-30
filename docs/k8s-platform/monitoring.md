@@ -87,4 +87,4 @@ expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTT
 
 Gateway 集群任务新增固定 Prometheus Operator v0.94.1 部署包 SHA256，以及 Operator、config-reloader 和 Prometheus v3.15.0 镜像摘要。只在脚本创建的临时 kind/context 中安装，使用临时监控数据，不修改现有集群。脚本要求一个实例仅有一个活跃目标，指标端点匿名/旧凭据被拒绝，管理 API 历史包含当前项目/UID 的真实 CAS 读取速率；轮换后必须出现新的成功采样和新的历史时间点，删除后目标移除。该完整链路已在[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36672925904)通过（提交 6966aec）。实际日志分别确认轮换前后真实 CAS 查询历史、唯一健康目标、轮换后新采样时间，以及删除后目标移除。
 
-验收边界：本次使用单副本 Prometheus、临时 TSDB 和 kind 默认网络，没有验证实际 NetworkPolicy 拦截、监控持久存储、高可用、长期数据保留或大规模采集。API 查询及界面组件分别通过测试，尚未做真实浏览器端到端验收。
+验收边界：本次使用单副本 Prometheus、临时 TSDB 和 kind 默认网络，没有验证实际 NetworkPolicy 拦截、监控持久存储、高可用、长期数据保留或大规模采集。API 查询及界面组件分别通过测试，尚未做真实浏览器端到端验收。WebDAV `0.2.0` 的只读内容扫描仅提供实时容量和条目快照，不生成 Prometheus 请求指标，也不能推导命中率。

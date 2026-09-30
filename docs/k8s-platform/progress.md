@@ -231,3 +231,7 @@ API 模板目录统一：新增 template-catalog.ts，将配置 schema、版本�
 提交 b04b322 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36692547210)四个任务全部成功：内部、Gateway、Cilium 隔离与 WebDAV。真实 PostgreSQL 账目故障注入报告预留不足，管理 API 校正后配额和清单恢复，PVC 保留；Cilium 固定摘要下载重试未削弱隔离流量断言。
 
 保留卷领回实现进行中：CRD 增加固定旧实例 UID/PVC UID 的不可变领回字段，Operator 只有在新 CR UID 已持久绑定并收到授权标记后才转移 PVC；逐项核对归属、容量、访问模式、Pod 占用及卷状态。管理 API 已接入配额预留、独立凭据和异步操作，worker 支持创建响应丢失恢复与就绪后旧凭据清理，界面复用实例配置表单。PostgreSQL + 模拟 Kubernetes、SDK 合约和 Operator 单元测试通过；真实 PVC 数据保留、Helm/RBAC 和 CRD admission 验收仍待本轮执行。详见[领回设计](retained-volume-reclaim.md)。
+
+提交 9048b17 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36698708924)四个任务全部成功，覆盖 WebDAV、Helm 内部、Gateway 和 Cilium 模式。Helm/API 真实领回场景确认同一个 PVC UID 与内容保留，新旧 CR UID 不同，PVC 归属转移，新凭据可读取原文件，随后再次 Retain 删除及显式清理成功。管理 API、平台测试和四镜像构建也成功；生产 CSI 的多节点重挂与故障恢复仍待认证。
+
+WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1.0 精确版本继续维护。受信 Operator 镜像加入只读扫描程序，通过独立受认证端口报告文件数、大小和申请卷容量；sidecar 与 Apache 分摊实例原有 CPU/内存预算，管理 API 与界面按版本显示近似快照，不宣称硬配额或命中率。单元测试及真实 kind/Helm/API 断言已加入，完整验收以新 CI 结果为准。WebDAV 淘汰与请求指标仍未实现。

@@ -53,3 +53,41 @@ func TestWebDAVResourceContract(t *testing.T) {
 		t.Fatal("mutable image accepted")
 	}
 }
+
+func TestWebDAVStatisticsVersionKeepsResourceBudgetAndReadOnlyAccess(t *testing.T) {
+	c := fixture()
+	c.StatsImage = "example.invalid/stats:test"
+	objects, err := RenderWithStats(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := objects[3].(*corev1.Service)
+	if len(svc.Spec.Ports) != 2 || svc.Spec.Ports[1].Name != "stats" || svc.Spec.Ports[1].Port != 9093 {
+		t.Fatalf("statistics port missing: %+v", svc.Spec.Ports)
+	}
+	sts := objects[4].(*appsv1.StatefulSet)
+	if len(sts.Spec.Template.Spec.Containers) != 2 {
+		t.Fatal("statistics sidecar missing")
+	}
+	cache, stats := sts.Spec.Template.Spec.Containers[0], sts.Spec.Template.Spec.Containers[1]
+	for _, name := range []corev1.ResourceName{corev1.ResourceCPU, corev1.ResourceMemory} {
+		request := cache.Resources.Requests[name]
+		request.Add(stats.Resources.Requests[name])
+		original := c.Resources.Requests[name]
+		if request.Cmp(original) != 0 {
+			t.Fatalf("%s request exceeds project reservation", name)
+		}
+		limit := cache.Resources.Limits[name]
+		limit.Add(stats.Resources.Limits[name])
+		original = c.Resources.Limits[name]
+		if limit.Cmp(original) != 0 {
+			t.Fatalf("%s limit exceeds project reservation", name)
+		}
+	}
+	if !stats.VolumeMounts[0].ReadOnly || !stats.VolumeMounts[1].ReadOnly || stats.SecurityContext.ReadOnlyRootFilesystem == nil || !*stats.SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatal("statistics sidecar must have only read-only mounts")
+	}
+	if len(sts.Spec.Template.Spec.Volumes[2].Secret.Items) != 3 {
+		t.Fatal("probe credentials not mounted for statistics authentication")
+	}
+}

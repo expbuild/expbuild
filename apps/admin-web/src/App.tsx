@@ -650,7 +650,9 @@ function InstanceForm({
         const supported = value.items;
         setTemplates(supported);
         if (reclaimInitial) {
-          if (!supported.some(t=>t.name===reclaimInitial.template && t.version===reclaimInitial.templateVersion))
+          const legacyWebDAV=reclaimInitial.template==='webdav-apache' && reclaimInitial.templateVersion==='0.1.0' &&
+            supported.some(t=>t.name==='webdav-apache');
+          if (!legacyWebDAV && !supported.some(t=>t.name===reclaimInitial.template && t.version===reclaimInitial.templateVersion))
             setCatalogError("原协议模板版本当前不可用，无法领回该实例。");
           return;
         }
@@ -676,7 +678,8 @@ function InstanceForm({
   // Disabled templates remain editable; preserve the existing engine budget
   // instead of inferring capabilities from a possibly newer catalog version.
   const supportsCapacity = selectedTemplate?.capabilities.capacity ?? (!!spec && spec.eviction.maxCacheGiB > 0);
-  const canSubmit = !!baseline || !!selectedTemplate;
+  const legacyWebDAV = reclaimInitial?.template==='webdav-apache' && reclaimInitial.templateVersion==='0.1.0' && templates.some(t=>t.name==='webdav-apache');
+  const canSubmit = !!baseline || !!selectedTemplate || legacyWebDAV;
   const last = useRef({ body: "", key: "" });
   async function submit(e: FormEvent) {
     e.preventDefault();

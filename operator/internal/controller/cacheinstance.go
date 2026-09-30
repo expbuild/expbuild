@@ -41,6 +41,7 @@ type Reconciler struct {
 	// Image is an administrator-supplied digest, not an instance spec field.
 	Image       string
 	WebDAVImage string
+	StatsImage  string
 	Probe       Probe
 	Gateway     *gateway.Config
 	Monitoring  *monitoring.Config
@@ -138,7 +139,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.RemoveFinalizer(&c, GatewayFinalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage)
+	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage)
 	if err != nil {
 		return r.report(ctx, &c, false, "InvalidConfiguration", err.Error())
 	}

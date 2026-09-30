@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"fmt"
+	"strconv"
 
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	appsv1 "k8s.io/api/apps/v1"
@@ -60,6 +61,55 @@ func Render(c instance.Config) ([]runtime.Object, error) {
 		Volumes:                      []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}}, {Name: "config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name}}}}, {Name: "auth", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: c.CredentialsSecret, Items: []corev1.KeyToPath{{Key: "htpasswd", Path: "htpasswd"}}}}}, {Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: quantity("64Mi")}}}},
 	}}}}
 	return []runtime.Object{pvc, cm, headless, svc, sts}, nil
+}
+
+// RenderWithStats is a new template version. The original renderer remains
+// available for instances pinned to webdav-apache@0.1.0.
+func RenderWithStats(c instance.Config) ([]runtime.Object, error) {
+	if c.StatsImage == "" {
+		return nil, fmt.Errorf("WebDAV statistics image is not configured")
+	}
+	objects, err := Render(c)
+	if err != nil {
+		return nil, err
+	}
+	capacity, err := resource.ParseQuantity(c.Capacity)
+	if err != nil || capacity.Value() <= 0 || capacity.Value() > 1<<50 {
+		return nil, fmt.Errorf("unsupported WebDAV statistics capacity")
+	}
+	const statsCPU, statsMemory = "25m", "32Mi"
+	mainResources := c.Resources.DeepCopy()
+	statsResources := corev1.ResourceRequirements{Requests: corev1.ResourceList{}, Limits: corev1.ResourceList{}}
+	for name, amount := range map[corev1.ResourceName]string{corev1.ResourceCPU: statsCPU, corev1.ResourceMemory: statsMemory} {
+		part := resource.MustParse(amount)
+		request := mainResources.Requests[name]
+		limit := mainResources.Limits[name]
+		request.Sub(part)
+		limit.Sub(part)
+		if request.Sign() <= 0 || limit.Cmp(request) < 0 {
+			return nil, fmt.Errorf("insufficient %s for WebDAV statistics sidecar", name)
+		}
+		mainResources.Requests[name], mainResources.Limits[name] = request, limit
+		statsResources.Requests[name], statsResources.Limits[name] = part, part
+	}
+	svc := objects[3].(*corev1.Service)
+	svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{Name: "stats", Port: 9093, TargetPort: intstr.FromString("stats")})
+	sts := objects[4].(*appsv1.StatefulSet)
+	sts.Spec.Template.Spec.Containers[0].Resources = *mainResources
+	yes, no := true, false
+	sts.Spec.Template.Spec.Containers = append(sts.Spec.Template.Spec.Containers, corev1.Container{
+		Name: "statistics", Image: c.StatsImage,
+		Command:         []string{"/webdav-stats"},
+		Args:            []string{"-capacity-bytes=" + strconv.FormatInt(capacity.Value(), 10)},
+		Resources:       statsResources,
+		Ports:           []corev1.ContainerPort{{Name: "stats", ContainerPort: 9093}},
+		ReadinessProbe:  &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString("stats")}}, PeriodSeconds: 5},
+		SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &no, ReadOnlyRootFilesystem: &yes, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
+		VolumeMounts:    []corev1.VolumeMount{{Name: "data", MountPath: "/data", ReadOnly: true}, {Name: "auth", MountPath: "/auth", ReadOnly: true}},
+	})
+	sts.Spec.Template.Spec.Volumes[2].VolumeSource.Secret.Items = append(sts.Spec.Template.Spec.Volumes[2].VolumeSource.Secret.Items,
+		corev1.KeyToPath{Key: "probe-username", Path: "probe-username"}, corev1.KeyToPath{Key: "probe-password", Path: "probe-password"})
+	return objects, nil
 }
 
 func quantity(value string) *resource.Quantity { q := resource.MustParse(value); return &q }

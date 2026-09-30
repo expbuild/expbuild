@@ -10,14 +10,15 @@ test('catalog keeps deployment availability separate from existing template main
   assert.equal(templateEnabled('webdav-apache', { webdavEnabled: true }), true);
   const input = instanceInput.parse({ name: 'Retained DAV', template: 'webdav-apache', storageGiB: 3, cacheGiB: 0, desiredState: 'Suspended' });
   const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
-  assert.deepEqual(desired.spec.templateRef, { name: 'webdav-apache', version: '0.1.0' });
+  assert.deepEqual(desired.spec.templateRef, { name: 'webdav-apache', version: '0.2.0' });
   assert.equal(desired.spec.desiredState, 'Suspended');
   assert.equal(desired.spec.eviction.enginePolicy, 'none');
   for (const name of ['unknown', '__proto__', 'constructor']) {
     assert.throws(() => templateDefinition(name), /Unsupported template/);
   }
   assert.throws(() => templateDefinition('bazel-remote', 'latest'), /Unsupported template/);
-  assert.throws(() => templateDefinition('webdav-apache', '0.2.0'), /Unsupported template/);
+  assert.equal(templateDefinition('webdav-apache', '0.1.0').capabilities.statistics, false);
+  assert.throws(() => templateDefinition('webdav-apache', '0.3.0'), /Unsupported template/);
 });
 
 test('published configuration contracts and generated instances match each registered template', () => {
@@ -44,8 +45,12 @@ test('published configuration contracts and generated instances match each regis
 test('API definitions satisfy the shared Operator template fixtures', () => {
   const fixtures = JSON.parse(readFileSync(new URL('../../../tests/contracts/templates.json', import.meta.url), 'utf8')) as Array<{name:string;version:string;enginePolicy:string;storageGiB:number;cacheGiB:number;protocols:string[];statistics:boolean}>;
   const catalog = templateCatalog({ webdavEnabled: true });
-  assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.map(t => t.name).sort());
+  assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.filter(f => f.name !== 'webdav-apache' || f.version === '0.2.0').map(t => t.name).sort());
   for (const fixture of fixtures) {
+    if (fixture.name === 'webdav-apache' && fixture.version === '0.1.0') {
+      assert.equal(templateDefinition(fixture.name, fixture.version).capabilities.statistics, false);
+      continue;
+    }
     const input = instanceInput.parse({ name: 'Contract', template: fixture.name, storageGiB: fixture.storageGiB, cacheGiB: fixture.cacheGiB });
     const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
     assert.deepEqual(desired.spec.templateRef, { name: fixture.name, version: fixture.version });
