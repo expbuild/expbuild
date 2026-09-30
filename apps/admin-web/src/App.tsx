@@ -1,3 +1,4 @@
+import { ConnectionInfo } from "./ConnectionInfo";
 import { ResourceInventory } from "./ResourceInventory";
 import { ProjectQuota } from "./ProjectQuota";
 import { LookupHistory } from "./LookupHistory";
@@ -931,6 +932,7 @@ function InstanceDetail({
           <p className="muted">{detail.spec.access?.exposure === "Gateway"
             ? "通过独立域名访问，请确认证书受信任且域名可达。"
             : "连接地址当前仅供集群内部使用。"}</p>
+          <ConnectionInfo detail={detail} />
           {detail.spec.templateRef.name === "bazel-remote" ? (
             <Statistics
               path={`${base}/instances/${id}`}
