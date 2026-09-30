@@ -51,7 +51,8 @@ func Render(c instance.Config) ([]runtime.Object, error) {
 	if c.DesiredState == "Suspended" {
 		replicas = 0
 	}
-	no := false
+	no, yes := false, true
+	uid := int64(1000)
 	probe := func() *corev1.Probe {
 		return &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString("grpc")}}, PeriodSeconds: 5, TimeoutSeconds: 2, FailureThreshold: 3}
 	}
@@ -61,13 +62,15 @@ func Render(c instance.Config) ([]runtime.Object, error) {
 		Replicas: &replicas, ServiceName: headless.Name, Selector: &metav1.LabelSelector{MatchLabels: labels()},
 		Template: corev1.PodTemplateSpec{ObjectMeta: metav1.ObjectMeta{Labels: labels(), Annotations: map[string]string{"cache.expbuild.io/config-hash": hash}}, Spec: corev1.PodSpec{
 			AutomountServiceAccountToken: &no,
+			SecurityContext:              &corev1.PodSecurityContext{RunAsNonRoot: &yes, RunAsUser: &uid, RunAsGroup: &uid, FSGroup: &uid, SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault}},
 			Containers: []corev1.Container{{Name: "cache", Image: c.Image, Args: []string{"--config_file=/config/config.yaml"}, Resources: *c.Resources.DeepCopy(),
 				Ports:        []corev1.ContainerPort{{Name: "http", ContainerPort: 8080}, {Name: "grpc", ContainerPort: 9092}},
-				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}, {Name: "config", MountPath: "/config", ReadOnly: true}, {Name: "auth", MountPath: "/auth", ReadOnly: true}},
+				VolumeMounts: []corev1.VolumeMount{{Name: "data", MountPath: "/data"}, {Name: "config", MountPath: "/config", ReadOnly: true}, {Name: "auth", MountPath: "/auth", ReadOnly: true}, {Name: "tmp", MountPath: "/tmp"}},
 				StartupProbe: startup, ReadinessProbe: probe(), LivenessProbe: probe(),
-				SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &no, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
+				SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: &no, ReadOnlyRootFilesystem: &yes, Capabilities: &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}},
 			}},
 			Volumes: []corev1.Volume{
+				{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{SizeLimit: ptr.To(resource.MustParse("64Mi"))}}},
 				{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}},
 				{Name: "config", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: cm.Name}}}},
 				{Name: "auth", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: c.CredentialsSecret, Items: []corev1.KeyToPath{{Key: "htpasswd", Path: "htpasswd"}}}}},

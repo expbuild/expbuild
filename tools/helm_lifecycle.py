@@ -3,6 +3,8 @@
 import base64
 import contextlib
 import json
+import os
+import hashlib
 import pathlib
 import socket
 import sys
@@ -56,7 +58,7 @@ def main(gateway_enabled=False):
                 gateway = GatewayFixture(kubectl, apply, directory, config, 'kind-' + name)
                 gateway.install()
             values = pathlib.Path(directory) / 'values.json'
-            values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'example.invalid/unused@sha256:' + 'a'*64, 'webdav': APACHE}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
+            values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512', 'webdav': APACHE}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
             if gateway:
                 settings = json.loads(values.read_text())
                 settings['gateway'] = gateway.values
@@ -149,6 +151,34 @@ def main(gateway_enabled=False):
                 assert kubectl('-n', ns, 'get', 'pvc', volume['name'], '--ignore-not-found', '-o', 'name') == ''
                 assert api(retained_path)['lifecycle'] == 'deleted'
                 print('Retain storage inspection and explicit API cleanup passed', flush=True)
+                if gateway:
+                    reapi = submit(f'/projects/{pid}/instances', data={**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'cacheGiB': 1, 'memoryMiB': 512})
+                    complete(reapi)
+                    reapi_id = reapi['operation']['instance_id']
+                    reapi_path = f'/projects/{pid}/instances/{reapi_id}'
+                    endpoints = api(reapi_path)['status']['endpoints']
+                    grpc_host = urlparse(next(e['url'] for e in endpoints if e['protocol'] == 'reapi')).hostname
+                    http_host = urlparse(next(e['url'] for e in endpoints if e['protocol'] == 'bazel-http')).hostname
+                    def grpc_contract(credentials, phase, old_password=''):
+                        fixture = pathlib.Path(directory) / 'reapi-fixture.json'
+                        fixture.touch(mode=0o600, exist_ok=True)
+                        fixture.write_text(json.dumps({'Address': f'127.0.0.1:{gateway.port}', 'Host': grpc_host, 'CA': str(pathlib.Path(directory) / 'ca.crt'), 'Username': credentials['username'], 'Password': credentials['password'], 'OldPassword': old_password, 'Phase': phase}))
+                        try:
+                            subprocess.run(['go', 'test', './internal/controller', '-run', '^TestGatewayREAPIContract$', '-count=1', '-v'], cwd='operator', env={**os.environ, 'GATEWAY_REAPI_FIXTURE': str(fixture)}, check=True, timeout=180)
+                        finally: fixture.unlink(missing_ok=True)
+                    grpc_contract(reapi['credentials'], 'write')
+                    artifact = b'Bazel HTTP through TLS'
+                    cas_path = '/cas/' + hashlib.sha256(artifact).hexdigest()
+                    assert gateway.request(http_host, cas_path, 'PUT', artifact, basic(reapi['credentials']))[0] == 200
+                    assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[:2] == (200, artifact)
+                    changed = submit(reapi_path + '/credentials/rotate', revision=api(reapi_path)['revision'])
+                    complete(changed)
+                    grpc_contract(changed['credentials'], 'read', reapi['credentials']['password'])
+                    assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[0] == 401
+                    assert gateway.request(http_host, cas_path, headers=basic(changed['credentials']))[:2] == (200, artifact)
+                    complete(submit(reapi_path, 'DELETE'))
+                    assert kubectl('-n', ns, 'get', 'httproute,grpcroute', '-l', 'cache.expbuild.io/instance-id=' + reapi_id, '-o', 'name') == ''
+                    print('REAPI and Bazel HTTP TLS, streaming, persistent credential rotation and route cleanup passed', flush=True)
             helm('uninstall', 'test', '--wait', '--timeout', '3m')
             assert kubectl('-n', namespace, 'get', 'deployment', '-l', 'app.kubernetes.io/instance=test', '-o', 'name') == ''
             # CRDs and external database/secrets are intentionally not owned by the release.

@@ -59,11 +59,39 @@ func TestRetainedStorageAndAuthentication(t *testing.T) {
 	if *sts.Spec.Template.Spec.AutomountServiceAccountToken {
 		t.Fatal("engine has API token")
 	}
-	if sts.Spec.Template.Spec.Volumes[2].Secret.SecretName != "cache-123-auth" {
+	if volumeByName(t, sts, "auth").Secret.SecretName != "cache-123-auth" {
 		t.Fatal("wrong credential binding")
 	}
-	if sts.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName != pvc.Name {
+	if volumeByName(t, sts, "data").PersistentVolumeClaim.ClaimName != pvc.Name {
 		t.Fatal("volume not bound")
+	}
+}
+
+func volumeByName(t *testing.T, sts *appsv1.StatefulSet, name string) corev1.Volume {
+	t.Helper()
+	for _, volume := range sts.Spec.Template.Spec.Volumes {
+		if volume.Name == name {
+			return volume
+		}
+	}
+	t.Fatalf("missing volume %s", name)
+	return corev1.Volume{}
+}
+
+func TestNonRootStorageAndReadOnlyRoot(t *testing.T) {
+	objects, err := Render(fixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := objects[4].(*appsv1.StatefulSet).Spec.Template.Spec
+	if spec.SecurityContext == nil || !*spec.SecurityContext.RunAsNonRoot || *spec.SecurityContext.RunAsUser != 1000 || *spec.SecurityContext.FSGroup != 1000 {
+		t.Fatal("cache must have an explicit non-root storage identity")
+	}
+	if !*spec.Containers[0].SecurityContext.ReadOnlyRootFilesystem {
+		t.Fatal("root filesystem must be read-only")
+	}
+	if volumeByName(t, objects[4].(*appsv1.StatefulSet), "tmp").EmptyDir == nil {
+		t.Fatal("temporary writes need a separate bounded volume")
 	}
 }
 

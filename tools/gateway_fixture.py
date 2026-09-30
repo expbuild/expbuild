@@ -72,12 +72,19 @@ class GatewayFixture:
 
     def verify(self, host, auth):
         wait(lambda: self.request(host)[0] == 401, 'Anonymous HTTPS access rejected')
-        for hostname, trusted, rejection in [('wrong.example.test', True, ssl.SSLError), (host, False, ssl.SSLCertVerificationError)]:
+        for hostname, trusted, rejection in [('wrong.example.test', True, (ssl.SSLError, ConnectionResetError)), (host, False, ssl.SSLCertVerificationError)]:
+            # kubectl may terminate its forwarding session when the proxy resets
+            # an unmatched-SNI connection. Isolate each intentional rejection.
+            self.close()
+            self.forward()
+            assert self.request(host)[0] == 401
             try:
                 self.request(hostname, trusted=trusted)
                 raise AssertionError('Invalid TLS identity was accepted')
             except rejection:
                 pass
+        self.close()
+        self.forward()
         assert self.request(host, '/dav', 'MKCOL', headers=auth)[0] == 201
         payload = b'g' * (16 * 1024 * 1024)
         assert self.request(host, '/dav/blob', 'PUT', payload, auth)[0] == 201
