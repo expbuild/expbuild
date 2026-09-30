@@ -1,4 +1,4 @@
-import { templateCatalog, templateEnabled } from './template-catalog.js';
+import { templateCatalog, templateEnabled, instanceCapabilities } from './template-catalog.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
@@ -58,7 +58,7 @@ export async function registerInstanceRoutes(
     const b = await binding(projectId, instanceId);
     reply.header('Cache-Control', 'no-store');
     if (!b.kubernetes_uid) throw new HttpError(409, 'Instance identity has not been established');
-    if (b.template_name !== 'bazel-remote') throw new HttpError(409, 'This template does not support lookup history');
+    if (!instanceCapabilities(b.template_name, b.template_version)?.lookupHistory) throw new HttpError(409, 'This template does not support lookup history');
     if (!options.history) throw new HttpError(503, 'Prometheus history is not configured');
     try { return await options.history.read({projectId, instanceUID: b.kubernetes_uid}, window); }
     catch { throw new HttpError(503, 'Lookup history is temporarily unavailable'); }
@@ -70,7 +70,7 @@ export async function registerInstanceRoutes(
     reply.header('Cache-Control','no-store');
     if(!current || current.metadata.deletionTimestamp)throw new HttpError(409,'Instance is not available');
     if(current.spec.desiredState!=='Running')throw new HttpError(409,'Statistics are unavailable while the instance is suspended');
-    if(current.spec.templateRef.name !== 'bazel-remote')throw new HttpError(409,'This template does not support engine statistics');
+    if(!instanceCapabilities(current.spec.templateRef.name, current.spec.templateRef.version)?.statistics)throw new HttpError(409,'This template does not support engine statistics');
     if(!options.statistics)throw new HttpError(503,'Statistics collection is not configured');
     try{return await options.statistics.readStatistics(current);}
     catch{throw new HttpError(503,'Engine statistics are temporarily unavailable');}
@@ -101,6 +101,8 @@ export async function registerInstanceRoutes(
     id: string;
     project_id: string;
     kubernetes_uid: string | null;
+    template_name: string;
+    template_version: string | null;
   }) {
     let c: CacheObject | null;
     try {
@@ -112,6 +114,8 @@ export async function registerInstanceRoutes(
       c &&
       (c.spec.instanceId !== b.id ||
         c.spec.projectId !== b.project_id ||
+        c.spec.templateRef.name !== b.template_name ||
+        (b.template_version !== null && c.spec.templateRef.version !== b.template_version) ||
         (b.kubernetes_uid && c.metadata.uid !== b.kubernetes_uid))
     )
       throw new HttpError(409, "Kubernetes resource identity conflict");
@@ -195,6 +199,8 @@ export async function registerInstanceRoutes(
         id: b.id,
         name: b.display_name,
         template: b.template_name,
+        templateVersion: c?.spec.templateRef.version ?? b.template_version,
+        capabilities: c ? instanceCapabilities(c.spec.templateRef.name, c.spec.templateRef.version) : instanceCapabilities(b.template_name, b.template_version),
         lifecycle: b.lifecycle,
         revision: c ? revision(c) : null,
         spec: c?.spec ?? null,
@@ -288,8 +294,8 @@ export async function registerInstanceRoutes(
         requestHash,
       );
       await client.query(
-        "INSERT INTO instance_bindings(id,project_id,resource_name,display_name,created_by,template_name) VALUES($1,$2,$3,$4,$5,$6)",
-        [id, projectId, desired.metadata.name, input.name, actor.id, input.template],
+        "INSERT INTO instance_bindings(id,project_id,resource_name,display_name,created_by,template_name,template_version) VALUES($1,$2,$3,$4,$5,$6,$7)",
+        [id, projectId, desired.metadata.name, input.name, actor.id, input.template, desired.spec.templateRef.version],
       );
       await reserveResources(client, projectId, id, input, true);
       await client.query(

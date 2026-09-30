@@ -6128,9 +6128,73 @@
           "created_at"
         ]
       },
+      "InstanceCapabilities": {
+        "type": "object",
+        "properties": {
+          "capacity": {
+            "type": "boolean"
+          },
+          "statistics": {
+            "type": "boolean"
+          },
+          "lookupHistory": {
+            "type": "boolean"
+          },
+          "lru": {
+            "type": "boolean"
+          },
+          "ttl": {
+            "type": "boolean"
+          },
+          "replicas": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "policyApplyMode": {
+            "type": "string",
+            "enum": [
+              "restart",
+              "unsupported"
+            ]
+          },
+          "policyCondition": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "capacity",
+          "statistics",
+          "lookupHistory",
+          "lru",
+          "ttl",
+          "replicas",
+          "policyApplyMode",
+          "policyCondition"
+        ]
+      },
       "InstanceDetail": {
         "type": "object",
         "properties": {
+          "templateVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capabilities": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InstanceCapabilities"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "template": {
             "type": "string",
             "enum": [
@@ -6186,6 +6250,8 @@
           }
         },
         "required": [
+          "templateVersion",
+          "capabilities",
           "template",
           "id",
           "name",

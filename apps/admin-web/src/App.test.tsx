@@ -65,6 +65,7 @@ beforeEach(() => {
           name: "Artifacts",
           lifecycle: "active",
           revision: "uid:1",
+          capabilities: { capacity: false, statistics: false, lookupHistory: false, lru: false, ttl: false },
           spec: {
             templateRef: { name: policyGeneration === undefined ? "webdav-apache" : "bazel-remote", version: "0.1.0" },
             desiredState: "Running",
@@ -249,6 +250,32 @@ describe("management console", () => {
     await user.click(await screen.findByRole("button", { name: "详情" }));
     await screen.findByText(generation === 1 ? /缓存策略已生效/ : /缓存策略尚未确认生效/);
     if (generation !== 1) expect(screen.queryByText(/缓存策略已生效/)).toBeNull();
+  });
+  it.each([true, false])("uses instance capabilities rather than template names for statistics (%s)", async (supported) => {
+    webdavInstance = true;
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    const original = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
+      const result = await original(url, options);
+      if (String(url).endsWith("/instances/dav")) {
+        const data = await result.json();
+        data.spec.templateRef.name = "custom-cache";
+        data.capabilities = supported ? { capacity: true, statistics: true, lookupHistory: true, lru: true, ttl: false } : null;
+        return response(data);
+      }
+      return result;
+    }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "详情" }));
+    if (supported) {
+      await screen.findByRole("button", { name: "查看查询历史" });
+      await waitFor(() => expect(requests.some(r => r.path.endsWith("/statistics"))).toBe(true));
+    } else {
+      await screen.findByText("模板能力未知，暂不查询统计。");
+      expect(screen.queryByRole("button", { name: "查看查询历史" })).toBeNull();
+      expect(requests.some(r => r.path.includes("/statistics"))).toBe(false);
+    }
   });
   it("keeps an existing WebDAV template immutable and does not poll unsupported statistics", async () => {
     webdavInstance = true;

@@ -25,13 +25,13 @@ const templates = [
   {
     name: 'bazel-remote', version: '0.1.0', enginePolicy: 'lru',
     protocols: ['reapi', 'bazel-http'], input: bazelInput,
-    capabilities: { capacity: true, statistics: true, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
+    capabilities: { capacity: true, statistics: true, lookupHistory: true, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
     enabled: (_options: TemplateOptions) => true,
   },
   {
     name: 'webdav-apache', version: '0.1.0', enginePolicy: 'none',
     protocols: ['webdav', 'http'], input: webdavInput,
-    capabilities: { capacity: false, statistics: false, lru: false, ttl: false, replicas: 1, policyApplyMode: 'unsupported', policyCondition: 'PolicyApplied' },
+    capabilities: { capacity: false, statistics: false, lookupHistory: false, lru: false, ttl: false, replicas: 1, policyApplyMode: 'unsupported', policyCondition: 'PolicyApplied' },
     enabled: (options: TemplateOptions) => options.webdavEnabled === true,
   },
 ] as const;
@@ -57,4 +57,11 @@ export function templateCatalog(options: TemplateOptions) {
     protocols: [...t.protocols], capabilities: { ...t.capabilities },
     inputSchema: z.toJSONSchema(t.input, { io: 'input' }),
   }));
+}
+
+// Missing historical versions have unknown capabilities, never latest defaults.
+export function instanceCapabilities(name: string, version: string | null | undefined) {
+  if (!version) return null;
+  const template = templates.find(t => t.name === name && t.version === version);
+  return template ? { ...template.capabilities } : null;
 }

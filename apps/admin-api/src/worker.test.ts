@@ -138,6 +138,14 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal((await app.inject({url:historyPath+'?query=up',headers})).statusCode,400);
     assert.equal((await app.inject({url:historyPath+'?window=30d',headers})).statusCode,400);
     const beforeRotation=await app.inject({url:`${path}/${instanceId}`,headers});
+    assert.equal(beforeRotation.json().templateVersion,'0.1.0');
+    assert.equal(beforeRotation.json().capabilities.statistics,true);
+    assert.equal(beforeRotation.json().capabilities.lookupHistory,true);
+    assert.equal((await pool.query('SELECT template_version FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].template_version,'0.1.0');
+    const liveObject=[...kube.objects.values()][0]!;
+    liveObject.spec.templateRef.version='9.0.0';
+    assert.equal((await app.inject({url:`${path}/${instanceId}/statistics`,headers})).statusCode,409);
+    liveObject.spec.templateRef.version='0.1.0';
     const oldSecret=[...kube.secrets.keys()][0]!;
     const rotationHeaders={...headers,'idempotency-key':'rotate-credentials-1','if-match':beforeRotation.headers.etag as string};
     const rotate=()=>app.inject({method:'POST',url:`${path}/${instanceId}/credentials/rotate`,headers:rotationHeaders});
@@ -219,6 +227,16 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const viewerHeaders = { origin, cookie: `expbuild_session=${viewerLogin.cookies[0]!.value}`, 'x-csrf-token': viewerLogin.json().csrfToken, 'if-match': volumeUid, 'idempotency-key': 'viewer-volume-delete' };
     assert.equal((await app.inject({ url: volumePath, headers: viewerHeaders })).statusCode, 200);
     assert.equal((await app.inject({url:historyPath,headers:viewerHeaders})).statusCode,200,'detached instances retain authorized UID-scoped history');
+
+    const detachedDetail=await app.inject({url:`${path}/${instanceId}`,headers:viewerHeaders});
+    assert.equal(detachedDetail.json().templateVersion,'0.1.0');
+    assert.equal(detachedDetail.json().capabilities.lookupHistory,true);
+    const beforeUnknown=historyTargets.length;
+    await pool.query('UPDATE instance_bindings SET template_version=NULL WHERE id=$1',[instanceId]);
+    assert.equal((await app.inject({url:historyPath,headers:viewerHeaders})).statusCode,409);
+    assert.equal((await app.inject({url:`${path}/${instanceId}`,headers:viewerHeaders})).json().capabilities,null);
+    assert.equal(historyTargets.length,beforeUnknown);
+    await pool.query("UPDATE instance_bindings SET template_version='0.1.0' WHERE id=$1",[instanceId]);
     const beforeDenied = historyTargets.length;
     assert.equal((await app.inject({url:`/v1/projects/${randomUUID()}/instances/${instanceId}/statistics/history`,headers:viewerHeaders})).statusCode,404);
     assert.equal(historyTargets.length,beforeDenied,'unauthorized requests must not query metrics');

@@ -56,6 +56,7 @@ export type Template = {
     policyApplyMode?: "restart" | "unsupported";
     capacity: boolean;
     statistics: boolean;
+    lookupHistory?: boolean;
     lru: boolean;
     ttl: boolean;
   };
@@ -100,6 +101,8 @@ export type Detail = {
   lifecycle: string;
   revision: string | null;
   template?: TemplateName;
+  templateVersion?: string | null;
+  capabilities?: Template["capabilities"] | null;
   spec: null | {
     templateRef: { name: TemplateName; version: string };
     access?: { exposure: "ClusterInternal" | "Gateway" };

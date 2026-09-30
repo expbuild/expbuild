@@ -130,7 +130,15 @@ const schemas: Record<string, Schema> = {
     resource_name: string,
     created_at: { type: "string", format: "date-time" },
   }),
+  InstanceCapabilities: object({
+    capacity: bool, statistics: bool, lookupHistory: bool, lru: bool, ttl: bool,
+    replicas: { type: "integer", minimum: 1 },
+    policyApplyMode: { type: "string", enum: ["restart", "unsupported"] },
+    policyCondition: string,
+  }),
   InstanceDetail: object({
+    templateVersion: nullable(string),
+    capabilities: nullable(ref("InstanceCapabilities")),
     template: {type: "string", enum: ["bazel-remote", "webdav-apache"]},
     id: uuid,
     name: string,

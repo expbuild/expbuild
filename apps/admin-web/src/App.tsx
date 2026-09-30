@@ -892,9 +892,9 @@ function InstanceDetail({
             <p>
               淘汰策略
               <strong>
-                {detail.spec.templateRef.name === "bazel-remote"
+                {detail.capabilities?.lru
                   ? `LRU · ${detail.spec.eviction.maxCacheGiB} GiB`
-                  : "不支持自动淘汰"}
+                  : detail.capabilities ? "不支持自动淘汰" : "模板能力未知"}
               </strong>
             </p>
             <p>
@@ -933,7 +933,7 @@ function InstanceDetail({
             ? "通过独立域名访问，请确认证书受信任且域名可达。"
             : "连接地址当前仅供集群内部使用。"}</p>
           <ConnectionInfo detail={detail} />
-          {detail.spec.templateRef.name === "bazel-remote" ? (
+          {detail.capabilities?.statistics ? (
             <Statistics
               path={`${base}/instances/${id}`}
               running={
@@ -942,7 +942,7 @@ function InstanceDetail({
               }
             />
           ) : (
-            <p className="muted">此模板暂不支持容量统计。</p>
+            <p className="muted">{detail.capabilities ? "此模板暂不支持容量统计。" : "模板能力未知，暂不查询统计。"}</p>
           )}
           <div className="actions">
             {canWrite && (
@@ -970,7 +970,7 @@ function InstanceDetail({
           </div>
         </>
       )}
-      {(detail?.template ?? detail?.spec?.templateRef.name) === "bazel-remote" && <LookupHistory path={`${base}/instances/${id}`} />}
+      {detail?.capabilities?.lookupHistory && <LookupHistory path={`${base}/instances/${id}`} />}
       {editing && detail && (
         <InstanceForm
           key={detail.id}
