@@ -7,10 +7,18 @@ import { hashPassword } from './security.js';
 import { OperationWorker } from './worker.js';
 import { OperationError } from './errors.js';
 import { revision, type CacheObject } from './instance-contract.js';
-import type { CredentialData, KubernetesPort } from './kubernetes.js';
+import type { CredentialData, KubernetesPort, RetainedVolume } from './kubernetes.js';
 
 // This fake models API persistence and lost responses, not kubelet behavior.
 class Cluster implements KubernetesPort {
+  volume: RetainedVolume | null = null;
+  loseVolumeDeleteResponse = false;
+  async getRetainedVolume() { return structuredClone(this.volume); }
+  async deleteRetainedVolume(_identity: unknown, uid: string) {
+    if (this.volume && this.volume.uid !== uid) throw new OperationError('volume_identity_conflict');
+    this.volume = null;
+    if (this.loseVolumeDeleteResponse) { this.loseVolumeDeleteResponse = false; throw new Error('delete response lost'); }
+  }
   objects = new Map<string, CacheObject>();
   secrets = new Map<string, CredentialData>();
   loseCreateResponse = true;
@@ -182,6 +190,42 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1', [instanceId])).rows[0].lifecycle, 'detached');
     assert.equal(kube.secrets.size, 0);
     assert.equal(await worker.tick(), false);
+    const volumePath = `${path}/${instanceId}/retained-volume`;
+    kube.volume = { name: original.metadata.name + '-data', namespace: original.metadata.namespace, uid: randomUUID(), capacity: '10Gi', storageClass: 'standard', phase: 'Bound', deleting: false };
+    const observedVolume = await app.inject({ url: volumePath, headers });
+    assert.equal(observedVolume.statusCode, 200);
+    const volumeUid = observedVolume.json().uid;
+    assert.equal(observedVolume.headers.etag, `"${volumeUid}"`);
+    const viewerId = randomUUID();
+    await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)', [viewerId, 'volume-viewer@test.local', await hashPassword(password)]);
+    await pool.query("INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'viewer')", [projectId, viewerId]);
+    const viewerLogin = await app.inject({ method: 'POST', url: '/v1/auth/login', headers: { origin }, payload: { email: 'volume-viewer@test.local', password } });
+    const viewerHeaders = { origin, cookie: `expbuild_session=${viewerLogin.cookies[0]!.value}`, 'x-csrf-token': viewerLogin.json().csrfToken, 'if-match': volumeUid, 'idempotency-key': 'viewer-volume-delete' };
+    assert.equal((await app.inject({ url: volumePath, headers: viewerHeaders })).statusCode, 200);
+    assert.equal((await app.inject({ method: 'DELETE', url: volumePath, headers: viewerHeaders })).statusCode, 403);
+    assert.equal((await app.inject({ url: `/v1/projects/${randomUUID()}/instances/${instanceId}/retained-volume`, headers: viewerHeaders })).statusCode, 404);
+    const removeVolume = (key: string, uid = volumeUid) => app.inject({ method: 'DELETE', url: volumePath, headers: { ...headers, 'idempotency-key': key, 'if-match': uid } });
+    assert.equal((await app.inject({ method: 'DELETE', url: volumePath, headers: { ...headers, 'idempotency-key': 'missing-volume-version' } })).statusCode, 400);
+    const staleVolume = await removeVolume('stale-volume-delete', 'replaced-uid');
+    assert.equal(staleVolume.statusCode, 202);
+    await tick();
+    assert.equal((await pool.query('SELECT error_code FROM operations WHERE id=$1', [staleVolume.json().operation.id])).rows[0].error_code, 'volume_identity_conflict');
+    assert.equal(kube.volume.uid, volumeUid);
+    const cleanup = await removeVolume('cleanup-volume-delete');
+    assert.equal(cleanup.statusCode, 202, cleanup.body);
+    assert.equal((await removeVolume('concurrent-volume-delete')).statusCode, 409);
+    kube.loseVolumeDeleteResponse = true;
+    await tick();
+    assert.equal(kube.volume, null);
+    await tick();
+    const completedCleanup = await removeVolume('cleanup-volume-delete');
+    assert.equal(completedCleanup.statusCode, 202);
+    assert.equal(completedCleanup.json().operation.id, cleanup.json().operation.id);
+    assert.equal(completedCleanup.json().operation.state, 'succeeded');
+    assert.equal((await removeVolume('cleanup-volume-delete', 'another-uid')).statusCode, 409);
+    assert.equal((await removeVolume('new-volume-delete')).statusCode, 409);
+    assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1', [instanceId])).rows[0].lifecycle, 'deleted');
+    assert.equal((await pool.query("SELECT count(*)::int AS total FROM audit_events WHERE operation_id=$1 AND action='volume.delete'", [cleanup.json().operation.id])).rows[0].total, 1);
     kube.onProject=async()=>{throw new OperationError('namespace_ownership_conflict');};
     const failedProject=await app.inject({method:'POST',url:'/v1/projects',headers,payload:{name:'Retry project'}});
     assert.equal(failedProject.statusCode,202,failedProject.body);

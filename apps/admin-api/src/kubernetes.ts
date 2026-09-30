@@ -6,7 +6,11 @@ import { readEngineStatistics } from './statistics.js';
 import { clientAccessPolicy } from './network-policy.js';
 
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
+export type RetainedVolumeIdentity = { namespace: string; name: string; projectId: string; instanceId: string; instanceUid: string };
+export type RetainedVolume = { name: string; namespace: string; uid: string; capacity: string; storageClass: string; phase: string; deleting: boolean };
 export interface KubernetesPort {
+  getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null>;
+  deleteRetainedVolume(identity: RetainedVolumeIdentity, uid: string): Promise<void>;
   ensureProject(namespace: string, projectId: string): Promise<void>;
   ensureCredentials(namespace: string, name: string, projectId: string, instanceId: string, operationId: string, data: CredentialData): Promise<void>;
   getInstance(namespace: string, name: string): Promise<CacheObject | null>;
@@ -106,6 +110,36 @@ export class KubernetesClient implements KubernetesPort {
   async deleteInstance(namespace: string, name: string, uid: string) {
     try { await this.custom.deleteNamespacedCustomObject({ group, version, plural, namespace, name, body: { preconditions: { uid } } }); }
     catch (error) { if (statusCode(error) === 409) throw new OperationError('instance_identity_conflict'); if (statusCode(error) !== 404) throw error; }
+  }
+  private async retainedClaim(identity: RetainedVolumeIdentity) {
+    const { namespace, name, projectId, instanceId, instanceUid } = identity;
+    const ns = await this.core.readNamespace({ name: namespace });
+    if (ns.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || ns.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('namespace_ownership_conflict');
+    try {
+      const pvc = await this.core.readNamespacedPersistentVolumeClaim({ namespace, name: name + '-data' });
+      const meta = pvc.metadata;
+      if (!meta?.uid || !meta.resourceVersion || meta.labels?.['cache.expbuild.io/project-id'] !== projectId || meta.labels?.['cache.expbuild.io/instance-id'] !== instanceId || meta.labels?.['cache.expbuild.io/instance-uid'] !== instanceUid || meta.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild' || meta.ownerReferences?.length) throw new OperationError('volume_ownership_conflict');
+      return pvc;
+    } catch (error) { if (statusCode(error) === 404) return null; throw error; }
+  }
+  async getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null> {
+    const pvc = await this.retainedClaim(identity);
+    if (!pvc) return null;
+    return { name: pvc.metadata!.name!, namespace: identity.namespace, uid: pvc.metadata!.uid!, capacity: pvc.spec?.resources?.requests?.storage ?? '', storageClass: pvc.spec?.storageClassName ?? '', phase: pvc.status?.phase ?? 'Unknown', deleting: !!pvc.metadata?.deletionTimestamp };
+  }
+  async deleteRetainedVolume(identity: RetainedVolumeIdentity, uid: string) {
+    const pvc = await this.retainedClaim(identity);
+    if (!pvc) return;
+    if (pvc.metadata!.uid !== uid) throw new OperationError('volume_identity_conflict');
+    if (await this.getInstance(identity.namespace, identity.name)) throw new OperationError('volume_instance_exists');
+    // Include every Pod, not only platform labels: an externally created Pod may
+    // still reference the claim. Kubernetes PVC protection additionally delays
+    // final removal while a claim is in use.
+    const pods = await this.core.listNamespacedPod({ namespace: identity.namespace });
+    if (pods.items.some(p => p.spec?.volumes?.some(v => v.persistentVolumeClaim?.claimName === pvc.metadata!.name))) throw new OperationError('volume_in_use');
+    try {
+      await this.core.deleteNamespacedPersistentVolumeClaim({ namespace: identity.namespace, name: pvc.metadata!.name!, body: { preconditions: { uid, resourceVersion: pvc.metadata!.resourceVersion } } });
+    } catch (error) { if (statusCode(error) === 409) throw new OperationError('volume_identity_conflict'); if (statusCode(error) !== 404) throw error; }
   }
   async deleteCredentials(namespace: string, name: string, projectId: string, instanceId: string) {
     try {

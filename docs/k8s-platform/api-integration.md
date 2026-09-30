@@ -76,3 +76,11 @@ Kubernetes spec/status 仍按开放对象描述，精确字段以受版本控制
 当前不涵盖资源完全缺失后的重新创建、孤立 Secret 清理或凭据已失效的修复，也不自动回滚配置。
 这些情况仍需后续专门恢复流程。管理界面的最近操作列表为管理员提供“恢复检查”入口，
 对失败创建、已绑定目标版本的失败更新和凭据轮换，以及失败删除显示相应恢复入口；服务器仍会检查后续操作与实例状态。
+
+## 保留卷查询和清理
+
+通过实例列表的 `lifecycle=detached` 找到保留存储记录，再调用 `GET /v1/projects/{projectId}/instances/{instanceId}/retained-volume` 读取实际 PVC。项目成员可读取；不存在返回 404，归属冲突返回 409，Kubernetes 观测失败返回 503。容量是申请容量，不是磁盘实际使用量。
+
+管理员调用同路径 `DELETE`，附带 `Idempotency-Key` 和 `If-Match`。这里 `If-Match` 使用查询返回的 **PVC UID**，不是实例的 `UID:generation`。202 返回 `volume.delete` 操作，按常规操作接口轮询。幂等重放保留原操作结果；失败后重新检查卷，使用新幂等键再次明确提交。不要对响应丢失更换幂等键。
+
+执行器校验实例为 detached、原 CR UID 和项目归属未变；实际删除前检查同名 CR 不存在、没有 Pod 引用卷，并使用 PVC UID/resourceVersion 删除前置条件。完成表示 PVC 已不存在，实例记录转为 deleted，不意味着底层磁盘数据已擦除。无保留卷领回接口。

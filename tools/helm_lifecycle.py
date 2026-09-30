@@ -110,6 +110,18 @@ def main():
                 assert kubectl('-n', ns, 'get', 'pvc', resource + '-data', '--ignore-not-found', '-o', 'name') == ''
                 assert json.loads(kubectl('-n', ns, 'get', 'secrets', '-l', 'cache.expbuild.io/instance-id=' + iid, '-o', 'json'))['items'] == []
                 print('Helm upgrade preserved cache; API deletion removed workload, PVC and credentials', flush=True)
+                retained = submit(f'/projects/{pid}/instances', data={**spec, 'name': 'Retained cache', 'deletionPolicy': 'Retain'})
+                complete(retained)
+                retained_id = retained['operation']['instance_id']
+                retained_path = f'/projects/{pid}/instances/{retained_id}'
+                complete(submit(retained_path, 'DELETE'))
+                volume = api(retained_path + '/retained-volume')
+                actual = json.loads(kubectl('-n', ns, 'get', 'pvc', volume['name'], '-o', 'json'))
+                assert volume['uid'] == actual['metadata']['uid']
+                complete(submit(retained_path + '/retained-volume', 'DELETE', revision=volume['uid']))
+                assert kubectl('-n', ns, 'get', 'pvc', volume['name'], '--ignore-not-found', '-o', 'name') == ''
+                assert api(retained_path)['lifecycle'] == 'deleted'
+                print('Retain storage inspection and explicit API cleanup passed', flush=True)
             helm('uninstall', 'test', '--wait', '--timeout', '3m')
             assert kubectl('-n', namespace, 'get', 'deployment', '-l', 'app.kubernetes.io/instance=test', '-o', 'name') == ''
             # CRDs and external database/secrets are intentionally not owned by the release.

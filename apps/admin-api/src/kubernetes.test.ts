@@ -94,3 +94,42 @@ test('existing client access policy must match ownership and exact access rules'
     await assert.rejects(client.ensureProject('demo', 'project'), (e: unknown) => e instanceof OperationError && e.code === 'policy_ownership_conflict');
   } finally { await fixture.close(); }
 });
+
+test('retained volume cleanup fences identity, ownership, active instances and every Pod reference', async () => {
+  const identity = { namespace: 'demo', name: 'c-instance', projectId: 'project', instanceId: 'instance', instanceUid: 'original-cr' };
+  const labels = { 'app.kubernetes.io/managed-by': 'expbuild', 'cache.expbuild.io/project-id': 'project', 'cache.expbuild.io/instance-id': 'instance', 'cache.expbuild.io/instance-uid': 'original-cr' };
+  const claim = { metadata: { name: 'c-instance-data', namespace: 'demo', uid: 'volume-uid', resourceVersion: '42', labels, ownerReferences: [] as any[] }, spec: { resources: { requests: { storage: '10Gi' } }, storageClassName: 'standard' }, status: { phase: 'Bound' } };
+  let exists = true, instanceExists = false, pods: any[] = [], namespaceProject = 'project';
+  const deletes: any[] = [];
+  const fixture = await endpoint(async (request, response) => {
+    response.setHeader('Content-Type', 'application/json');
+    const notFound = () => { response.statusCode = 404; response.end(JSON.stringify({ kind: 'Status', code: 404 })); };
+    if (request.method === 'DELETE') {
+      assert.equal(request.url, '/api/v1/namespaces/demo/persistentvolumeclaims/c-instance-data');
+      let raw = ''; for await (const part of request) raw += part;
+      deletes.push(JSON.parse(raw)); exists = false; response.end(JSON.stringify({ kind: 'Status', status: 'Success' })); return;
+    }
+    if (request.url === '/api/v1/namespaces/demo') response.end(JSON.stringify({ metadata: { labels: { 'app.kubernetes.io/managed-by': 'expbuild', 'cache.expbuild.io/project-id': namespaceProject } } }));
+    else if (request.url?.includes('/persistentvolumeclaims/')) { if (exists) response.end(JSON.stringify(claim)); else notFound(); }
+    else if (request.url?.endsWith('/pods')) response.end(JSON.stringify({ items: pods }));
+    else if (request.url?.includes('/cacheinstances/')) { if (instanceExists) response.end(JSON.stringify({ metadata: { uid: 'recreated-cr' } })); else notFound(); }
+    else { assert.fail('Unexpected request: ' + request.url); }
+  });
+  try {
+    const client = new KubernetesClient(fixture.config);
+    const rejects = (code: string) => assert.rejects(client.deleteRetainedVolume(identity, 'volume-uid'), (e: unknown) => e instanceof OperationError && e.code === code);
+    assert.equal((await client.getRetainedVolume(identity))?.capacity, '10Gi');
+    namespaceProject = 'other'; await rejects('namespace_ownership_conflict'); namespaceProject = 'project';
+    labels['cache.expbuild.io/instance-uid'] = 'other-cr'; await rejects('volume_ownership_conflict'); labels['cache.expbuild.io/instance-uid'] = 'original-cr';
+    claim.metadata.ownerReferences = [{ uid: 'owner' }]; await rejects('volume_ownership_conflict'); claim.metadata.ownerReferences = [];
+    claim.metadata.uid = 'replacement-volume'; await rejects('volume_identity_conflict'); claim.metadata.uid = 'volume-uid';
+    instanceExists = true; await rejects('volume_instance_exists'); instanceExists = false;
+    pods = [{ spec: { volumes: [{ persistentVolumeClaim: { claimName: claim.metadata.name } }] } }]; await rejects('volume_in_use'); pods = [];
+    assert.equal(deletes.length, 0);
+    await client.deleteRetainedVolume(identity, 'volume-uid');
+    assert.deepEqual(deletes[0].preconditions, { uid: 'volume-uid', resourceVersion: '42' });
+    assert.equal(await client.getRetainedVolume(identity), null);
+    await client.deleteRetainedVolume(identity, 'volume-uid');
+    assert.equal(deletes.length, 1, 'missing volume replay must not delete anything else');
+  } finally { await fixture.close(); }
+});

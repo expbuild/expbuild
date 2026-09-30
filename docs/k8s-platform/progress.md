@@ -117,3 +117,5 @@ Helm 与管理 API 全链路验收（2026-09-30，提交 922b1fc）：
 - API 删除 Delete 策略实例后，CR、工作负载、Service、PVC 和凭据均清理；随后 Helm uninstall 清理控制面 Deployment 并保留 CRD。
 
 测试仍使用固定摘要 Apache 上游镜像；未创建 REAPI 实例。未验证网络策略的实际拦截、外部 TLS/域名、生产 CSI、真实浏览器、worker 故障注入或跨版本数据库迁移。复现步骤见 [测试说明](testing.md)。
+
+保留卷管理：新增 detached 实例的 PVC 查询和管理员异步清理 API，界面详情要求输入卷名确认，操作/审计名称已接入。清理核对 namespace/项目/实例/原 CR UID/PVC UID，禁止存在 CR、ownerReference 或任意 Pod 引用时删除；使用 UID/resourceVersion 前置条件，只在 PVC 消失后完成。API 新增 PVC get/delete、Pod list 权限，仍不能删除 PV。数据库与 SDK 测试通过权限拒绝、替换卷拒绝、占用拒绝、删除响应丢失恢复、并发拒绝和幂等重放；UI 21 项、API 17 项通过；隔离 API Server 已验证新增权限边界。真实 Helm/API 清理链路已加入 CI，等待本轮运行。保留卷领回、定期盘点与生产存储回收认证仍未实现。

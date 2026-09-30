@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { z } from "zod";
 import { transaction } from "./db.js";
-import { HttpError } from "./errors.js";
+import { HttpError, OperationError } from "./errors.js";
 import { digest, token } from "./security.js";
 import { seal } from "./secrets.js";
 import {
@@ -202,6 +202,42 @@ export async function registerInstanceRoutes(
       };
     },
   );
+  app.get('/v1/projects/:projectId/instances/:instanceId/retained-volume', async (request, reply) => {
+    const { projectId, instanceId } = ids.parse(request.params);
+    await auth.projectAccess(request, projectId, ['admin', 'maintainer', 'viewer']);
+    const b = await binding(projectId, instanceId);
+    if (b.lifecycle !== 'detached' || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have detached storage');
+    const volume = await kube().getRetainedVolume({ namespace: b.namespace, name: b.resource_name, projectId, instanceId, instanceUid: b.kubernetes_uid }).catch(error => {
+      if (error instanceof OperationError) throw new HttpError(409, error.code);
+      throw new HttpError(503, 'Storage observation is temporarily unavailable');
+    });
+    if (!volume) throw new HttpError(404, 'Retained volume no longer exists');
+    reply.header('Cache-Control', 'no-store');
+    reply.header('ETag', `"${volume.uid}"`);
+    return volume;
+  });
+  app.delete('/v1/projects/:projectId/instances/:instanceId/retained-volume', async (request, reply) => {
+    const { projectId, instanceId } = ids.parse(request.params);
+    const actor = await auth.projectAccess(request, projectId, ['admin']);
+    kube();
+    const uid = z.string().min(1).max(200).parse(request.headers['if-match']).replace(/^"|"$/g, '');
+    const key = idempotencyKey(request), requestHash = digest(JSON.stringify({ instanceId, uid }));
+    const result = await transaction(pool, async client => {
+      await lockProject(client, projectId, actor, ['admin']);
+      const previous = await replay(client, projectId, 'volume.delete', key, requestHash);
+      if (previous) return previous;
+      const rows = await client.query('SELECT i.*,p.namespace FROM instance_bindings i JOIN projects p ON p.id=i.project_id WHERE i.project_id=$1 AND i.id=$2 FOR UPDATE OF i', [projectId, instanceId]);
+      const b = rows.rows[0];
+      if (!b) throw new HttpError(404, 'Instance not found');
+      if (b.lifecycle !== 'detached' || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have detached storage');
+      const operationId = randomUUID();
+      const inserted = await client.query(`INSERT INTO operations(id,project_id,instance_id,kind,idempotency_key,request_hash,request,created_by) VALUES($1,$2,$3,'volume.delete',$4,$5,$6,$7) RETURNING ${opSummary}`, [operationId, projectId, instanceId, key, requestHash, JSON.stringify({ namespace: b.namespace, name: b.resource_name, instanceUid: b.kubernetes_uid, uid }), actor.id]);
+      await client.query("INSERT INTO audit_events(id,actor_id,project_id,instance_id,operation_id,action,details) VALUES($1,$2,$3,$4,$5,'volume.delete',$6)", [randomUUID(), actor.id, projectId, instanceId, operationId, JSON.stringify({ volumeUid: uid })]);
+      return inserted.rows[0];
+    });
+    return reply.code(202).send({ operation: result });
+  });
+
   app.post("/v1/projects/:projectId/instances", async (request, reply) => {
     const { projectId } = projectParams.parse(request.params),
       actor = await auth.projectAccess(request, projectId, [

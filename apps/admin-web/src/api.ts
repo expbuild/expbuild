@@ -127,6 +127,7 @@ export const stateNames: Record<string, string> = {
 };
 export const operationNames: Record<string, string> = {
   "project.create": "初始化项目",
+  "volume.delete": "清理保留卷",
   "instance.create": "创建实例",
   "instance.update": "更新实例",
   "instance.delete": "删除实例",

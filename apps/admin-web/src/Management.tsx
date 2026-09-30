@@ -378,6 +378,7 @@ function AuditLog({ base }: { base: string }) {
     "instance.create": "创建实例",
     "instance.update": "更新实例",
     "instance.delete": "删除实例",
+    "volume.delete": "清理保留卷",
     "credential.rotate": "轮换凭据",
     "operation.succeeded": "操作完成",
     "operation.failed": "操作失败",

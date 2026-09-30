@@ -46,11 +46,11 @@ helm upgrade --install expbuild deploy/charts/expbuild \
 namespace 与 Secret 必须先存在。安装需要授权集群级 CRD/RBAC。
 Chart 将 API 与 Operator 分配到不同 ServiceAccount；Web、迁移和 bootstrap
 任务不挂载 Kubernetes token。API 可创建项目 namespace、认证 Secret、
-NetworkPolicy 和 CacheInstance；Operator 管理实例资源、读取 Secret。
+NetworkPolicy 和 CacheInstance；为保留卷清理，API 还可读取/删除 PVC 和列出 Pod，以核对卷引用。Operator 管理实例资源、读取 Secret。
 
 集群角色的授权覆盖整个集群；项目归属标签和 UID 校验由应用层执行，
 不是 Kubernetes RBAC 的 namespace 限制。Operator 不能修改 Secret 或删除 PV，
-API 不能更新实例 status、创建 StatefulSet 或授予 RBAC 权限；选主权限仅在控制面
+API 不能删除 PV、更新实例 status、创建 StatefulSet 或授予 RBAC 权限；选主权限仅在控制面
 namespace 生效。管理页面的 ServiceAccount 没有资源授权且不挂载 token。
 测试会在临时 API Server 中验证独立清单与 Helm 清单的允许和拒绝边界，
 不会安装到部署方的实际集群。
@@ -124,3 +124,9 @@ kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
 
 已验证 SDK 实际请求格式、重复初始化和冲突拒绝。真实客户端连通性、跨项目拒绝和
 撤销效果仍需在启用了 NetworkPolicy 的 CNI 上验收。
+
+## 保留卷清理
+
+Retain 删除完成后，在实例详情中查看实际保留卷；管理员输入卷名确认清理。API 将删除请求放入异步队列并记录审计，核对项目、原实例 UID、PVC UID、ownerReferences、CR 是否存在以及所有 Pod 的卷引用。删除使用 PVC UID 与 resourceVersion 前置条件，避免清理同名替换卷。仅在确认 PVC 不存在后完成操作。
+
+这是删除 PVC 声明，不是直接删除 PV 或保证底层数据擦除；实际回收由 StorageClass/PV 策略决定。不要绕过流程手动挂载待清理卷。拥有集群写权限的外部控制器可能并发改动资源，PVC protection 仍可能使清理保持等待直到引用解除。失败后排除原因、重新查询并再次确认；平台尚不支持保留卷领回。

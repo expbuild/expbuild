@@ -14,6 +14,7 @@ import {
   type User,
 } from "./api";
 
+import { RetainedVolume } from "./RetainedVolume";
 import { RetryOperation } from "./RetryOperation";
 import { Statistics } from "./Statistics";
 import { PasswordForm } from "./PasswordForm";
@@ -856,6 +857,7 @@ function InstanceDetail({
   return (
     <section className="panel">
       <h2>{detail?.name ?? "实例详情"}</h2>
+      {detail?.lifecycle === 'detached' && <RetainedVolume path={`${base}/instances/${id}/retained-volume`} canAdmin={canAdmin} onChange={onChange} />}
       <Alert text={error} />
       {detail?.spec && (
         <>

@@ -152,6 +152,7 @@ type Options = {
   public?: boolean;
   idempotent?: boolean;
   revision?: boolean;
+  revisionDescription?: string;
   description?: string;
   headers?: Record<string, unknown>;
 };
@@ -208,7 +209,7 @@ function route(
       in: "header",
       required: true,
       schema: string,
-      description:
+      description: options.revisionDescription ??
         "ETag from instance GET, containing UID:generation. Unchanged spec status updates do not invalidate it.",
     });
   const errors: Record<string, unknown> = {};
@@ -516,6 +517,15 @@ route(
   "Project administrator: delete instance according to Retain/Delete policy",
   { code: 202, idempotent: true, response: ref("Accepted") },
 );
+route('get', base + '/{instanceId}/retained-volume', 'getRetainedVolume', 'Project member: inspect detached storage', {
+  response: object({ name: string, namespace: string, uid: string, capacity: string, storageClass: string, phase: string, deleting: bool }),
+  headers: { ETag: { schema: string, description: 'Quoted PVC UID, used for storage cleanup; not the CR revision.' } },
+  description: 'Only detached instances. Validates namespace, project, instance and original CR UID labels. Missing PVC returns 404, ownership conflicts return 409, observation failures return 503. Capacity is requested storage, not measured usage.',
+});
+route('delete', base + '/{instanceId}/retained-volume', 'deleteRetainedVolume', 'Project administrator: irreversibly clean up detached storage', {
+  code: 202, idempotent: true, revision: true, revisionDescription: 'PVC UID from GET retained-volume (not the instance UID:generation).', response: ref('Accepted'),
+  description: 'If-Match must contain the PVC UID from GET retained-volume. Queues volume.delete. Checks ownership, absence of the original instance and all Pod references; deletes only with PVC UID and resourceVersion preconditions. Completion means PVC absence, not guaranteed physical data erasure. Failure can be submitted again after inspection with a new idempotency key. No PV deletion permission is granted.',
+});
 route(
   "post",
   base + "/{instanceId}/credentials/rotate",

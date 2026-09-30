@@ -26,6 +26,7 @@ type Operation = {
     desired?: CacheObject;
     expectedRevision?: string;
     uid?: string;
+    instanceUid?: string;
     name?: string;
     deletionPolicy?: string;
   };
@@ -153,6 +154,25 @@ export class OperationWorker {
         await client.query("UPDATE projects SET state='ready' WHERE id=$1", [
           operation.project_id,
         ]);
+      });
+      return;
+    }
+    if (operation.kind === 'volume.delete') {
+      const { namespace, name, uid, instanceUid } = operation.request;
+      if (!namespace || !name || !uid || !instanceUid || !operation.instance_id) throw new OperationError('invalid_operation');
+      const binding = await this.pool.query('SELECT i.lifecycle,i.kubernetes_uid,i.resource_name,p.namespace FROM instance_bindings i JOIN projects p ON p.id=i.project_id WHERE i.id=$1 AND i.project_id=$2', [operation.instance_id, operation.project_id]);
+      const b = binding.rows[0];
+      if (!b || b.lifecycle !== 'detached' || b.kubernetes_uid !== instanceUid || b.namespace !== namespace || b.resource_name !== name) throw new OperationError('volume_binding_conflict');
+      const identity = { namespace, name, projectId: operation.project_id, instanceId: operation.instance_id, instanceUid };
+      const volume = await this.kube.getRetainedVolume(identity);
+      if (volume) {
+        if (volume.uid !== uid) throw new OperationError('volume_identity_conflict');
+        await this.kube.deleteRetainedVolume(identity, uid);
+        await this.defer(operation);
+        return;
+      }
+      await this.finish(operation, 'succeeded', null, async client => {
+        await client.query("UPDATE instance_bindings SET lifecycle='deleted' WHERE id=$1", [operation.instance_id]);
       });
       return;
     }
