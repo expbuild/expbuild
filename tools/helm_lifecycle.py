@@ -5,6 +5,9 @@ import contextlib
 import json
 import pathlib
 import socket
+import sys
+from urllib.parse import urlparse
+from gateway_fixture import GatewayFixture
 import subprocess
 import tempfile
 import uuid
@@ -12,12 +15,13 @@ from cluster_lifecycle import APACHE, NODE, run, wait
 from container_smoke import request
 
 
-def main():
+def main(gateway_enabled=False):
     name = 'expbuild-helm-' + uuid.uuid4().hex[:10]
     namespace = 'expbuild-system'
     origin = 'https://console.example.test'
     with tempfile.TemporaryDirectory(prefix=name) as directory:
         config = str(pathlib.Path(directory) / 'kubeconfig')
+        gateway = None
         def kubectl(*args, data=None):
             return run('kubectl', '--kubeconfig', config, '--context', 'kind-' + name, *args, data=data)
         def apply(obj):
@@ -48,8 +52,15 @@ def main():
             kubectl('-n', namespace, 'wait', '--for=condition=Ready', 'pod/postgres', '--timeout=180s')
             for secret_name, data in {'database': {'DATABASE_URL': 'postgresql://postgres:isolated-test-only@postgres:5432/postgres'}, 'encryption': {'OPERATION_ENCRYPTION_KEY': '11'*32}, 'bootstrap': {'ADMIN_EMAIL': 'admin@example.test', 'ADMIN_PASSWORD': 'isolated-password-only'}}.items():
                 apply({'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': secret_name, 'namespace': namespace}, 'stringData': data})
+            if gateway_enabled:
+                gateway = GatewayFixture(kubectl, apply, directory, config, 'kind-' + name)
+                gateway.install()
             values = pathlib.Path(directory) / 'values.json'
             values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'example.invalid/unused@sha256:' + 'a'*64, 'webdav': APACHE}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
+            if gateway:
+                settings = json.loads(values.read_text())
+                settings['gateway'] = gateway.values
+                values.write_text(json.dumps(settings))
             helm('install', 'test', 'deploy/charts/expbuild', '-f', str(values), '--wait', '--timeout', '8m')
             print('Helm install, migration, bootstrap and workload readiness passed', flush=True)
             with connection(namespace, 'test-expbuild-web') as url:
@@ -79,6 +90,7 @@ def main():
                         return operation['state'] == 'succeeded'
                     wait(check, 'Operation succeeded: ' + op)
                 spec = {'name': 'WebDAV via API', 'template': 'webdav-apache', 'storageGiB': 2, 'cacheGiB': 0, 'cpuMillis': 100, 'memoryMiB': 128, 'deletionPolicy': 'Delete', 'desiredState': 'Running'}
+                if gateway: spec['exposure'] = 'Gateway'
                 created = submit(f'/projects/{pid}/instances', data=spec)
                 complete(created)
                 iid = created['operation']['instance_id']
@@ -89,13 +101,26 @@ def main():
                     return {'Authorization': 'Basic ' + token}
                 with connection(ns, resource, 8080) as cache:
                     assert request(cache + '/artifact', 'PUT', b'created through API', basic(created['credentials']))[0] == 201
+                if gateway:
+                    host = urlparse(api(path)['status']['endpoints'][0]['url']).hostname
+                    gateway.forward()
+                    gateway.verify(host, basic(created['credentials']))
                 for state in ('Suspended', 'Running'):
                     complete(submit(path, 'PATCH', {**spec, 'desiredState': state}, api(path)['revision']))
+                    if gateway:
+                        if state == 'Suspended':
+                            assert kubectl('-n', ns, 'get', 'httproute', resource + '-http', '--ignore-not-found', '-o', 'name') == ''
+                            wait(lambda: gateway.request(host, '/artifact', headers=basic(created['credentials']))[0] in (404, 503), 'Suspension revoked external route')
+                        else:
+                            wait(lambda: gateway.request(host, '/artifact', headers=basic(created['credentials']))[:2] == (200, b'created through API'), 'Resumed HTTPS route preserved data')
                 rotated = submit(path + '/credentials/rotate', revision=api(path)['revision'])
                 complete(rotated)
                 with connection(ns, resource, 8080) as cache:
                     assert request(cache + '/artifact', headers=basic(created['credentials']))[0] == 401
                     assert request(cache + '/artifact', headers=basic(rotated['credentials']))[:2] == (200, b'created through API')
+                if gateway:
+                    assert gateway.request(host, '/artifact', headers=basic(created['credentials']))[0] == 401
+                    assert gateway.request(host, '/artifact', headers=basic(rotated['credentials']))[:2] == (200, b'created through API')
                 secrets = json.loads(kubectl('-n', ns, 'get', 'secrets', '-l', 'cache.expbuild.io/instance-id=' + iid, '-o', 'json'))['items']
                 assert len(secrets) == 1, 'Old credential revisions must be removed after readiness'
                 print('API create, pause/resume, persistence and password rotation passed', flush=True)
@@ -105,6 +130,8 @@ def main():
                 with connection(ns, resource, 8080) as cache:
                     assert request(cache + '/artifact', headers=basic(rotated['credentials']))[:2] == (200, b'created through API')
                 complete(submit(path, 'DELETE'))
+                if gateway:
+                    wait(lambda: gateway.request(host, '/artifact', headers=basic(rotated['credentials']))[0] in (404, 503), 'Deletion revoked external route')
                 for kind in ('cacheinstance', 'statefulset', 'service'):
                     assert kubectl('-n', ns, 'get', kind, resource, '--ignore-not-found', '-o', 'name') == ''
                 assert kubectl('-n', ns, 'get', 'pvc', resource + '-data', '--ignore-not-found', '-o', 'name') == ''
@@ -128,13 +155,19 @@ def main():
             assert kubectl('get', 'crd', 'cacheinstances.cache.expbuild.io', '-o', 'name')
             print('Helm uninstall passed; isolated control-plane E2E passed', flush=True)
         except BaseException:
+            if gateway:
+                for args in [('get', 'gateway,httproute,grpcroute', '-A', '-o', 'yaml'), ('-n', 'edge', 'logs', 'deployment/envoy-gateway', '--tail=80')]:
+                    try: print(kubectl(*args), flush=True)
+                    except Exception: pass
             for args in [('get', 'pods,jobs,pvc,cacheinstances', '-A', '-o', 'wide'), ('get', 'events', '-A', '--sort-by=.lastTimestamp'), ('-n', namespace, 'logs', 'deployment/test-expbuild-api', '--tail=80'), ('-n', namespace, 'logs', 'deployment/test-expbuild-operator', '--tail=80')]:
                 try: print(kubectl(*args), flush=True)
                 except Exception: pass
             raise
         finally:
+            if gateway: gateway.close()
             subprocess.run(['kind', 'delete', 'cluster', '--name', name, '--kubeconfig', config], timeout=180, check=False)
 
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[1:] not in ([], ['--gateway']): raise SystemExit('Usage: helm_lifecycle.py [--gateway]')
+    main(gateway_enabled=bool(sys.argv[1:]))

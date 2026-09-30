@@ -1,9 +1,9 @@
 name: Isolated Kubernetes lifecycle
 on:
   push:
-    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
   pull_request:
-    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
 permissions:
   contents: read
 jobs:
@@ -38,6 +38,10 @@ jobs:
       - name: Verify Operator lifecycle on a disposable kind cluster
         run: python3 tools/cluster_lifecycle.py
   helm:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [internal, gateway]
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -87,4 +91,11 @@ jobs:
         with:
           version: v3.17.3
       - name: Verify Helm and management API on a disposable kind cluster
-        run: python3 tools/helm_lifecycle.py
+        env:
+          TEST_MODE: ${{ matrix.mode }}
+        run: |
+          if [ "$TEST_MODE" = gateway ]; then
+            python3 tools/helm_lifecycle.py --gateway
+          else
+            python3 tools/helm_lifecycle.py
+          fi
