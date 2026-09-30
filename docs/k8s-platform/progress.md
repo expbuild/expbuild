@@ -239,3 +239,5 @@ WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1
 提交 78b7d62 的[集群 CI](https://github.com/expbuild/expbuild/actions/runs/36703169393)四项均失败：WebDAV 示例被 CRD admission 拒绝，三个 Helm 场景在首个 WebDAV 创建操作返回 `kubernetes_422`。根因是 CRD 的模板版本枚举仍只有 `0.1.0`。已扩展版本枚举并用 CEL 限定 Bazel 仍只接受 `0.1.0`，两份 CRD 清单重新生成；实际 API Server 测试同时覆盖新版本接受和不支持版本拒绝。需等待修复后的完整集群 CI，不能把本地测试视为新功能真实通过。
 
 提交 7b413b1 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36704385247)四项全部成功：WebDAV、Helm 内部、Gateway 和 Cilium 隔离。真实 WebDAV 模式验证 `/status` 认证、文件数量与大小采样及轮换后旧凭据拒绝；Helm 内部日志明确确认管理 API 读取到内容快照，同时再次验证保留卷领回。镜像构建与平台测试亦通过。后续扫描器将目录读取改为每批 256 项并限制目录深度 128，以免平铺大目录单次载入所有名称；该优化的真实集群回归仍待下一轮 CI。
+
+提交 87a04da 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36706302289)四个模式全部成功；平台测试和镜像构建也成功。浏览器验收扩展为真实前端、管理 API、独立 PostgreSQL 与异步 worker 的实例创建、一次性凭据、暂停、恢复和删除流程；仅 Kubernetes 边界使用确定性的测试替身，不能替代上述真实集群的数据面验收。本地三条浏览器流程全部通过。WebDAV 创建表单的说明已按模板版本展示 0.2.0 的近似内容快照能力，仍明确无自动淘汰。

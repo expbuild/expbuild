@@ -842,7 +842,9 @@ function InstanceForm({
       {input.template === "webdav-apache" && (
         <p className="notice">
           WebDAV
-          支持认证文件读写与锁，不提供自动淘汰或容量统计。存储卷容量不是文件系统硬配额。
+          支持认证文件读写与锁，不提供自动淘汰。{selectedTemplate?.capabilities.statistics
+            ? "运行后可查看近似内容快照。"
+            : "此版本不提供内容统计。"}存储卷容量不是文件系统硬配额。
         </p>
       )}
       <div className="actions">

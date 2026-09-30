@@ -20,7 +20,7 @@ async function createProject(page: Page, name: string) {
 test('real sessions, persisted quotas, CSRF rejection and cross-project denial', async ({ page }) => {
   await login(page);
   const project = await createProject(page, 'Browser persisted quota');
-  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
   await page.getByRole('button', { name: '查看项目配额' }).click();
   await page.getByLabel('实例数上限', { exact: true }).fill('0');
   await page.getByLabel('存储（GiB）上限', { exact: true }).fill('12');
@@ -43,6 +43,50 @@ test('real sessions, persisted quotas, CSRF rejection and cross-project denial',
   await login(page, 'outsider@browser.test');
   await expect(page.getByRole('button', { name: '＋ 新建项目' })).toHaveCount(0);
   expect(await page.evaluate(async id => (await fetch(`/v1/projects/${id}/quota`)).status, project)).toBe(404);
+});
+
+test('instance creation, one-time credentials, pause, resume and deletion through the console', async ({ page }) => {
+  await login(page);
+  await createProject(page, 'Browser instance lifecycle');
+  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
+  await page.getByRole('button', { name: '＋ 创建实例' }).click();
+  await page.getByLabel('实例名称', { exact: true }).fill('Browser cache');
+  await page.getByLabel('删除实例时').selectOption('Delete');
+  const creating = page.waitForResponse(r => r.url().endsWith('/instances') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '创建实例', exact: true }).click();
+  expect((await creating).status()).toBe(202);
+  const credential = page.getByRole('heading', { name: '保存连接凭据' }).locator('..');
+  await expect(credential.getByLabel('用户名')).not.toHaveValue('');
+  await expect(credential.getByLabel('密码')).not.toHaveValue('');
+  await credential.getByRole('button', { name: '已保存，关闭' }).click();
+  await expect(page.getByRole('heading', { name: '保存连接凭据' })).toHaveCount(0);
+
+  const row = page.getByRole('row').filter({ hasText: 'Browser cache' });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('已创建');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+  await page.getByRole('button', { name: '编辑配置' }).click();
+  await page.getByLabel('运行状态').selectOption('Suspended');
+  const suspending = page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().includes('/instances/'));
+  await page.getByRole('button', { name: '保存配置' }).click();
+  expect((await suspending).status()).toBe(202);
+  await expect(page.getByText('服务尚未就绪')).toBeVisible();
+  await expect(page.getByText('暂停', { exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: '编辑配置' }).click();
+  await page.getByLabel('运行状态').selectOption('Running');
+  const resuming = page.waitForResponse(r => r.request().method() === 'PATCH' && r.url().includes('/instances/'));
+  await page.getByRole('button', { name: '保存配置' }).click();
+  expect((await resuming).status()).toBe(202);
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+
+  await page.getByRole('button', { name: '删除实例' }).click();
+  await expect(page.getByText('存储卷也会被删除，缓存数据将丢失。')).toBeVisible();
+  const deleting = page.waitForResponse(r => r.request().method() === 'DELETE' && r.url().includes('/instances/'));
+  await page.getByRole('button', { name: '确认删除' }).click();
+  expect((await deleting).status()).toBe(202);
+  await expect(row).toContainText('已删除');
 });
 
 test('two browser tabs cannot silently overwrite a stale quota revision', async ({ page }) => {
