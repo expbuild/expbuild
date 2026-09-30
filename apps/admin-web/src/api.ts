@@ -139,6 +139,7 @@ export const operationNames: Record<string, string> = {
   "project.create": "初始化项目",
   "volume.delete": "清理保留卷",
   "instance.create": "创建实例",
+  "instance.reclaim": "领回保留卷",
   "instance.update": "更新实例",
   "instance.delete": "删除实例",
   "instance.rotate": "轮换凭据",

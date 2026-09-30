@@ -9,7 +9,7 @@ export type CacheObject = {
     instanceId: string; projectId: string;
     templateRef: { name: string; version: string };
     desiredState: string;
-    storage: { className: string; capacity: string; deletionPolicy: string };
+    storage: { className: string; capacity: string; deletionPolicy: string; reclaim?: { previousInstanceUID: string; volumeUID: string } };
     access: { exposure: string; credentialsSecretRef: string };
     eviction: { maxCacheGiB: number; enginePolicy: string };
     resources: { requests: Record<string, string>; limits: Record<string, string> };

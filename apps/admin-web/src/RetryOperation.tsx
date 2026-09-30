@@ -46,7 +46,7 @@ export function RetryOperation({
           <p>
             {operation.kind === "instance.delete"
               ? "继续删除原实例并清理凭据，按原删除操作已记录的策略处理存储卷。此操作不会撤销删除；存在后续操作时无法恢复。"
-              : operation.kind === "instance.create" &&
+              : ["instance.create","instance.reclaim"].includes(operation.kind) &&
                   operation.target_generation == null
                 ? "查找并核对这次创建留下的实例。只恢复配置和归属完全匹配的已有资源；资源不存在时不会重新创建，也不会生成新密码。"
                 : "继续检查已提交配置的运行结果。不会重新创建实例、重置配置或生成新密码；存在后续操作时无法恢复。"}

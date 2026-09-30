@@ -64,6 +64,22 @@ func TestAPIServerContract(t *testing.T) {
 	if err = cl.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("retained volume identity is immutable", func(t *testing.T) {
+		reclaimed := c.DeepCopy()
+		reclaimed.Name = "reclaim-schema-check"
+		reclaimed.UID = ""
+		reclaimed.ResourceVersion = ""
+		reclaimed.Generation = 0
+		reclaimed.Status = cachev1.CacheInstanceStatus{}
+		reclaimed.Spec.Storage.Reclaim = &cachev1.ReclaimSpec{PreviousInstanceUID: "old-instance", VolumeUID: "volume-one"}
+		if err := cl.Create(ctx, reclaimed); err != nil {
+			t.Fatal(err)
+		}
+		reclaimed.Spec.Storage.Reclaim.VolumeUID = "volume-two"
+		if err := cl.Update(ctx, reclaimed); !apierrors.IsInvalid(err) {
+			t.Fatalf("retained PVC identity mutation accepted: %v", err)
+		}
+	})
 	c.Spec.DesiredState = "Suspended"
 	if err = cl.Update(ctx, c); err != nil {
 		t.Fatal(err)

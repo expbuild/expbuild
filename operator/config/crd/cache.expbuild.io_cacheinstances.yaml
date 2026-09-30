@@ -155,6 +155,21 @@ spec:
                     - Retain
                     - Delete
                     type: string
+                  reclaim:
+                    description: |-
+                      Reclaim authorizes a single retained PVC transfer from a previous CR UID.
+                      The PVC UID pins the exact volume, so a same-name replacement is rejected.
+                    properties:
+                      previousInstanceUID:
+                        minLength: 1
+                        type: string
+                      volumeUID:
+                        minLength: 1
+                        type: string
+                    required:
+                    - previousInstanceUID
+                    - volumeUID
+                    type: object
                 required:
                 - capacity
                 - className
@@ -194,6 +209,9 @@ spec:
               rule: self.templateRef == oldSelf.templateRef
             - message: storage class is immutable
               rule: self.storage.className == oldSelf.storage.className
+            - message: retained volume identity is immutable
+              rule: has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim)
+                || self.storage.reclaim == oldSelf.storage.reclaim)
             - message: eviction policy must match engine capabilities
               rule: 'self.templateRef.name == ''bazel-remote'' ? (self.eviction.enginePolicy
                 == ''lru'' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy

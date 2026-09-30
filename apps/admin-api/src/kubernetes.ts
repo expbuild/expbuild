@@ -10,8 +10,9 @@ import { clientAccessPolicy } from './network-policy.js';
 
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
 export type RetainedVolumeIdentity = { namespace: string; name: string; projectId: string; instanceId: string; instanceUid: string };
-export type RetainedVolume = { name: string; namespace: string; uid: string; capacity: string; storageClass: string; phase: string; deleting: boolean };
+export type RetainedVolume = { name: string; namespace: string; uid: string; capacity: string; allocatedCapacity: string; storageClass: string; phase: string; deleting: boolean };
 export interface KubernetesPort {
+  approveRetainedVolumeReclaim?(desired: CacheObject, uid: string): Promise<void>;
   inspectProjectResources?(namespace: string, projectId: string): Promise<InventoryResources>;
   getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null>;
   deleteRetainedVolume(identity: RetainedVolumeIdentity, uid: string): Promise<void>;
@@ -157,6 +158,21 @@ export class KubernetesClient implements KubernetesPort {
       return current;
     }
   }
+  async approveRetainedVolumeReclaim(desired: CacheObject, uid: string): Promise<void> {
+    const reclaim=desired.spec.storage.reclaim;
+    if (!reclaim || !uid) throw new OperationError('invalid_reclaim_request');
+    const current=await this.getInstance(desired.metadata.namespace,desired.metadata.name);
+    if (!current || current.metadata.uid!==uid || current.metadata.deletionTimestamp ||
+        current.spec.projectId!==desired.spec.projectId || current.spec.instanceId!==desired.spec.instanceId ||
+        current.metadata.annotations?.[opKey]!==desired.metadata.annotations?.[opKey] ||
+        !isDeepStrictEqual(current.spec,desired.spec)) throw new OperationError('instance_reclaim_conflict');
+    const marker='cache.expbuild.io/reclaim-bound-uid';
+    if (current.metadata.annotations?.[marker]===uid) return;
+    if (current.metadata.annotations?.[marker]) throw new OperationError('instance_reclaim_conflict');
+    if (!current.metadata.resourceVersion) throw new OperationError('missing_kubernetes_identity');
+    await this.custom.replaceNamespacedCustomObject({group,version,plural,namespace:current.metadata.namespace,name:current.metadata.name,
+      body:{...current,metadata:{...current.metadata,annotations:{...current.metadata.annotations,[marker]:uid}}}});
+  }
   async updateInstance(desired: CacheObject, expectedRevision: string): Promise<CacheObject> {
     const current = await this.getInstance(desired.metadata.namespace, desired.metadata.name);
     if (!current || current.spec.instanceId !== desired.spec.instanceId || current.spec.projectId !== desired.spec.projectId || current.metadata.deletionTimestamp) throw new OperationError('instance_identity_conflict');
@@ -187,7 +203,7 @@ export class KubernetesClient implements KubernetesPort {
   async getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null> {
     const pvc = await this.retainedClaim(identity);
     if (!pvc) return null;
-    return { name: pvc.metadata!.name!, namespace: identity.namespace, uid: pvc.metadata!.uid!, capacity: pvc.spec?.resources?.requests?.storage ?? '', storageClass: pvc.spec?.storageClassName ?? '', phase: pvc.status?.phase ?? 'Unknown', deleting: !!pvc.metadata?.deletionTimestamp };
+    return { name: pvc.metadata!.name!, namespace: identity.namespace, uid: pvc.metadata!.uid!, capacity: pvc.spec?.resources?.requests?.storage ?? '', allocatedCapacity: pvc.status?.capacity?.storage ?? '', storageClass: pvc.spec?.storageClassName ?? '', phase: pvc.status?.phase ?? 'Unknown', deleting: !!pvc.metadata?.deletionTimestamp };
   }
   async deleteRetainedVolume(identity: RetainedVolumeIdentity, uid: string) {
     const pvc = await this.retainedClaim(identity);

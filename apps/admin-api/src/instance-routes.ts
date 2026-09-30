@@ -1,10 +1,11 @@
-import { templateCatalog, templateEnabled, instanceCapabilities } from './template-catalog.js';
+import { templateCatalog, templateEnabled, templateDefinition, instanceCapabilities } from './template-catalog.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
 import { hash } from "bcryptjs";
 import { z } from "zod";
-import { reserveResources } from "./quotas.js";
+import { reserveResources, quotaSnapshot, checkQuota } from "./quotas.js";
+import { quantityCeil } from "./quantities.js";
 import { transaction } from "./db.js";
 import { HttpError, OperationError } from "./errors.js";
 import { digest, token } from "./security.js";
@@ -213,7 +214,11 @@ export async function registerInstanceRoutes(
     const { projectId, instanceId } = ids.parse(request.params);
     await auth.projectAccess(request, projectId, ['admin', 'maintainer', 'viewer']);
     const b = await binding(projectId, instanceId);
-    if (b.lifecycle !== 'detached' || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have detached storage');
+    if (!['detached','failed'].includes(b.lifecycle) || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have retained storage');
+    let current:CacheObject|null;
+    try {current=await kube().getInstance(b.namespace,b.resource_name);}
+    catch{throw new HttpError(503,'Kubernetes instance observation is unavailable');}
+    if(current)throw new HttpError(409,'An instance still exists; recover or remove it before managing retained storage');
     const volume = await kube().getRetainedVolume({ namespace: b.namespace, name: b.resource_name, projectId, instanceId, instanceUid: b.kubernetes_uid }).catch(error => {
       if (error instanceof OperationError) throw new HttpError(409, error.code);
       throw new HttpError(503, 'Storage observation is temporarily unavailable');
@@ -236,13 +241,73 @@ export async function registerInstanceRoutes(
       const rows = await client.query('SELECT i.*,p.namespace FROM instance_bindings i JOIN projects p ON p.id=i.project_id WHERE i.project_id=$1 AND i.id=$2 FOR UPDATE OF i', [projectId, instanceId]);
       const b = rows.rows[0];
       if (!b) throw new HttpError(404, 'Instance not found');
-      if (b.lifecycle !== 'detached' || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have detached storage');
+      if (!['detached','failed'].includes(b.lifecycle) || !b.kubernetes_uid) throw new HttpError(409, 'Instance does not have retained storage');
       const operationId = randomUUID();
       const inserted = await client.query(`INSERT INTO operations(id,project_id,instance_id,kind,idempotency_key,request_hash,request,created_by) VALUES($1,$2,$3,'volume.delete',$4,$5,$6,$7) RETURNING ${opSummary}`, [operationId, projectId, instanceId, key, requestHash, JSON.stringify({ namespace: b.namespace, name: b.resource_name, instanceUid: b.kubernetes_uid, uid }), actor.id]);
       await client.query("INSERT INTO audit_events(id,actor_id,project_id,instance_id,operation_id,action,details) VALUES($1,$2,$3,$4,$5,'volume.delete',$6)", [randomUUID(), actor.id, projectId, instanceId, operationId, JSON.stringify({ volumeUid: uid })]);
       return inserted.rows[0];
     });
     return reply.code(202).send({ operation: result });
+  });
+
+  app.post('/v1/projects/:projectId/instances/:instanceId/retained-volume/reclaim', async (request, reply) => {
+    const {projectId,instanceId}=ids.parse(request.params);
+    const actor=await auth.projectAccess(request,projectId,['admin']);
+    if(!options.encryptionKey || !options.storageClass)throw new HttpError(503,'Instance provisioning is not configured');
+    const input=instanceInput.parse(request.body),volumeUid=z.string().min(1).max(200).parse(request.headers['if-match']).replace(/^"|"$/g,'');
+    const key=idempotencyKey(request),requestHash=digest(JSON.stringify({instanceId,volumeUid,input}));
+    const old=await transaction(pool,async client=>{
+      await lockProject(client,projectId,actor,['admin']);
+      return replay(client,projectId,'instance.reclaim',key,requestHash);
+    });
+    if(old)return reply.header('Cache-Control','no-store').code(202).send({operation:old,replayed:true});
+    const b=await binding(projectId,instanceId);
+    if(!['detached','failed'].includes(b.lifecycle) || !b.kubernetes_uid || b.template_name!==input.template ||
+      !b.template_version || !templateEnabled(input.template,options) ||
+      templateDefinition(input.template).version!==b.template_version)throw new HttpError(409,'Instance is not eligible for retained volume reclaim');
+    let volume:Awaited<ReturnType<KubernetesPort['getRetainedVolume']>>;
+    try {volume=await kube().getRetainedVolume({namespace:b.namespace,name:b.resource_name,projectId,instanceId,instanceUid:b.kubernetes_uid});}
+    catch(error){if(error instanceof OperationError)throw new HttpError(409,error.code);throw new HttpError(503,'Storage observation is temporarily unavailable');}
+    if(!volume || volume.uid!==volumeUid || volume.deleting || volume.phase!=='Bound' || volume.storageClass!==options.storageClass)
+      throw new HttpError(409,'Retained volume changed or is not ready');
+    try {if(input.storageGiB<Math.max(quantityCeil(volume.capacity,'1Gi'),quantityCeil(volume.allocatedCapacity,'1Gi')) || BigInt(input.storageGiB)<BigInt(b.reserved_storage_gib??0))throw new Error('shrink');}
+    catch{throw new HttpError(409,'Reclaim storage must cover the retained volume and historical reservation');}
+    let existing:CacheObject|null;
+    try {existing=await kube().getInstance(b.namespace,b.resource_name);}
+    catch{throw new HttpError(503,'Kubernetes instance observation is unavailable');}
+    if(existing)throw new HttpError(409,'An instance already exists for this retained volume');
+    const operationId=randomUUID(),password=token(),probePassword=token();
+    const credentials={htpasswd:`cache:${await hash(password,10)}\nhealth:${await hash(probePassword,10)}\n`,'probe-username':'health','probe-password':probePassword};
+    const desired=desiredObject(input,projectId,b.namespace,instanceId,options.storageClass,operationId,requestHash);
+    desired.spec.storage.reclaim={previousInstanceUID:b.kubernetes_uid,volumeUID:volumeUid};
+    desired.spec.access.credentialsSecretRef=`auth-${operationId}`;
+    const result=await transaction(pool,async client=>{
+      await lockProject(client,projectId,actor,['admin']);
+      const previous=await replay(client,projectId,'instance.reclaim',key,requestHash);
+      if(previous)return {operation:previous,replayed:true};
+      const current=(await client.query('SELECT * FROM instance_bindings WHERE id=$1 AND project_id=$2 FOR UPDATE',[instanceId,projectId])).rows[0];
+      if(!current || !['detached','failed'].includes(current.lifecycle) || current.kubernetes_uid!==b.kubernetes_uid ||
+        current.template_name!==input.template || current.template_version!==b.template_version ||
+        String(current.reserved_storage_gib)!==String(b.reserved_storage_gib) ||
+        String(current.reserved_cpu_millis)!==String(b.reserved_cpu_millis) ||
+        String(current.reserved_memory_mib)!==String(b.reserved_memory_mib))throw new HttpError(409,'Instance changed during reclaim preparation');
+      await client.query(`UPDATE instance_bindings SET lifecycle='pending',
+        reserved_storage_gib=greatest(coalesce(reserved_storage_gib,0),$2),
+        reserved_cpu_millis=greatest(coalesce(reserved_cpu_millis,0),$3),
+        reserved_memory_mib=greatest(coalesce(reserved_memory_mib,0),$4)
+        WHERE id=$1`,[instanceId,input.storageGiB,input.cpuMillis,input.memoryMiB]);
+      const snapshot=await quotaSnapshot(client,projectId);
+      checkQuota(snapshot.limits,snapshot.reserved,snapshot.unknownReservations);
+      const inserted=await client.query(`INSERT INTO operations(id,project_id,instance_id,kind,idempotency_key,request_hash,request,secret_payload,created_by)
+        VALUES($1,$2,$3,'instance.reclaim',$4,$5,$6,$7,$8) RETURNING ${opSummary}`,
+        [operationId,projectId,instanceId,key,requestHash,JSON.stringify({desired,previousInstanceUID:b.kubernetes_uid,volumeUid}),seal(options.encryptionKey!,operationId,credentials),actor.id]);
+      await client.query("INSERT INTO instance_credentials(id,instance_id,name,secret_name,state,revision) SELECT $1,$2,'default',$3,'pending',coalesce(max(revision),0)+1 FROM instance_credentials WHERE instance_id=$2",
+        [randomUUID(),instanceId,desired.spec.access.credentialsSecretRef]);
+      await client.query("INSERT INTO audit_events(id,actor_id,project_id,instance_id,operation_id,action,details) VALUES($1,$2,$3,$4,$5,'volume.reclaim',$6)",
+        [randomUUID(),actor.id,projectId,instanceId,operationId,JSON.stringify({previousInstanceUID:b.kubernetes_uid,volumeUid})]);
+      return {operation:inserted.rows[0],replayed:false,credentials:{username:'cache',password}};
+    });
+    return reply.header('Cache-Control','no-store').code(202).send(result);
   });
 
   app.post("/v1/projects/:projectId/instances", async (request, reply) => {
@@ -386,6 +451,9 @@ export async function registerInstanceRoutes(
       );
       desired.spec.access.credentialsSecretRef =
         current.spec.access.credentialsSecretRef;
+      desired.spec.templateRef = structuredClone(current.spec.templateRef);
+      if (current.spec.storage.reclaim)
+        desired.spec.storage.reclaim = structuredClone(current.spec.storage.reclaim);
       const accepted = await transaction(pool, async (client) => {
         await lockProject(client, projectId, actor, ["admin", "maintainer"]);
         const existing = await replay(
@@ -590,8 +658,8 @@ export async function registerInstanceRoutes(
       if (!operation) throw new HttpError(404, "Operation not found");
       if (!replayed.rows[0]) {
         const deleting = operation.kind === "instance.delete";
-        const recoveringCreate = operation.kind === "instance.create" && !operation.target_generation;
-        if (operation.state !== "failed" || (!deleting && !recoveringCreate && (!["instance.create", "instance.update", "instance.rotate"].includes(operation.kind) || !operation.target_generation)))
+        const recoveringCreate = ["instance.create", "instance.reclaim"].includes(operation.kind) && !operation.target_generation;
+        if (operation.state !== "failed" || (!deleting && !recoveringCreate && (!["instance.create", "instance.reclaim", "instance.update", "instance.rotate"].includes(operation.kind) || !operation.target_generation)))
           throw new HttpError(409, "Only failed instance operations with a recoverable request can be resumed");
         const binding = await client.query("SELECT kubernetes_uid,lifecycle FROM instance_bindings WHERE id=$1 FOR UPDATE", [operation.instance_id]);
         const bound = binding.rows[0];
@@ -604,7 +672,7 @@ export async function registerInstanceRoutes(
         if (newer.rows.length) throw new HttpError(409, "A newer instance operation exists");
         await client.query("INSERT INTO operation_retries(project_id,idempotency_key,operation_id) VALUES($1,$2,$3)", [projectId, key, operationId]);
         await client.query("UPDATE operations SET state='reconciling',error_code=NULL,worker_id=NULL,lease_until=NULL,next_attempt_at=now(),deadline_at=now()+interval '20 minutes',updated_at=now() WHERE id=$1", [operationId]);
-        if (operation.kind === "instance.create") await client.query("UPDATE instance_bindings SET lifecycle='pending' WHERE id=$1", [operation.instance_id]);
+        if (["instance.create", "instance.reclaim"].includes(operation.kind)) await client.query("UPDATE instance_bindings SET lifecycle='pending' WHERE id=$1", [operation.instance_id]);
         await client.query("INSERT INTO audit_events(id,actor_id,project_id,instance_id,operation_id,action,details) VALUES($1,$2,$3,$4,$5,'operation.retry',$6)", [randomUUID(), actor.id, projectId, operation.instance_id, operationId, JSON.stringify({ previousError: operation.error_code })]);
       }
       const summary = await client.query(`SELECT ${opSummary} FROM operations WHERE id=$1`, [operationId]);

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"time"
@@ -16,6 +17,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +31,8 @@ const Finalizer = "cache.expbuild.io/cleanup"
 const UIDLabel = "cache.expbuild.io/instance-uid"
 const InstanceLabel = "cache.expbuild.io/instance-id"
 const ProjectLabel = "cache.expbuild.io/project-id"
+
+var errReclaimBindingPending = errors.New("retained volume transfer awaits durable instance binding")
 
 type Reconciler struct {
 	client.Client
@@ -152,6 +156,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if secret.Labels[InstanceLabel] != c.Spec.InstanceID || secret.Labels[ProjectLabel] != c.Spec.ProjectID || len(secret.Data["htpasswd"]) == 0 {
 		return r.report(ctx, &c, false, "CredentialsRejected", "Secret must belong to this instance/project and contain htpasswd")
 	}
+	if c.Spec.Storage.Reclaim != nil {
+		if err := r.reclaimVolume(ctx, &c); err != nil {
+			reason := "VolumeReclaimRejected"
+			if errors.Is(err, errReclaimBindingPending) {
+				reason = "VolumeReclaimPending"
+			}
+			return r.report(ctx, &c, false, reason, err.Error())
+		}
+	}
 	if monitoringActive {
 		r.applyMonitoring(ctx, &c)
 	}
@@ -236,6 +249,67 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		c.Status.Endpoints = r.Gateway.Endpoints(&c)
 	}
 	return r.report(ctx, &c, true, "Available", "Current workload revision and authenticated protocol probes succeeded")
+}
+
+func (r *Reconciler) reclaimVolume(ctx context.Context, c *cachev1.CacheInstance) error {
+	claim := c.Spec.Storage.Reclaim
+	if claim == nil {
+		return nil
+	}
+	if claim.PreviousInstanceUID == "" || claim.VolumeUID == "" || claim.PreviousInstanceUID == string(c.UID) {
+		return fmt.Errorf("invalid retained volume identity")
+	}
+	var pvc corev1.PersistentVolumeClaim
+	key := types.NamespacedName{Namespace: c.Namespace, Name: c.Name + "-data"}
+	if err := r.Reader.Get(ctx, key, &pvc); err != nil {
+		return fmt.Errorf("retained volume not available: %w", err)
+	}
+	if string(pvc.UID) != claim.VolumeUID || pvc.DeletionTimestamp != nil || len(pvc.OwnerReferences) != 0 ||
+		pvc.Labels[ProjectLabel] != c.Spec.ProjectID || pvc.Labels[InstanceLabel] != c.Spec.InstanceID ||
+		pvc.Labels["app.kubernetes.io/managed-by"] != "expbuild" || pvc.Status.Phase != corev1.ClaimBound {
+		return fmt.Errorf("retained volume identity or state changed")
+	}
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != c.Spec.Storage.ClassName {
+		return fmt.Errorf("retained volume storage class differs")
+	}
+	if len(pvc.Spec.AccessModes) != 1 || pvc.Spec.AccessModes[0] != corev1.ReadWriteOnce {
+		return fmt.Errorf("retained volume access mode differs")
+	}
+	requested, err := resource.ParseQuantity(c.Spec.Storage.Capacity)
+	volumeRequest, requestPresent := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+	allocated, capacityPresent := pvc.Status.Capacity[corev1.ResourceStorage]
+	if err != nil || !requestPresent || !capacityPresent || volumeRequest.Cmp(requested) > 0 || allocated.Cmp(requested) > 0 {
+		return fmt.Errorf("retained volume capacity would shrink or is invalid")
+	}
+	if pvc.Labels[UIDLabel] != string(c.UID) && pvc.Labels[UIDLabel] != claim.PreviousInstanceUID {
+		return fmt.Errorf("retained volume belongs to another instance UID")
+	}
+	// The management worker writes this marker only after durably binding the
+	// new CR UID. A lost create response must leave the PVC with its old owner.
+	if c.Annotations["cache.expbuild.io/reclaim-bound-uid"] != string(c.UID) {
+		return errReclaimBindingPending
+	}
+	if pvc.Labels[UIDLabel] == string(c.UID) {
+		return nil // An earlier reconciliation already transferred this exact PVC.
+	}
+	var pods corev1.PodList
+	if err := r.Reader.List(ctx, &pods, client.InNamespace(c.Namespace)); err != nil {
+		return err
+	}
+	for _, pod := range pods.Items {
+		for _, volume := range pod.Spec.Volumes {
+			if volume.PersistentVolumeClaim != nil && volume.PersistentVolumeClaim.ClaimName == pvc.Name {
+				return fmt.Errorf("retained volume is still referenced by a Pod")
+			}
+		}
+	}
+	base := pvc.DeepCopy()
+	pvc.Labels[UIDLabel] = string(c.UID)
+	if pvc.Annotations == nil {
+		pvc.Annotations = map[string]string{}
+	}
+	pvc.Annotations["cache.expbuild.io/reclaimed-from-uid"] = claim.PreviousInstanceUID
+	return r.Patch(ctx, &pvc, client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
 }
 
 // apply refuses to adopt any existing resource without this CR's exact UID.

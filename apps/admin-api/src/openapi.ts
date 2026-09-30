@@ -557,13 +557,18 @@ route(
   { code: 202, idempotent: true, response: ref("Accepted") },
 );
 route('get', base + '/{instanceId}/retained-volume', 'getRetainedVolume', 'Project member: inspect detached storage', {
-  response: object({ name: string, namespace: string, uid: string, capacity: string, storageClass: string, phase: string, deleting: bool }),
+  response: object({ name: string, namespace: string, uid: string, capacity: string, allocatedCapacity: string, storageClass: string, phase: string, deleting: bool }),
   headers: { ETag: { schema: string, description: 'Quoted PVC UID, used for storage cleanup; not the CR revision.' } },
-  description: 'Only detached instances. Validates namespace, project, instance and original CR UID labels. Missing PVC returns 404, ownership conflicts return 409, observation failures return 503. Capacity is requested storage, not measured usage.',
+  description: 'Detached instances or failed reclaim attempts with a bound UID. Validates namespace, project, instance and bound CR UID labels. Missing PVC returns 404, ownership conflicts return 409, observation failures return 503. Capacity and allocatedCapacity are PVC request and bound capacity, not measured file usage.',
 });
 route('delete', base + '/{instanceId}/retained-volume', 'deleteRetainedVolume', 'Project administrator: irreversibly clean up detached storage', {
   code: 202, idempotent: true, revision: true, revisionDescription: 'PVC UID from GET retained-volume (not the instance UID:generation).', response: ref('Accepted'),
   description: 'If-Match must contain the PVC UID from GET retained-volume. Queues volume.delete. Checks ownership, absence of the original instance and all Pod references; deletes only with PVC UID and resourceVersion preconditions. Completion means PVC absence, not guaranteed physical data erasure. Failure can be submitted again after inspection with a new idempotency key. No PV deletion permission is granted.',
+});
+route('post', base + '/{instanceId}/retained-volume/reclaim', 'reclaimRetainedVolume', 'Project administrator: restore an instance from its retained volume', {
+  code:202,idempotent:true,revision:true,revisionDescription:'PVC UID from GET retained-volume (not the old CR revision).',
+  body:ref('InstanceInput'),response:ref('Accepted'),
+  description:'Creates a new CacheInstance for the same binding and exact retained PVC UID. The template and storage class must match; requested capacity must cover PVC request, allocated capacity and historical reservation. Quota is reserved before the operation. The Operator transfers PVC identity only after the worker durably binds the new CR UID. Credentials are returned once. A failed operation with an existing CR may be resumed through operation retry; without a CR, a fresh reclaim request can be submitted after checking the volume.',
 });
 route(
   "post",

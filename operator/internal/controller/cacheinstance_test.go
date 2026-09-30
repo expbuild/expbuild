@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -204,6 +205,103 @@ func TestExistingForeignVolumeNotAdopted(t *testing.T) {
 	_ = r.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
 	if pvc.Labels[UIDLabel] != "old-uid" {
 		t.Fatal("foreign PVC changed")
+	}
+}
+
+func TestRetainedVolumeReclaimRequiresExactIdentityAndNoPodReference(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		volumeUID   string
+		previousUID string
+		pod         bool
+		accepted    bool
+	}{
+		{name: "exact retained claim", volumeUID: "volume-1", previousUID: "old-uid", accepted: true},
+		{name: "replaced claim", volumeUID: "different-volume", previousUID: "old-uid"},
+		{name: "another instance", volumeUID: "volume-1", previousUID: "other-uid"},
+		{name: "claim in use", volumeUID: "volume-1", previousUID: "old-uid", pod: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, c := setup(t)
+			ctx := context.Background()
+			pvc := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+				Name: c.Name + "-data", Namespace: c.Namespace, UID: types.UID("volume-1"),
+				Labels: map[string]string{UIDLabel: "old-uid", InstanceLabel: c.Spec.InstanceID, ProjectLabel: c.Spec.ProjectID, "app.kubernetes.io/managed-by": "expbuild"},
+			}, Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: ptr.To("standard"),
+				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}},
+			}}
+			if err := r.Create(ctx, pvc); err != nil {
+				t.Fatal(err)
+			}
+			pvc.Status.Phase = corev1.ClaimBound
+			pvc.Status.Capacity = corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("10Gi")}
+			if err := r.Status().Update(ctx, pvc); err != nil {
+				t.Fatal(err)
+			}
+			if tc.pod {
+				pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "external-reader", Namespace: c.Namespace}, Spec: corev1.PodSpec{Volumes: []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}}}}}
+				if err := r.Create(ctx, pod); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+				t.Fatal(err)
+			}
+			c.Spec.Storage.Reclaim = &cachev1.ReclaimSpec{PreviousInstanceUID: tc.previousUID, VolumeUID: tc.volumeUID}
+			if tc.pod {
+				if c.Annotations == nil {
+					c.Annotations = map[string]string{}
+				}
+				c.Annotations["cache.expbuild.io/reclaim-bound-uid"] = string(c.UID)
+			}
+			if err := r.Update(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			if tc.accepted {
+				reconcile(t, r, c)
+				if err := r.Get(ctx, client.ObjectKeyFromObject(pvc), pvc); err != nil {
+					t.Fatal(err)
+				}
+				if pvc.Labels[UIDLabel] != "old-uid" {
+					t.Fatal("PVC transferred before durable binding approval")
+				}
+				if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+					t.Fatal(err)
+				}
+				if meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason != "VolumeReclaimPending" {
+					t.Fatal("missing durable binding was not reported as pending")
+				}
+				if c.Annotations == nil {
+					c.Annotations = map[string]string{}
+				}
+				c.Annotations["cache.expbuild.io/reclaim-bound-uid"] = string(c.UID)
+				if err := r.Update(ctx, c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reconcile(t, r, c)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(pvc), pvc); err != nil {
+				t.Fatal(err)
+			}
+			if tc.accepted {
+				if pvc.Labels[UIDLabel] != string(c.UID) || pvc.Annotations["cache.expbuild.io/reclaimed-from-uid"] != "old-uid" || string(pvc.UID) != "volume-1" {
+					t.Fatalf("retained volume transfer incomplete: %#v", pvc.ObjectMeta)
+				}
+				reconcile(t, r, c)
+			} else {
+				if pvc.Labels[UIDLabel] != "old-uid" {
+					t.Fatal("unverified retained volume changed")
+				}
+				if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+					t.Fatal(err)
+				}
+				if meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason != "VolumeReclaimRejected" {
+					t.Fatal("unsafe volume reclaim was not reported")
+				}
+			}
+		})
 	}
 }
 

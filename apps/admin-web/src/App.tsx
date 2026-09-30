@@ -18,7 +18,7 @@ import {
   type User,
 } from "./api";
 
-import { RetainedVolume } from "./RetainedVolume";
+import { RetainedVolume, type Volume as RetainedVolumeInfo } from "./RetainedVolume";
 import { RetryOperation } from "./RetryOperation";
 import { Statistics } from "./Statistics";
 import { PasswordForm } from "./PasswordForm";
@@ -548,9 +548,11 @@ function ProjectView({ project, user }: { project: Project; user: User }) {
                     o.state === "failed" &&
                     (o.kind === "instance.delete" ||
                       o.kind === "instance.create" ||
+                      o.kind === "instance.reclaim" ||
                       (o.target_generation != null &&
                         [
                           "instance.create",
+                          "instance.reclaim",
                           "instance.update",
                           "instance.rotate",
                         ].includes(o.kind))) && (
@@ -588,14 +590,25 @@ const defaults: Input = {
   desiredState: "Running",
   deletionPolicy: "Retain",
 };
+type ReclaimFormTarget = { path: string; volume: RetainedVolumeInfo; name: string; template: string; templateVersion: string | null };
+function volumeGiB(quantity: string): number | null {
+  const parsed=/^(\d+)(Ki|Mi|Gi|Ti)$/.exec(quantity);
+  if(!parsed)return null;
+  const factor:Record<string,bigint>={Ki:1024n,Mi:1024n**2n,Gi:1024n**3n,Ti:1024n**4n};
+  const bytes=BigInt(parsed[1])*factor[parsed[2]];
+  const gib=(bytes+1024n**3n-1n)/(1024n**3n);
+  return gib<=1048576n?Number(gib):null;
+}
 function InstanceForm({
   base,
   detail,
+  reclaim,
   onCancel,
   onSaved,
 }: {
   base: string;
   detail?: Detail;
+  reclaim?: ReclaimFormTarget;
   onCancel: () => void;
   onSaved: (x: {
     credentials?: { username: string; password: string };
@@ -603,6 +616,7 @@ function InstanceForm({
 }) {
   const baseline = useRef(detail).current;
   const spec = baseline?.spec;
+  const reclaimInitial=useRef(reclaim).current;
   const [input, setInput] = useState<Input>(
     spec
       ? {
@@ -618,7 +632,11 @@ function InstanceForm({
           desiredState: spec.desiredState,
           deletionPolicy: spec.storage.deletionPolicy,
         }
-      : defaults,
+      : reclaimInitial ? (()=>{
+          const minimum=Math.max(volumeGiB(reclaimInitial.volume.capacity)??0,volumeGiB(reclaimInitial.volume.allocatedCapacity)??0,2);
+          return {...defaults,name:reclaimInitial.name,template:reclaimInitial.template,storageGiB:minimum,
+            cacheGiB:reclaimInitial.template==='webdav-apache'?0:Math.max(1,Math.min(16,minimum-1))};
+        })() : defaults,
   );
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -631,6 +649,11 @@ function InstanceForm({
         if (abort.signal.aborted) return;
         const supported = value.items;
         setTemplates(supported);
+        if (reclaimInitial) {
+          if (!supported.some(t=>t.name===reclaimInitial.template && t.version===reclaimInitial.templateVersion))
+            setCatalogError("原协议模板版本当前不可用，无法领回该实例。");
+          return;
+        }
         if (baseline) return;
         if (!supported.length) setCatalogError("当前没有可创建的模板。");
         else
@@ -648,8 +671,8 @@ function InstanceForm({
         if (!abort.signal.aborted) setCatalogError(message(e));
       });
     return () => abort.abort();
-  }, [baseline]);
-  const selectedTemplate = templates.find(t => t.name === input.template && (!spec || t.version === spec.templateRef.version));
+  }, [baseline,reclaimInitial]);
+  const selectedTemplate = templates.find(t => t.name === input.template && (!spec || t.version === spec.templateRef.version) && (!reclaimInitial || t.version === reclaimInitial.templateVersion));
   // Disabled templates remain editable; preserve the existing engine budget
   // instead of inferring capabilities from a possibly newer catalog version.
   const supportsCapacity = selectedTemplate?.capabilities.capacity ?? (!!spec && spec.eviction.maxCacheGiB > 0);
@@ -673,11 +696,11 @@ function InstanceForm({
     try {
       const x = await api<{
         credentials?: { username: string; password: string };
-      }>(`${base}/instances${detail ? `/${detail.id}` : ""}`, {
+      }>(reclaimInitial ? reclaimInitial.path+'/reclaim' : `${base}/instances${detail ? `/${detail.id}` : ""}`, {
         method: detail ? "PATCH" : "POST",
         headers: {
           "Idempotency-Key": last.current.key,
-          ...(detail ? { "If-Match": `"${baseline?.revision}"` } : {}),
+          ...(detail ? { "If-Match": `"${baseline?.revision}"` } : reclaimInitial ? {"If-Match":reclaimInitial.volume.uid} : {}),
         },
         body,
       });
@@ -700,7 +723,7 @@ function InstanceForm({
           协议模板
           <select
             value={input.template}
-            disabled={!!baseline || !templates.length || busy}
+            disabled={!!baseline || !!reclaimInitial || !templates.length || busy}
             onChange={(e) => {
               const selected = templates.find(
                 (t) => t.name === e.target.value,
@@ -715,7 +738,7 @@ function InstanceForm({
               });
             }}
           >
-            {baseline ? (
+            {baseline || reclaimInitial ? (
               <option value={input.template}>
                 {templateLabel(input.template)}
               </option>
@@ -762,8 +785,8 @@ function InstanceForm({
                 type="number"
                 required
                 min={
-                  key === "storageGiB" && spec
-                    ? parseInt(spec.storage.capacity)
+                  key === "storageGiB" && (spec || reclaimInitial)
+                    ? spec ? parseInt(spec.storage.capacity) : Math.max(volumeGiB(reclaimInitial!.volume.capacity)??2,volumeGiB(reclaimInitial!.volume.allocatedCapacity)??2)
                     : selectedTemplate?.inputSchema?.properties?.[key]?.minimum ?? min
                 }
                 max={selectedTemplate?.inputSchema?.properties?.[key]?.maximum ?? max}
@@ -821,7 +844,7 @@ function InstanceForm({
       )}
       <div className="actions">
         <button className="primary" disabled={busy || !canSubmit}>
-          {busy ? "正在提交…" : detail ? "保存配置" : "创建实例"}
+          {busy ? "正在提交…" : detail ? "保存配置" : reclaimInitial ? "确认领回实例" : "创建实例"}
         </button>
         <button type="button" disabled={busy} onClick={onCancel}>
           取消
@@ -850,6 +873,9 @@ function InstanceDetail({
     [confirm, setConfirm] = useState(false),
     [busy, setBusy] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [reclaimTarget, setReclaimTarget] = useState<ReclaimFormTarget | null>(null);
+  const [reclaimCredentials, setReclaimCredentials] = useState<{username:string;password:string}|null>(null);
+  const [reclaimSubmitted, setReclaimSubmitted] = useState(false);
   const deleteKey = useRef(crypto.randomUUID());
   useEffect(() => {
     const abort = new AbortController();
@@ -881,7 +907,22 @@ function InstanceDetail({
   return (
     <section className="panel">
       <h2>{detail?.name ?? "实例详情"}</h2>
-      {detail?.lifecycle === 'detached' && <RetainedVolume path={`${base}/instances/${id}/retained-volume`} canAdmin={canAdmin} onChange={onChange} />}
+      {(detail?.lifecycle === 'detached' || detail?.lifecycle === 'failed') && <RetainedVolume path={`${base}/instances/${id}/retained-volume`} canAdmin={canAdmin} onChange={onChange} failed={detail.lifecycle==='failed'}
+        onReclaim={canAdmin && detail.template && detail.templateVersion ? volume => setReclaimTarget({path:`${base}/instances/${id}/retained-volume`,volume,name:detail.name,template:detail.template!,templateVersion:detail.templateVersion!}) : undefined} />}
+      {reclaimTarget && <div className="notice">
+        <h3>从保留卷恢复实例</h3>
+        <p>将重新创建服务并沿用已确认的存储卷。请核对容量和协议配置；新密码只在提交时显示一次。</p>
+        <InstanceForm base={base} reclaim={reclaimTarget} onCancel={()=>setReclaimTarget(null)} onSaved={value=>{
+          setReclaimTarget(null);setReclaimCredentials(value.credentials??null);setReclaimSubmitted(true);onChange();
+        }} />
+      </div>}
+      {reclaimSubmitted && !reclaimCredentials && <div className="notice"><p>领回请求已提交。此请求已受理过，密码不会再次返回；请等待操作完成，再轮换凭据。</p><button onClick={()=>setReclaimSubmitted(false)}>关闭</button></div>}
+      {reclaimCredentials && <div className="notice">
+        <p>请保存恢复后的新密码，关闭后无法再次查看。</p>
+        <label>用户名<input readOnly value={reclaimCredentials.username} /></label>
+        <label>密码<input readOnly value={reclaimCredentials.password} onFocus={event=>event.currentTarget.select()} /></label>
+        <button onClick={()=>{setReclaimCredentials(null);setReclaimSubmitted(false);}}>已保存，关闭</button>
+      </div>}
       <Alert text={error} />
       {detail?.spec && (
         <>

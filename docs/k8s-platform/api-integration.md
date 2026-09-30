@@ -43,6 +43,8 @@ revision、spec、status 和 observedAt。统计为当前引擎快照；不存�
 
 资源对账发现预留不足或未知时，平台管理员可调用单实例 `POST /v1/projects/{projectId}/instances/{instanceId}/reservations/reconcile`。该入口重新读取集群并复核归属与并发变更，成功后只增加资源预留；如果真实资源已超过项目额度，配额查询会显示超额，后续新增与扩容被拒绝。对账中的其他差异仍需分别处理，不能用此入口修复 UID 或配置冲突。
 
+保留卷领回使用 `GET .../retained-volume` 的 PVC UID 作为 `If-Match`，向 `POST .../retained-volume/reclaim` 提交完整实例配置及幂等键。新凭据仅首次响应可见；操作完成后旧卷仍是同一个 PVC，实例绑定改为新 CR UID。身份转移、失败恢复和限制见[保留卷领回](retained-volume-reclaim.md)。
+
 源文件为 `apps/admin-api/src/openapi.ts`。实例输入 schema 从实际 Zod 校验模型导出；
 跨字段限制仍以描述和服务端校验为准。修改路由后运行测试并重新生成静态 JSON：
 

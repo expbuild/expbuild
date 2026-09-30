@@ -50,6 +50,32 @@ test('stalled Kubernetes responses are aborted rather than holding a worker fore
   } finally { await fixture.close(); }
 });
 
+test('retained volume transfer authorization is UID-bound and idempotent',async()=>{
+  const desired=desiredObject(instanceInput.parse({name:'restored',storageGiB:10,cacheGiB:8}),'project','project-ns','instance','standard','operation','request-hash');
+  desired.spec.storage.reclaim={previousInstanceUID:'old-uid',volumeUID:'volume-uid'};
+  let current=structuredClone(desired),writes=0;
+  current.metadata.uid='new-uid';current.metadata.resourceVersion='7';current.metadata.generation=1;
+  const fixture=await endpoint(async(request,response)=>{
+    response.setHeader('Content-Type','application/json');
+    if(request.method==='GET'){response.end(JSON.stringify(current));return;}
+    assert.equal(request.method,'PUT');
+    let raw='';for await(const chunk of request)raw+=chunk;
+    const next=JSON.parse(raw);
+    assert.equal(next.metadata.uid,'new-uid');
+    assert.equal(next.metadata.resourceVersion,'7');
+    assert.equal(next.metadata.annotations['cache.expbuild.io/reclaim-bound-uid'],'new-uid');
+    writes++;current=next;response.end(JSON.stringify(current));
+  });
+  try{
+    const kube=new KubernetesClient(fixture.config);
+    await assert.rejects(kube.approveRetainedVolumeReclaim(desired,'replaced-uid'),(error:unknown)=>error instanceof OperationError && error.code==='instance_reclaim_conflict');
+    assert.equal(writes,0);
+    await kube.approveRetainedVolumeReclaim(desired,'new-uid');
+    await kube.approveRetainedVolumeReclaim(desired,'new-uid');
+    assert.equal(writes,1);
+  }finally{await fixture.close();}
+});
+
 test('replayed operations cannot accept externally changed configuration', async () => {
   const desired = desiredObject(instanceInput.parse({ name: 'cache', storageGiB: 10, cacheGiB: 8 }), 'project', 'demo', 'instance', 'standard', 'op', 'hash');
   const current = structuredClone(desired);
@@ -100,7 +126,7 @@ test('existing client access policy must match ownership and exact access rules'
 test('retained volume cleanup fences identity, ownership, active instances and every Pod reference', async () => {
   const identity = { namespace: 'demo', name: 'c-instance', projectId: 'project', instanceId: 'instance', instanceUid: 'original-cr' };
   const labels = { 'app.kubernetes.io/managed-by': 'expbuild', 'cache.expbuild.io/project-id': 'project', 'cache.expbuild.io/instance-id': 'instance', 'cache.expbuild.io/instance-uid': 'original-cr' };
-  const claim = { metadata: { name: 'c-instance-data', namespace: 'demo', uid: 'volume-uid', resourceVersion: '42', labels, ownerReferences: [] as any[] }, spec: { resources: { requests: { storage: '10Gi' } }, storageClassName: 'standard' }, status: { phase: 'Bound' } };
+  const claim = { metadata: { name: 'c-instance-data', namespace: 'demo', uid: 'volume-uid', resourceVersion: '42', labels, ownerReferences: [] as any[] }, spec: { resources: { requests: { storage: '10Gi' } }, storageClassName: 'standard' }, status: { phase: 'Bound', capacity: {storage:'10Gi'} } };
   let exists = true, instanceExists = false, pods: any[] = [], namespaceProject = 'project';
   const deletes: any[] = [];
   const fixture = await endpoint(async (request, response) => {
@@ -121,6 +147,7 @@ test('retained volume cleanup fences identity, ownership, active instances and e
     const client = new KubernetesClient(fixture.config);
     const rejects = (code: string) => assert.rejects(client.deleteRetainedVolume(identity, 'volume-uid'), (e: unknown) => e instanceof OperationError && e.code === code);
     assert.equal((await client.getRetainedVolume(identity))?.capacity, '10Gi');
+    assert.equal((await client.getRetainedVolume(identity))?.allocatedCapacity, '10Gi');
     namespaceProject = 'other'; await rejects('namespace_ownership_conflict'); namespaceProject = 'project';
     labels['cache.expbuild.io/instance-uid'] = 'other-cr'; await rejects('volume_ownership_conflict'); labels['cache.expbuild.io/instance-uid'] = 'original-cr';
     claim.metadata.ownerReferences = [{ uid: 'owner' }]; await rejects('volume_ownership_conflict'); claim.metadata.ownerReferences = [];

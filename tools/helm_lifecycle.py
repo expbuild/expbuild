@@ -225,17 +225,35 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 complete(retained)
                 retained_id = retained['operation']['instance_id']
                 retained_path = f'/projects/{pid}/instances/{retained_id}'
+                retained_resource = 'c-' + retained_id
+                original_retained_uid = json.loads(kubectl('-n', ns, 'get', 'cacheinstance', retained_resource, '-o', 'json'))['metadata']['uid']
+                with connection(ns, retained_resource, 8080) as cache:
+                    assert request(cache + '/retained-artifact', 'PUT', b'volume survives reclaim', basic(retained['credentials']))[0] == 201
                 complete(submit(retained_path, 'DELETE'))
                 volume = api(retained_path + '/retained-volume')
                 assert api(quota_path)['reserved'] == {'instances': 0, 'storageGiB': 2, 'cpuMillis': 0, 'memoryMiB': 0}
                 actual = json.loads(kubectl('-n', ns, 'get', 'pvc', volume['name'], '-o', 'json'))
+                assert volume['uid'] == actual['metadata']['uid']
+                restored = submit(retained_path + '/retained-volume/reclaim', data={**spec, 'name': 'Recovered cache', 'deletionPolicy': 'Retain'}, revision=volume['uid'])
+                complete(restored)
+                assert api(quota_path)['reserved']['instances'] == 1
+                current_retained_uid = json.loads(kubectl('-n', ns, 'get', 'cacheinstance', retained_resource, '-o', 'json'))['metadata']['uid']
+                assert current_retained_uid != original_retained_uid
+                actual = json.loads(kubectl('-n', ns, 'get', 'pvc', volume['name'], '-o', 'json'))
+                assert actual['metadata']['uid'] == volume['uid'], 'Reclaim must preserve the exact PVC'
+                assert actual['metadata']['labels']['cache.expbuild.io/instance-uid'] == current_retained_uid
+                assert actual['metadata']['annotations']['cache.expbuild.io/reclaimed-from-uid'] == original_retained_uid
+                with connection(ns, retained_resource, 8080) as cache:
+                    assert request(cache + '/retained-artifact', headers=basic(restored['credentials']))[:2] == (200, b'volume survives reclaim')
+                complete(submit(retained_path, 'DELETE'))
+                volume = api(retained_path + '/retained-volume')
                 assert volume['uid'] == actual['metadata']['uid']
                 complete(submit(retained_path + '/retained-volume', 'DELETE', revision=volume['uid']))
                 assert kubectl('-n', ns, 'get', 'pvc', volume['name'], '--ignore-not-found', '-o', 'name') == ''
                 assert api(retained_path)['lifecycle'] == 'deleted'
                 assert api(quota_path)['reserved'] == {'instances': 0, 'storageGiB': 0, 'cpuMillis': 0, 'memoryMiB': 0}
                 print('Project quotas rejected excess admission and released reservations after confirmed cleanup', flush=True)
-                print('Retain storage inspection and explicit API cleanup passed', flush=True)
+                print('Retained PVC reclaim preserved data and explicit cleanup passed', flush=True)
                 if gateway:
                     reapi_spec = {**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'storageGiB': 3, 'cacheGiB': 1, 'memoryMiB': 512}
                     reapi = submit(f'/projects/{pid}/instances', data=reapi_spec)

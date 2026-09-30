@@ -24,6 +24,10 @@ class Cluster implements KubernetesPort {
   loseCreateResponse = true;
   creations = 0;
   loseUpdateResponse = false;
+  onReclaimApprove?: (desired: CacheObject, uid: string) => Promise<void>;
+  async approveRetainedVolumeReclaim(desired: CacheObject, uid: string) {
+    await this.onReclaimApprove?.(desired,uid);
+  }
   onProject?: () => Promise<void>;
   async ensureProject() { await this.onProject?.(); }
   async ensureCredentials(ns: string, name: string, _p: string, _i: string, _op: string, data: CredentialData) {
@@ -215,11 +219,56 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal(kube.secrets.size, 0);
     assert.equal(await worker.tick(), false);
     const volumePath = `${path}/${instanceId}/retained-volume`;
-    kube.volume = { name: original.metadata.name + '-data', namespace: original.metadata.namespace, uid: randomUUID(), capacity: '10Gi', storageClass: 'standard', phase: 'Bound', deleting: false };
+    kube.volume = { name: original.metadata.name + '-data', namespace: original.metadata.namespace, uid: randomUUID(), capacity: '10Gi', allocatedCapacity: '10Gi', storageClass: 'test', phase: 'Bound', deleting: false };
     const observedVolume = await app.inject({ url: volumePath, headers });
     assert.equal(observedVolume.statusCode, 200);
     const volumeUid = observedVolume.json().uid;
     assert.equal(observedVolume.headers.etag, `"${volumeUid}"`);
+    const reclaimPath=volumePath+'/reclaim';
+    const reclaimHeaders={...headers,'if-match':volumeUid,'idempotency-key':'reclaim-volume-1'};
+    assert.equal((await app.inject({method:'POST',url:reclaimPath,headers:{...reclaimHeaders,'if-match':'replaced-volume'},payload:input})).statusCode,409);
+    assert.equal((await app.inject({method:'POST',url:reclaimPath,headers:reclaimHeaders,payload:{...input,storageGiB:9}})).statusCode,409);
+    const replacedAfterAcceptance=await app.inject({method:'POST',url:reclaimPath,headers:{...reclaimHeaders,'idempotency-key':'reclaim-replaced-after-acceptance'},payload:input});
+    assert.equal(replacedAfterAcceptance.statusCode,202,replacedAfterAcceptance.body);
+    kube.volume.uid='replaced-after-acceptance';
+    await tick();
+    assert.equal((await pool.query('SELECT error_code FROM operations WHERE id=$1',[replacedAfterAcceptance.json().operation.id])).rows[0].error_code,'volume_identity_conflict');
+    assert.equal(kube.objects.size,0,'a replaced PVC must be rejected before creating a new CR');
+    kube.volume.uid=volumeUid;
+    const reclaim=await app.inject({method:'POST',url:reclaimPath,headers:reclaimHeaders,payload:input});
+    assert.equal(reclaim.statusCode,202,reclaim.body);
+    assert.ok(reclaim.json().credentials.password);
+    const reclaimReplay=await app.inject({method:'POST',url:reclaimPath,headers:reclaimHeaders,payload:input});
+    assert.equal(reclaimReplay.json().operation.id,reclaim.json().operation.id);
+    assert.equal(reclaimReplay.json().credentials,undefined);
+    assert.equal((await quota()).reserved.instances,1,'reclaim reserves compute and instance count before touching Kubernetes');
+    const oldInstanceUid=recordedUID;
+    let approvals=0;
+    kube.onReclaimApprove=async(desired,uid)=>{
+      approvals++;
+      assert.deepEqual(desired.spec.storage.reclaim,{previousInstanceUID:oldInstanceUid,volumeUID:volumeUid});
+      const bound=(await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].kubernetes_uid;
+      assert.equal(bound,uid,'PVC transfer must follow durable new-CR binding');
+    };
+    kube.loseCreateResponse=true;
+    await tick();
+    assert.equal(approvals,0,'lost creation response cannot authorize PVC transfer');
+    assert.equal((await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].kubernetes_uid,oldInstanceUid);
+    await tick();
+    assert.equal(approvals,1);
+    kube.ready();await tick();
+    assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].lifecycle,'active');
+    assert.equal((await quota()).reserved.instances,1);
+    const restoredDetail=await app.inject({url:`${path}/${instanceId}`,headers});
+    const restoredUpdate=await app.inject({method:'PATCH',url:`${path}/${instanceId}`,headers:{...headers,'idempotency-key':'update-restored-cache','if-match':restoredDetail.headers.etag as string},payload:{...input,cacheGiB:7}});
+    assert.equal(restoredUpdate.statusCode,202,restoredUpdate.body);
+    await tick();kube.ready();await tick();
+    assert.deepEqual([...kube.objects.values()][0]?.spec.storage.reclaim,{previousInstanceUID:oldInstanceUid,volumeUID:volumeUid},'ordinary updates preserve the immutable reclaim identity');
+    const secondDeletion=await app.inject({method:'DELETE',url:`${path}/${instanceId}`,headers:{...headers,'idempotency-key':'delete-restored-cache'}});
+    assert.equal(secondDeletion.statusCode,202,secondDeletion.body);
+    await tick();await tick();
+    assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].lifecycle,'detached');
+    assert.equal((await quota()).reserved.instances,0);
     const viewerId = randomUUID();
     await pool.query('INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)', [viewerId, 'volume-viewer@test.local', await hashPassword(password)]);
     await pool.query("INSERT INTO project_members(project_id,user_id,role) VALUES($1,$2,'viewer')", [projectId, viewerId]);

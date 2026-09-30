@@ -30,6 +30,16 @@ type StorageSpec struct {
 	// +kubebuilder:validation:Enum=Retain;Delete
 	// +kubebuilder:default=Retain
 	DeletionPolicy string `json:"deletionPolicy"`
+	// Reclaim authorizes a single retained PVC transfer from a previous CR UID.
+	// The PVC UID pins the exact volume, so a same-name replacement is rejected.
+	Reclaim *ReclaimSpec `json:"reclaim,omitempty"`
+}
+
+type ReclaimSpec struct {
+	// +kubebuilder:validation:MinLength=1
+	PreviousInstanceUID string `json:"previousInstanceUID"`
+	// +kubebuilder:validation:MinLength=1
+	VolumeUID string `json:"volumeUID"`
 }
 
 type AccessSpec struct {
@@ -49,6 +59,7 @@ type EvictionSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.projectId == oldSelf.projectId",message="projectId is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef == oldSelf.templateRef",message="template changes require a supported upgrade operation"
 // +kubebuilder:validation:XValidation:rule="self.storage.className == oldSelf.storage.className",message="storage class is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim) || self.storage.reclaim == oldSelf.storage.reclaim)",message="retained volume identity is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
 type CacheInstanceSpec struct {
 	// +kubebuilder:validation:MinLength=1

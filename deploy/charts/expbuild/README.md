@@ -128,7 +128,9 @@ kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
 
 Retain 删除完成后，在实例详情中查看实际保留卷；管理员输入卷名确认清理。API 将删除请求放入异步队列并记录审计，核对项目、原实例 UID、PVC UID、ownerReferences、CR 是否存在以及所有 Pod 的卷引用。删除使用 PVC UID 与 resourceVersion 前置条件，避免清理同名替换卷。仅在确认 PVC 不存在后完成操作。
 
-这是删除 PVC 声明，不是直接删除 PV 或保证底层数据擦除；实际回收由 StorageClass/PV 策略决定。不要绕过流程手动挂载待清理卷。拥有集群写权限的外部控制器可能并发改动资源，PVC protection 仍可能使清理保持等待直到引用解除。失败后排除原因、重新查询并再次确认；平台尚不支持保留卷领回。
+这是删除 PVC 声明，不是直接删除 PV 或保证底层数据擦除；实际回收由 StorageClass/PV 策略决定。不要绕过流程手动挂载待清理卷。拥有集群写权限的外部控制器可能并发改动资源，PVC protection 仍可能使清理保持等待直到引用解除。失败后排除原因、重新查询并再次确认。
+
+可在实例详情用原 PVC 重新创建同模板实例；平台先绑定新 CR UID，再让 Operator 转移已验证 PVC 的归属标签。升级已有安装以使用此能力时，必须先按“升级与回退”步骤更新 CacheInstance CRD，新字段不会由 Helm 自动升级。操作、故障恢复和 CSI 限制见[保留卷领回](../../../docs/k8s-platform/retained-volume-reclaim.md)。
 
 ## 实例独立域名
 

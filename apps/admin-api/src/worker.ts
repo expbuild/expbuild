@@ -28,6 +28,8 @@ type Operation = {
     expectedRevision?: string;
     uid?: string;
     instanceUid?: string;
+    previousInstanceUID?: string;
+    volumeUid?: string;
     name?: string;
     deletionPolicy?: string;
   };
@@ -96,7 +98,7 @@ export class OperationWorker {
       if (!(await this.held(client, operation))) return;
       if (apply) await apply(client);
       if (state === 'succeeded' && operation.instance_id && operation.request.desired &&
-          ['instance.create', 'instance.update'].includes(operation.kind))
+          ['instance.create', 'instance.reclaim', 'instance.update'].includes(operation.kind))
         await settleResources(client, operation.instance_id, operation.request.desired);
       await client.query(
         "UPDATE operations SET state=$3,error_code=$4,secret_payload=NULL,worker_id=NULL,lease_until=NULL,updated_at=now() WHERE id=$1 AND worker_id=$2",
@@ -106,7 +108,7 @@ export class OperationWorker {
         await client.query("UPDATE projects SET state='failed' WHERE id=$1", [
           operation.project_id,
         ]);
-      if (state === "failed" && operation.kind === "instance.create")
+      if (state === "failed" && ['instance.create', 'instance.reclaim'].includes(operation.kind))
         await client.query(
           "UPDATE instance_bindings SET lifecycle='failed' WHERE id=$1",
           [operation.instance_id],
@@ -133,11 +135,11 @@ export class OperationWorker {
   private async bind(operation: Operation, object: CacheObject) {
     if (!object.metadata.uid || object.metadata.generation === undefined)
       throw new OperationError("missing_kubernetes_identity");
-    await transaction(this.pool, async (client) => {
-      if (!(await this.held(client, operation))) return;
+    const bound = await transaction(this.pool, async (client) => {
+      if (!(await this.held(client, operation))) return false;
       const changed = await client.query(
-        "UPDATE instance_bindings SET kubernetes_uid=$2 WHERE id=$1 AND (kubernetes_uid IS NULL OR kubernetes_uid=$2) RETURNING id",
-        [operation.instance_id, object.metadata.uid],
+        "UPDATE instance_bindings SET kubernetes_uid=$2 WHERE id=$1 AND project_id=$3 AND (kubernetes_uid IS NULL OR kubernetes_uid=$2 OR ($4='instance.reclaim' AND kubernetes_uid=$5 AND kubernetes_uid<>$2)) RETURNING id",
+        [operation.instance_id, object.metadata.uid, operation.project_id, operation.kind, operation.request.previousInstanceUID ?? null],
       );
       if (!changed.rows.length)
         throw new OperationError("instance_identity_conflict");
@@ -145,12 +147,14 @@ export class OperationWorker {
         "UPDATE operations SET state='reconciling',target_generation=$3,updated_at=now() WHERE id=$1 AND worker_id=$2",
         [operation.id, operation.worker_id, object.metadata.generation],
       );
+      return true;
     });
+    if (!bound) throw new OperationError('operation_lease_lost');
     operation.state = "reconciling";
     operation.target_generation = String(object.metadata.generation);
   }
   private async execute(operation: Operation) {
-    if (this.quotaGate && ['instance.create','instance.update','instance.rotate'].includes(operation.kind) &&
+    if (this.quotaGate && ['instance.create','instance.reclaim','instance.update','instance.rotate'].includes(operation.kind) &&
         !(await this.quotaGate(operation.project_id))) {
       await this.defer(operation, 'project_quota_not_ready');
       return;
@@ -174,7 +178,7 @@ export class OperationWorker {
       if (!namespace || !name || !uid || !instanceUid || !operation.instance_id) throw new OperationError('invalid_operation');
       const binding = await this.pool.query('SELECT i.lifecycle,i.kubernetes_uid,i.resource_name,p.namespace FROM instance_bindings i JOIN projects p ON p.id=i.project_id WHERE i.id=$1 AND i.project_id=$2', [operation.instance_id, operation.project_id]);
       const b = binding.rows[0];
-      if (!b || b.lifecycle !== 'detached' || b.kubernetes_uid !== instanceUid || b.namespace !== namespace || b.resource_name !== name) throw new OperationError('volume_binding_conflict');
+      if (!b || !['detached','failed'].includes(b.lifecycle) || b.kubernetes_uid !== instanceUid || b.namespace !== namespace || b.resource_name !== name) throw new OperationError('volume_binding_conflict');
       const identity = { namespace, name, projectId: operation.project_id, instanceId: operation.instance_id, instanceUid };
       const volume = await this.kube.getRetainedVolume(identity);
       if (volume) {
@@ -236,7 +240,7 @@ export class OperationWorker {
       return;
     }
     if (
-      !["instance.create", "instance.update", "instance.rotate"].includes(
+      !["instance.create", "instance.reclaim", "instance.update", "instance.rotate"].includes(
         operation.kind,
       )
     )
@@ -245,9 +249,17 @@ export class OperationWorker {
     if (!desired) throw new OperationError("invalid_operation");
     let object: CacheObject;
     if (operation.state !== "reconciling") {
-      if (operation.kind === "instance.create")
+      if (operation.kind === 'instance.reclaim') {
+        if (!operation.request.previousInstanceUID || !operation.request.volumeUid || !operation.instance_id)
+          throw new OperationError('invalid_reclaim_request');
+        const volume = await this.kube.getRetainedVolume({namespace:desired.metadata.namespace,name:desired.metadata.name,
+          projectId:operation.project_id,instanceId:operation.instance_id,instanceUid:operation.request.previousInstanceUID});
+        if (!volume || volume.uid!==operation.request.volumeUid || volume.deleting || volume.phase!=='Bound' ||
+            volume.storageClass!==desired.spec.storage.className) throw new OperationError('volume_identity_conflict');
+      }
+      if (['instance.create', 'instance.reclaim'].includes(operation.kind))
         await this.kube.ensureProject(desired.metadata.namespace, operation.project_id);
-      if (["instance.create", "instance.rotate"].includes(operation.kind)) {
+      if (["instance.create", "instance.reclaim", "instance.rotate"].includes(operation.kind)) {
         if (!operation.secret_payload)
           throw new OperationError("credentials_unavailable");
         const data = unseal<CredentialData>(
@@ -264,7 +276,7 @@ export class OperationWorker {
           data,
         );
       }
-      if (operation.kind === "instance.create") {
+      if (['instance.create', 'instance.reclaim'].includes(operation.kind)) {
         object = await this.kube.createInstance(desired);
       } else {
         if (!operation.request.expectedRevision)
@@ -282,7 +294,7 @@ export class OperationWorker {
       );
       if (!current) throw new OperationError("instance_disappeared");
       object = current;
-      if (operation.kind === "instance.create" && !operation.target_generation) {
+      if (['instance.create', 'instance.reclaim'].includes(operation.kind) && !operation.target_generation) {
         // Recover only an existing object created by this exact request. Never
         // recreate it after terminal failure has discarded encrypted credentials.
         const annotations = current.metadata.annotations ?? {};
@@ -297,6 +309,13 @@ export class OperationWorker {
           throw new OperationError("instance_recovery_conflict");
         await this.bind(operation, current);
       }
+    }
+    if (operation.kind === 'instance.reclaim') {
+      if (!this.kube.approveRetainedVolumeReclaim ||
+          desired.spec.storage.reclaim?.previousInstanceUID !== operation.request.previousInstanceUID ||
+          desired.spec.storage.reclaim?.volumeUID !== operation.request.volumeUid ||
+          !object.metadata.uid) throw new OperationError('invalid_reclaim_request');
+      await this.kube.approveRetainedVolumeReclaim(desired, object.metadata.uid);
     }
     const binding = await this.pool.query(
       "SELECT kubernetes_uid FROM instance_bindings WHERE id=$1",
@@ -325,7 +344,7 @@ export class OperationWorker {
         ? condition?.reason === "Suspended"
         : condition?.status === "True");
     if (done) {
-      if (operation.kind === "instance.rotate") {
+      if (['instance.rotate', 'instance.reclaim'].includes(operation.kind)) {
         const old = await this.pool.query(
           "SELECT secret_name FROM instance_credentials WHERE instance_id=$1 AND revision < (SELECT revision FROM instance_credentials WHERE instance_id=$1 AND secret_name=$2)",
           [operation.instance_id, desired.spec.access.credentialsSecretRef],
