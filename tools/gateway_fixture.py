@@ -95,7 +95,9 @@ class GatewayFixture:
         assert status == 200
         token = next(value for key, value in headers.items() if key.lower() == 'lock-token')
         assert self.request(host, '/dav/blob', 'DELETE', headers=auth)[0] == 423
-        assert self.request(host, '/dav/blob', 'DELETE', headers={**auth, 'If': f'({token})'})[0] == 204
+        # Scope the lock condition to the file, not its unlocked parent.
+        status, body, _ = self.request(host, '/dav/blob', 'DELETE', headers={**auth, 'If': f'<https://{host}/dav/blob> ({token})'})
+        assert status == 204, f'Locked WebDAV DELETE: {status} {body[:2048]!r}'
         print('Verified TLS hostname/trust, authentication, 16 MiB WebDAV transfer and locks', flush=True)
 
     def close(self):
