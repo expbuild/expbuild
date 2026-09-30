@@ -150,7 +150,35 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal(stale.statusCode, 409);
     const deletion = await app.inject({ method: 'DELETE', url: `${path}/${instanceId}`, headers: { ...headers, 'idempotency-key': 'delete-cache-1' } });
     assert.equal(deletion.statusCode, 202, deletion.body);
-    await tick(); await tick();
+    const original = structuredClone([...kube.objects.values()][0]!);
+    await tick(); // CR deleted; credential cleanup is still pending.
+    const deleteId = deletion.json().operation.id;
+    await pool.query("UPDATE operations SET deadline_at=now()-interval '1 second' WHERE id=$1", [deleteId]);
+    await tick();
+    assert.ok(kube.secrets.size > 0);
+    const retryDelete = (key: string) => app.inject({ method: 'POST', url: `/v1/projects/${projectId}/operations/${deleteId}/retry`, headers: { ...headers, 'idempotency-key': key } });
+    assert.equal((await retryDelete('resume-delete-1')).statusCode, 202);
+    const replacement = structuredClone(original); replacement.metadata.uid = randomUUID();
+    const resourceKey = `${original.metadata.namespace}/${original.metadata.name}`;
+    kube.objects.set(resourceKey, replacement);
+    await tick();
+    assert.equal((await pool.query('SELECT error_code FROM operations WHERE id=$1', [deleteId])).rows[0].error_code, 'instance_identity_conflict');
+    assert.equal(kube.objects.get(resourceKey)?.metadata.uid, replacement.metadata.uid);
+    assert.ok(kube.secrets.size > 0, 'must not clean credentials while a replacement resource exists');
+    const changedPolicy = structuredClone(original);
+    changedPolicy.spec.storage.deletionPolicy = 'Delete';
+    kube.objects.set(resourceKey, changedPolicy);
+    assert.equal((await retryDelete('resume-delete-policy')).statusCode, 202);
+    await tick();
+    assert.equal((await pool.query('SELECT error_code FROM operations WHERE id=$1', [deleteId])).rows[0].error_code, 'deletion_policy_changed');
+    assert.ok(kube.objects.has(resourceKey));
+    kube.objects.delete(resourceKey);
+    assert.equal((await retryDelete('resume-delete-2')).statusCode, 202);
+    await tick();
+    const replayedDelete = await retryDelete('resume-delete-2');
+    assert.equal(replayedDelete.json().operation.state, 'succeeded');
+    assert.equal(replayedDelete.json().replayed, true);
+    assert.equal((await pool.query('SELECT request FROM operations WHERE id=$1', [deleteId])).rows[0].request.deletionPolicy, 'Retain');
     assert.equal((await pool.query('SELECT lifecycle FROM instance_bindings WHERE id=$1', [instanceId])).rows[0].lifecycle, 'detached');
     assert.equal(kube.secrets.size, 0);
     assert.equal(await worker.tick(), false);
@@ -220,8 +248,37 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     await migrate(pool); // Upgrade remains idempotent.
     const listed = await app.inject({ url: path, headers });
     assert.equal(listed.json().items[0].template_name, 'webdav-apache');
+    kube.loseCreateResponse = true;
     await tick();
     const createOperation = accepted.json().operation.id;
+    await pool.query("UPDATE operations SET deadline_at=now()-interval '1 second' WHERE id=$1", [createOperation]);
+    await tick();
+    assert.equal((await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1', [id])).rows[0].kubernetes_uid, null);
+    assert.equal((await pool.query('SELECT secret_payload FROM operations WHERE id=$1', [createOperation])).rows[0].secret_payload, null);
+    const recoveryPath = `/v1/projects/${project.json().id}/operations/${createOperation}/retry`;
+    const originalObject = structuredClone([...kube.objects.values()][0]!);
+    const originalKey = `${originalObject.metadata.namespace}/${originalObject.metadata.name}`;
+    const conflicts = ['missing', 'operation', 'ownership', 'spec'];
+    for (const conflict of conflicts) {
+      const object = structuredClone(originalObject);
+      if (conflict === 'operation') object.metadata.annotations!['cache.expbuild.io/operation-id'] = randomUUID();
+      if (conflict === 'ownership') object.metadata.labels!['cache.expbuild.io/project-id'] = randomUUID();
+      if (conflict === 'spec') object.spec.desiredState = 'Suspended';
+      kube.objects.set(originalKey, object);
+      if (conflict === 'missing') kube.objects.delete(originalKey);
+      const recovery = await app.inject({ method: 'POST', url: recoveryPath, headers: { ...headers, 'idempotency-key': `recover-${conflict}` } });
+      assert.equal(recovery.statusCode, 202, recovery.body);
+      await tick();
+      assert.equal((await pool.query('SELECT state FROM operations WHERE id=$1', [createOperation])).rows[0].state, 'failed');
+      assert.equal((await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1', [id])).rows[0].kubernetes_uid, null);
+      assert.equal(kube.creations, 1, 'recovery must never create a new object');
+    }
+    kube.objects.set(originalKey, originalObject);
+    const recoveredCreate = await app.inject({ method: 'POST', url: recoveryPath, headers: { ...headers, 'idempotency-key': 'recover-original' } });
+    assert.equal(recoveredCreate.statusCode, 202, recoveredCreate.body);
+    await tick();
+    assert.equal((await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1', [id])).rows[0].kubernetes_uid, originalObject.metadata.uid);
+
     await pool.query("UPDATE operations SET deadline_at=now()-interval '1 second' WHERE id=$1", [createOperation]);
     await tick();
     assert.equal((await pool.query('SELECT state,secret_payload FROM operations WHERE id=$1', [createOperation])).rows[0].state, 'failed');
@@ -245,7 +302,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     assert.equal(repeated.json().replayed, true);
     assert.equal(repeated.json().operation.state, 'succeeded');
     assert.equal(kube.creations, 1, 'retry must not create a replacement instance');
-    assert.equal((await pool.query("SELECT count(*)::int n FROM audit_events WHERE operation_id=$1 AND action='operation.retry'", [createOperation])).rows[0].n, 2);
+    assert.equal((await pool.query("SELECT count(*)::int n FROM audit_events WHERE operation_id=$1 AND action='operation.retry'", [createOperation])).rows[0].n, 7);
 
     const detail = await app.inject({ url: `${path}/${id}`, headers });
     assert.equal(detail.json().spec.templateRef.name, 'webdav-apache');

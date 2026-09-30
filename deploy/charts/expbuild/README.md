@@ -13,7 +13,7 @@
 4. 准备 PostgreSQL 数据库和已有的控制面 namespace。建议一个集群运行一个
    expbuild 控制面；当前 Operator 会观察所有受管理项目，不能靠 release 名隔离两套控制面。
 5. 给控制面 namespace 添加 `cache.expbuild.io/control-plane=true` 标签。
-   项目 NetworkPolicy 只允许该来源访问缓存服务，Operator 协议探测依赖它。
+   控制面访问规则允许该来源，Operator 协议探测依赖它。构建客户端使用下述独立授权规则。
 6. 在控制面 namespace 创建以下已有 Secret；通过企业凭据系统提供真实值，
    不要把 Secret 内容写进 Helm values 或 Git：
 
@@ -81,3 +81,46 @@ finalizer；可用原有密钥、数据库和正确配置重装控制面后继�
 
 Chart lint、渲染和隔离 API Server 的资源校验在本地/CI 中执行。未连接实际集群，
 尚未证明镜像启动、TLS、PVC 挂载或真实缓存服务可用。容器构建 CI 只构建，不发布。
+
+## 集群内构建客户端访问
+
+项目初始化会创建 `expbuild-isolation` 和 `expbuild-client-access` 两份 NetworkPolicy。
+前者隔离项目 namespace 入站并放行控制面；后者仅允许授权客户端访问项目内标记为
+expbuild 管理的缓存 Pod，端口为 TCP 8080（HTTP/WebDAV）、9092（REAPI）。
+
+集群管理员在运行构建任务的 namespace 上设置标签（用实际项目 UUID 替换 `<project-id>`）：
+
+```sh
+kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>=true'
+```
+
+构建 Pod 的标签还必须包含：
+
+```yaml
+metadata:
+  labels:
+    cache.expbuild.io/client: "true"
+```
+
+如果是 Deployment/Job，应把标签放在 `spec.template.metadata.labels`。
+namespace 授权和 Pod 标签必须同时满足。每个项目使用独立的 namespace 标签键，
+同一个构建 namespace 可以被管理员授予多个项目访问权。网络授权不替代实例凭据；
+客户端仍需提供该实例的用户名和密码。普通用户不应具有更改 namespace 授权标签的权限。
+
+撤销某个 namespace 的项目网络授权：
+
+```sh
+kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
+```
+
+撤销何时影响已有连接取决于 CNI；需要立即撤销凭据时还应轮换实例密码。
+策略不授予客户端出站权限，客户端所在 namespace 如限制 egress，仍需允许目标缓存端口
+以及 DNS 解析。当前不提供外部公网访问，TLS/独立域名入口待实现。
+
+升级前创建的项目会在下一次创建实例时补齐客户端策略；只有既有实例且不新建时，
+需要部署方补装对应策略（可从新项目已生成策略核对字段，不要直接复制项目身份）。
+初始化检查不会覆盖同名的异属或已修改客户端策略，会报告冲突。策略不是持续对账的，
+其他额外 NetworkPolicy 也可能扩大允许范围，必须结合集群策略管理。
+
+已验证 SDK 实际请求格式、重复初始化和冲突拒绝。真实客户端连通性、跨项目拒绝和
+撤销效果仍需在启用了 NetworkPolicy 的 CNI 上验收。

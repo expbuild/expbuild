@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { labels, revision, type CacheObject } from './instance-contract.js';
 import { OperationError } from './errors.js';
 import { readEngineStatistics } from './statistics.js';
+import { clientAccessPolicy } from './network-policy.js';
 
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
 export interface KubernetesPort {
@@ -56,7 +57,15 @@ export class KubernetesClient implements KubernetesPort {
     catch (error) {
       if (statusCode(error) !== 409) throw error;
       const current = await this.network.readNamespacedNetworkPolicy({ namespace, name: policy.metadata.name });
-      if (current.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId) throw new OperationError('policy_ownership_conflict');
+      if (current.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || current.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('policy_ownership_conflict');
+    }
+    const access = clientAccessPolicy(namespace, projectId);
+    try { await this.network.createNamespacedNetworkPolicy({ namespace, body: access }); }
+    catch (error) {
+      if (statusCode(error) !== 409) throw error;
+      const current = await this.network.readNamespacedNetworkPolicy({ namespace, name: access.metadata!.name! });
+      if (current.metadata?.labels?.['cache.expbuild.io/project-id'] !== projectId || current.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'expbuild') throw new OperationError('policy_ownership_conflict');
+      if (current.metadata.deletionTimestamp || !isDeepStrictEqual(JSON.parse(JSON.stringify(current.spec ?? null)), JSON.parse(JSON.stringify(access.spec)))) throw new OperationError('client_policy_configuration_conflict');
     }
   }
   async ensureCredentials(namespace: string, name: string, projectId: string, instanceId: string, operationId: string, data: CredentialData) {

@@ -4103,7 +4103,7 @@
       "post": {
         "operationId": "retryOperation",
         "summary": "Project administrator: resume a failed bound operation",
-        "description": "Requires Idempotency-Key. Only failed instance create/update/rotate operations with a bound target generation may resume. Keeps the original operation identity, performs no creation or configuration write, and verifies UID, generation and operation annotation. A newer instance operation prevents retry. Replaying the same key does not restart the operation again. Unbound failures require separate recovery.",
+        "description": "Requires Idempotency-Key. Failed create/update/rotate operations with a bound target generation may resume checks without resubmitting configuration. Failed delete operations may resume cleanup using the original bound UID and captured deletion policy. Keeps the original operation identity and rejects replaced resources. A newer instance operation prevents retry. Replaying the same key does not restart the operation again. Unbound failed create operations may recover only an existing resource matching the original operation, request hash, ownership and complete spec; they never recreate missing resources or regenerate credentials.",
         "security": [
           {
             "session": []

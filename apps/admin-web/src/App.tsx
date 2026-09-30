@@ -14,6 +14,7 @@ import {
   type User,
 } from "./api";
 
+import { RetryOperation } from "./RetryOperation";
 import { Statistics } from "./Statistics";
 import { PasswordForm } from "./PasswordForm";
 import { RotateCredential } from "./RotateCredential";
@@ -538,6 +539,23 @@ function ProjectView({ project, user }: { project: Project; user: User }) {
                     {new Date(o.created_at).toLocaleString()}{" "}
                     {o.error_code && `· ${o.error_code}`}
                   </small>
+                  {canAdmin &&
+                    o.state === "failed" &&
+                    (o.kind === "instance.delete" ||
+                      o.kind === "instance.create" ||
+                      (o.target_generation != null &&
+                        [
+                          "instance.create",
+                          "instance.update",
+                          "instance.rotate",
+                        ].includes(o.kind))) && (
+                      <RetryOperation
+                        key={`${o.id}:${o.updated_at}`}
+                        base={base}
+                        operation={o}
+                        onChange={() => setRefresh((x) => x + 1)}
+                      />
+                    )}
                 </div>
                 <Badge state={o.state} />
               </li>

@@ -71,6 +71,8 @@ export type Instance = {
   resource_name: string;
 };
 export type Operation = {
+  target_generation: string | number | null;
+  updated_at: string;
   id: string;
   instance_id: string | null;
   kind: string;

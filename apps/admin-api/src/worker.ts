@@ -1,5 +1,6 @@
 import type pg from "pg";
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { transaction } from "./db.js";
 import { unseal } from "./secrets.js";
 import { OperationError } from "./errors.js";
@@ -166,6 +167,8 @@ export class OperationWorker {
         // Persist deletion policy before submitting a delete; after CR removal
         // its spec is no longer available. Replays may observe deletion in flight.
         const policy = current.spec.storage.deletionPolicy;
+        if (operation.request.deletionPolicy && operation.request.deletionPolicy !== policy)
+          throw new OperationError("deletion_policy_changed");
         await this.pool.query(
           "UPDATE operations SET request=jsonb_set(request,'{deletionPolicy}',to_jsonb($3::text)) WHERE id=$1 AND worker_id=$2 AND lease_until>now()",
           [operation.id, operation.worker_id, policy],
@@ -210,6 +213,8 @@ export class OperationWorker {
     if (!desired) throw new OperationError("invalid_operation");
     let object: CacheObject;
     if (operation.state !== "reconciling") {
+      if (operation.kind === "instance.create")
+        await this.kube.ensureProject(desired.metadata.namespace, operation.project_id);
       if (["instance.create", "instance.rotate"].includes(operation.kind)) {
         if (!operation.secret_payload)
           throw new OperationError("credentials_unavailable");
@@ -245,6 +250,21 @@ export class OperationWorker {
       );
       if (!current) throw new OperationError("instance_disappeared");
       object = current;
+      if (operation.kind === "instance.create" && !operation.target_generation) {
+        // Recover only an existing object created by this exact request. Never
+        // recreate it after terminal failure has discarded encrypted credentials.
+        const annotations = current.metadata.annotations ?? {};
+        if (current.metadata.deletionTimestamp ||
+            current.metadata.name !== desired.metadata.name ||
+            current.metadata.namespace !== desired.metadata.namespace ||
+            current.apiVersion !== desired.apiVersion || current.kind !== desired.kind ||
+            annotations["cache.expbuild.io/operation-id"] !== operation.id ||
+            annotations["cache.expbuild.io/request-hash"] !== desired.metadata.annotations?.["cache.expbuild.io/request-hash"] ||
+            !Object.entries(desired.metadata.labels ?? {}).every(([key, value]) => current.metadata.labels?.[key] === value) ||
+            !isDeepStrictEqual(current.spec, desired.spec))
+          throw new OperationError("instance_recovery_conflict");
+        await this.bind(operation, current);
+      }
     }
     const binding = await this.pool.query(
       "SELECT kubernetes_uid FROM instance_bindings WHERE id=$1",

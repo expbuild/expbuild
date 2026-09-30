@@ -30,6 +30,14 @@ test('Kubernetes SDK serializes NetworkPolicy source restrictions to the wire', 
     assert.deepEqual(policy.spec.ingress, [{ from: [{ namespaceSelector: { matchLabels: { 'cache.expbuild.io/control-plane': 'true' } } }] }]);
     assert.deepEqual(policy.spec.policyTypes, ['Ingress']);
     assert.equal(policy.spec.ingress[0]._from, undefined);
+    const access = bodies.find(body => body.metadata?.name === 'expbuild-client-access');
+    assert.deepEqual(access.spec.ingress[0].from, [{
+      namespaceSelector: { matchLabels: { 'cache.expbuild.io/access-project': 'true' } },
+      podSelector: { matchLabels: { 'cache.expbuild.io/client': 'true' } },
+    }]);
+    assert.deepEqual(access.spec.ingress[0].ports, [{ protocol: 'TCP', port: 8080 }, { protocol: 'TCP', port: 9092 }]);
+    assert.equal(access.spec.podSelector.matchLabels['cache.expbuild.io/project-id'], 'project');
+
   } finally { await fixture.close(); }
 });
 
@@ -55,5 +63,34 @@ test('replayed operations cannot accept externally changed configuration', async
     const superseded = (error: unknown) => error instanceof OperationError && error.superseded;
     await assert.rejects(client.createInstance(desired), superseded);
     await assert.rejects(client.updateInstance(desired, 'uid:1'), superseded);
+  } finally { await fixture.close(); }
+});
+
+test('existing client access policy must match ownership and exact access rules', async () => {
+  const stored = new Map<string, any>();
+  const fixture = await endpoint(async (request, response) => {
+    let raw = ''; for await (const chunk of request) raw += chunk;
+    const body = raw ? JSON.parse(raw) : undefined;
+    response.setHeader('Content-Type', 'application/json');
+    if (request.method === 'POST') {
+      const key = `${request.url}/${body.metadata.name}`;
+      if (stored.has(key)) { response.statusCode = 409; response.end(JSON.stringify({ kind: 'Status', code: 409 })); return; }
+      stored.set(key, body); response.end(JSON.stringify(body)); return;
+    }
+    const object = stored.get(request.url!);
+    if (!object) { response.statusCode = 404; response.end(JSON.stringify({ kind: 'Status', code: 404 })); return; }
+    response.end(JSON.stringify(object));
+  });
+  try {
+    const client = new KubernetesClient(fixture.config);
+    await client.ensureProject('demo', 'project');
+    await client.ensureProject('demo', 'project');
+    const policy = [...stored.values()].find(x => x.metadata.name === 'expbuild-client-access');
+    const saved = structuredClone(policy);
+    policy.spec.ingress[0].from = [{}];
+    await assert.rejects(client.ensureProject('demo', 'project'), (e: unknown) => e instanceof OperationError && e.code === 'client_policy_configuration_conflict');
+    policy.spec = saved.spec;
+    policy.metadata.labels['cache.expbuild.io/project-id'] = 'other';
+    await assert.rejects(client.ensureProject('demo', 'project'), (e: unknown) => e instanceof OperationError && e.code === 'policy_ownership_conflict');
   } finally { await fixture.close(); }
 });

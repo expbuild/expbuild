@@ -22,7 +22,9 @@ Apache 没有原生缓存 LRU 或磁盘配额。本模板的 PVC 容量是请求
 
 Operator 需配置 `--webdav-image=仓库@sha256:摘要`；Helm 使用 `images.webdav`。
 未配置时，WebDAV 实例报告 InvalidConfiguration，不会猜测或拉取任意镜像。
-`images/webdav/Dockerfile` 提供候选镜像构建，尚未执行容器构建认证。
+`images/webdav/Dockerfile` 使用已查询官方 Registry 的 Apache 2.4.68 trixie 镜像及固定摘要。
+原 2.4.66-bookworm 标签在远程 CI 中确认不存在，已替换。下述原生协议测试使用
+Ubuntu Apache 2.4.66，不代表新的容器镜像已通过运行认证。
 
 `operator/examples/webdav.yaml` 展示 CR 格式。实际应用前须创建受管理项目 namespace、
 StorageClass 和归属匹配的 Secret，包含 htpasswd、probe-username、probe-password。

@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
+import type { Operation } from "./api";
 
 const projectId = "project-1";
 let projectState = "ready";
+let operations: Operation[] = [];
 let webdavEnabled = false;
 let webdavInstance = false;
 let role = "admin",
@@ -24,6 +26,7 @@ beforeEach(() => {
   webdavInstance = false;
   platform = true;
   requests = [];
+  operations = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (path: string, options: RequestInit = {}) => {
@@ -47,7 +50,8 @@ beforeEach(() => {
               : []),
           ],
         });
-      if (path.endsWith("/instances/dav") && options.method === "PATCH") return response({ operation: { id: "updated" } }, 202);
+      if (path.endsWith("/instances/dav") && options.method === "PATCH")
+        return response({ operation: { id: "updated" } }, 202);
       if (path.endsWith("/instances/dav"))
         return response({
           id: "dav",
@@ -79,7 +83,7 @@ beforeEach(() => {
             { id: projectId, name: "Build team", state: projectState, role },
           ],
         });
-      if (path.endsWith("/operations")) return response({ items: [] });
+      if (path.endsWith("/operations")) return response({ items: operations });
       if (path.endsWith("/retry"))
         return response(
           { operation: { id: "retry-op", state: "pending" } },
@@ -117,6 +121,38 @@ afterEach(() => {
 });
 
 describe("management console", () => {
+  it.each(["admin", "maintainer", "viewer"])(
+    "shows only eligible recovery controls to %s",
+    async (memberRole) => {
+      role = memberRole;
+      platform = false;
+      sessionStorage.setItem("expbuild-csrf", "csrf");
+      const failed: Operation = {
+        id: "bound",
+        instance_id: "i",
+        kind: "instance.create",
+        state: "failed",
+        error_code: "operation_deadline_exceeded",
+        target_generation: "1",
+        created_at: "2026-09-30T00:00:00Z",
+        updated_at: "2026-09-30T00:20:00Z",
+      };
+      operations = [
+        failed,
+        { ...failed, id: "unbound", target_generation: null },
+        { ...failed, id: "delete", kind: "instance.delete" },
+      ];
+      render(<App />);
+      await screen.findAllByText(/operation_deadline_exceeded/);
+      expect(
+        screen.queryAllByRole("button", { name: "恢复检查" }),
+      ).toHaveLength(memberRole === "admin" ? 2 : 0);
+      expect(
+        screen.queryAllByRole("button", { name: "继续删除" }),
+      ).toHaveLength(memberRole === "admin" ? 1 : 0);
+    },
+  );
+
   it("creates WebDAV only from the enabled catalog without a cache budget", async () => {
     webdavEnabled = true;
     sessionStorage.setItem("expbuild-csrf", "csrf");
@@ -155,9 +191,15 @@ describe("management console", () => {
     expect(screen.queryByLabelText("缓存容量（GiB）")).toBeNull();
     await user.selectOptions(screen.getByLabelText("运行状态"), "Suspended");
     await user.click(screen.getByRole("button", { name: "保存配置" }));
-    await waitFor(() => expect(requests.some(r => r.options.method === "PATCH")).toBe(true));
-    const update = requests.find(r => r.options.method === "PATCH")!;
-    expect(JSON.parse(update.options.body as string)).toMatchObject({ template: "webdav-apache", cacheGiB: 0, desiredState: "Suspended" });
+    await waitFor(() =>
+      expect(requests.some((r) => r.options.method === "PATCH")).toBe(true),
+    );
+    const update = requests.find((r) => r.options.method === "PATCH")!;
+    expect(JSON.parse(update.options.body as string)).toMatchObject({
+      template: "webdav-apache",
+      cacheGiB: 0,
+      desiredState: "Suspended",
+    });
     expect(new Headers(update.options.headers).get("If-Match")).toBe('"uid:1"');
   });
 

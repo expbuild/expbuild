@@ -542,10 +542,15 @@ export async function registerInstanceRoutes(
       const operation = found.rows[0];
       if (!operation) throw new HttpError(404, "Operation not found");
       if (!replayed.rows[0]) {
-        if (operation.state !== "failed" || !["instance.create", "instance.update", "instance.rotate"].includes(operation.kind) || !operation.target_generation)
-          throw new HttpError(409, "Only failed operations with a bound Kubernetes version can resume reconciliation");
+        const deleting = operation.kind === "instance.delete";
+        const recoveringCreate = operation.kind === "instance.create" && !operation.target_generation;
+        if (operation.state !== "failed" || (!deleting && !recoveringCreate && (!["instance.create", "instance.update", "instance.rotate"].includes(operation.kind) || !operation.target_generation)))
+          throw new HttpError(409, "Only failed instance operations with a recoverable request can be resumed");
         const binding = await client.query("SELECT kubernetes_uid,lifecycle FROM instance_bindings WHERE id=$1 FOR UPDATE", [operation.instance_id]);
-        if (!binding.rows[0]?.kubernetes_uid || ["deleting", "deleted", "detached"].includes(binding.rows[0].lifecycle))
+        const bound = binding.rows[0];
+        if (!bound || (!recoveringCreate && !bound.kubernetes_uid) || (deleting
+          ? bound.lifecycle !== "deleting" || operation.request.uid !== bound.kubernetes_uid
+          : ["deleting", "deleted", "detached"].includes(bound.lifecycle)))
           throw new HttpError(409, "Instance is no longer available for reconciliation");
         // A later request permanently supersedes this retry, including failed requests.
         const newer = await client.query("SELECT id FROM operations WHERE instance_id=$1 AND id<>$2 AND created_at >= $3 LIMIT 1", [operation.instance_id, operationId, operation.created_at]);

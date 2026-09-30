@@ -381,6 +381,7 @@ function AuditLog({ base }: { base: string }) {
     "credential.rotate": "轮换凭据",
     "operation.succeeded": "操作完成",
     "operation.failed": "操作失败",
+    "operation.retry": "恢复操作检查",
     "operation.superseded": "操作被替代",
   };
   return (
