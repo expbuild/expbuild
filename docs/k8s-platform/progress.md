@@ -25,7 +25,7 @@
 - 实例凭据生成及 AES-GCM 加密交接，操作结束清除队列中的密文。
 - 管理员凭据轮换 API/界面：新建不可变 Secret、切换实例引用、等待新配置生效、清理更旧版本；普通更新保留已轮换的引用，删除实例清理所有已记录凭据版本。
 
-以上链路尚未通过真实集群验收。Operator 已支持多项目 namespace，并在操作前校验 namespace 项目归属；集群级 RBAC 清单已获授权编写和测试，未应用到实际集群。
+上述基本管理链路已通过下文的隔离 kind + Helm + WebDAV 验收；故障恢复分支仍需真实集群验证。Operator 支持多项目 namespace，并在操作前校验 namespace 项目归属；集群级 RBAC 已在一次性 CI 集群中运行，未应用到业务集群。
 
 - 实例统计 API/界面：按项目授权读取引擎容量、条目数和预留空间，固定服务地址、校验凭据归属、限制响应体和超时；失败不返回伪造零值，界面标记采集时间。命中率与历史趋势尚未实现。
 
@@ -46,9 +46,9 @@
 - 前后端生产构建；界面组件测试覆盖登录、只读用户、容量校验、CSRF 与一次性凭据清除。操作列表有真实 PostgreSQL 的跨项目权限测试。尚未做真实浏览器视觉验收。
 - Helm strict lint、资源渲染、隔离 API Server 的 Deployment/Service/Job/Ingress/RBAC dry-run 校验、错误配置拒绝与 CRD 同步检查。本机没有容器运行时；提交 d90d0a7 的四个容器镜像已通过 GitHub Actions 实际构建，后续提交 69a520f 已增加并通过下述容器运行检查，完整集群验收仍待完成。
 - 用户管理确认交互、按邮箱添加成员、移除成员后的即时权限撤销、唯一管理员不可移除和审计落库；最近验证：API 16 项、界面 18 项测试通过。
-- 轮换切换响应丢失后的恢复、就绪前保留旧凭据、就绪后清理、普通更新不回退密码，以及 UI 重试保留原版本/幂等键。真实引擎拒绝旧密码仍待完整集群验收。
+- 轮换切换响应丢失后的恢复、就绪前保留旧凭据、就绪后清理、普通更新不回退密码，以及 UI 重试保留原版本/幂等键。WebDAV 真实引擎拒绝旧密码已通过下文 Helm/API 集群验收；REAPI 轮换链路仍待验收。
 
-以上 API Server 测试没有 kubelet，不证明缓存容器启动、挂载或真实存储故障行为。已完成 bazel-remote v2.6.2 官方二进制的真实 HTTP CAS、REAPI FindMissing、认证和重启持久性测试，详见 [引擎验证记录](engine-validation.md)；仍不替代镜像/PVC/真实集群 PoC。当前没有认证生产镜像或完整集群安装。
+以上 API Server 测试没有 kubelet，不证明缓存容器启动、挂载或真实存储故障行为。已完成 bazel-remote v2.6.2 官方二进制的真实 HTTP CAS、REAPI FindMissing、认证和重启持久性测试，详见 [引擎验证记录](engine-validation.md)；仍不替代镜像/PVC/真实集群 PoC。当前没有认证生产镜像；已有隔离 kind 的 Helm 安装验证，仍缺生产集群兼容性认证。
 
 真实引擎测试已在提交 d90d0a7 的 Kubernetes platform 远程 CI 中执行通过。
 
@@ -104,4 +104,16 @@ WebDAV 使用 tmpfs，尚未验证 PVC、持久化重启及 CSI 权限；API 使
 
 [真实 kind 集群测试](https://github.com/expbuild/expbuild/actions/runs/36663333298)通过。Operator 以两副本运行，验证 WebDAV 的真实 PVC、Pod 重建后数据保留、暂停恢复、认证引用切换、选主接管、Retain 保留 PVC 和 Delete 删除 PVC。该流程直接创建 CR，尚不覆盖管理 API 或 Helm 安装。使用 kind 自带存储；不代表生产 CSI 或网络策略已认证。
 
-新增 `tools/helm_lifecycle.py` 与 CI Helm 任务：使用独立临时集群安装实际 Chart，通过管理 API 创建项目/实例、暂停恢复、密码轮换、升级与删除，再卸载控制面。安装迁移与 bootstrap 使用 Chart 原有钩子。关闭 Ingress，通过本地端口转发访问，因而不验证 TLS 或网络隔离。实际运行结果待 CI 确认。
+新增 `tools/helm_lifecycle.py` 与 CI Helm 任务：使用独立临时集群安装实际 Chart，通过管理 API 创建项目/实例、暂停恢复、密码轮换、升级与删除，再卸载控制面。安装迁移与 bootstrap 使用 Chart 原有钩子。关闭 Ingress，通过本地端口转发访问，因而不验证 TLS 或网络隔离。实际运行结果见下文。
+
+Helm 与管理 API 全链路验收（2026-09-30，提交 922b1fc）：
+
+[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36663871167)两个任务均成功，Operator 生命周期回归和新增 Helm/API 链路均通过。
+
+- 实际 Chart 安装、迁移 Job、管理员 bootstrap、三个控制面工作负载就绪。
+- 登录与 CSRF 后通过 API 创建项目，worker 创建真实 namespace 和网络策略资源。
+- API 创建 WebDAV 实例、写入数据、暂停恢复、轮换密码；旧密码返回 401，新密码读取原数据；就绪后旧 Secret 被清理。
+- 对同一版本执行 Helm upgrade，迁移钩子重新运行，已有缓存数据可读。该检查不代表跨版本升级兼容性已验证。
+- API 删除 Delete 策略实例后，CR、工作负载、Service、PVC 和凭据均清理；随后 Helm uninstall 清理控制面 Deployment 并保留 CRD。
+
+测试仍使用固定摘要 Apache 上游镜像；未创建 REAPI 实例。未验证网络策略的实际拦截、外部 TLS/域名、生产 CSI、真实浏览器、worker 故障注入或跨版本数据库迁移。复现步骤见 [测试说明](testing.md)。
