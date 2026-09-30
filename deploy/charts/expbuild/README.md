@@ -79,8 +79,7 @@ finalizer；可用原有密钥、数据库和正确配置重装控制面后继�
 
 ## 验证边界
 
-Chart lint、渲染和隔离 API Server 的资源校验在本地/CI 中执行。未连接实际集群，
-尚未证明镜像启动、TLS、PVC 挂载或真实缓存服务可用。容器构建 CI 只构建，不发布。
+Chart lint、渲染和隔离 API Server 的资源校验在本地/CI 中执行。镜像启动及 Helm/API/WebDAV 的 PVC 生命周期已通过隔离 kind 集群验证；TLS、生产 CSI 和跨版本升级仍待验收。容器 CI 构建并运行检查，不发布镜像。详细记录见 [实施状态](../../../docs/k8s-platform/progress.md)。
 
 ## 集群内构建客户端访问
 

@@ -118,4 +118,13 @@ Helm 与管理 API 全链路验收（2026-09-30，提交 922b1fc）：
 
 测试仍使用固定摘要 Apache 上游镜像；未创建 REAPI 实例。未验证网络策略的实际拦截、外部 TLS/域名、生产 CSI、真实浏览器、worker 故障注入或跨版本数据库迁移。复现步骤见 [测试说明](testing.md)。
 
-保留卷管理：新增 detached 实例的 PVC 查询和管理员异步清理 API，界面详情要求输入卷名确认，操作/审计名称已接入。清理核对 namespace/项目/实例/原 CR UID/PVC UID，禁止存在 CR、ownerReference 或任意 Pod 引用时删除；使用 UID/resourceVersion 前置条件，只在 PVC 消失后完成。API 新增 PVC get/delete、Pod list 权限，仍不能删除 PV。数据库与 SDK 测试通过权限拒绝、替换卷拒绝、占用拒绝、删除响应丢失恢复、并发拒绝和幂等重放；UI 21 项、API 17 项通过；隔离 API Server 已验证新增权限边界。真实 Helm/API 清理链路已加入 CI，等待本轮运行。保留卷领回、定期盘点与生产存储回收认证仍未实现。
+保留卷管理：新增 detached 实例的 PVC 查询和管理员异步清理 API，界面详情要求输入卷名确认，操作/审计名称已接入。清理核对 namespace/项目/实例/原 CR UID/PVC UID，禁止存在 CR、ownerReference 或任意 Pod 引用时删除；使用 UID/resourceVersion 前置条件，只在 PVC 消失后完成。API 新增 PVC get/delete、Pod list 权限，仍不能删除 PV。数据库与 SDK 测试通过权限拒绝、替换卷拒绝、占用拒绝、删除响应丢失恢复、并发拒绝和幂等重放；UI 21 项、API 17 项通过；隔离 API Server 已验证新增权限边界。真实 Helm/API 清理链路已通过下文 CI。保留卷领回、定期盘点与生产存储回收认证仍未实现。
+
+保留卷管理验收（2026-09-30，提交 e5a980a）：
+
+- [管理 API 与界面](https://github.com/expbuild/expbuild/actions/runs/36664989493)：成功。
+- [Kubernetes/Helm 权限与协议回归](https://github.com/expbuild/expbuild/actions/runs/36664989610)：成功。
+- [四个镜像构建与运行检查](https://github.com/expbuild/expbuild/actions/runs/36664989478)：成功。
+- [Operator 与 Helm/API 隔离集群](https://github.com/expbuild/expbuild/actions/runs/36664989541)：成功。新增链路通过 API 创建 Retain 实例、删除实例、查询实际 PVC UID、明确提交保留卷清理、等待 PVC 消失并核对实例记录转为 deleted。
+
+所有测试均使用一次性资源；没有向业务集群应用权限或发布镜像。生产存储回收、物理数据擦除、领回和定期盘点仍不在本次验收范围。

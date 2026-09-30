@@ -33,7 +33,7 @@ docker build -f images/admin-web/Dockerfile -t expbuild/admin-web:test .
 python3 tools/helm_lifecycle.py
 ```
 
-Helm 测试在临时集群中启动独立 PostgreSQL，不使用外部数据库。使用真实 Chart 的迁移和管理员初始化 Job，通过登录/会话/CSRF 调用项目与实例 API，等待异步操作完成，再验证数据读写、暂停恢复和密码轮换。升级后检查数据仍可读，随后通过 API 删除实例并检查 PVC、凭据清理，最后卸载 Helm release。
+Helm 测试在临时集群中启动独立 PostgreSQL，不使用外部数据库。使用真实 Chart 的迁移和管理员初始化 Job，通过登录/会话/CSRF 调用项目与实例 API，等待异步操作完成，再验证数据读写、暂停恢复和密码轮换。升级后检查数据仍可读，随后通过 API 删除实例并检查 PVC、凭据清理。另创建 Retain 实例，在删除实例后查询保留 PVC，再通过独立的清理接口确认删除，最后卸载 Helm release。
 
 测试凭据仅用于一次性集群。请求失败时仅输出操作路径、状态或错误码，不输出创建和轮换响应中的明文密码。诊断输出包含工作负载状态、事件和服务日志，不打印 Secret 数据。
 
