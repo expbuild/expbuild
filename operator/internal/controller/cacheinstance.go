@@ -7,11 +7,10 @@ import (
 	"time"
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
-	"github.com/expbuild/expbuild/operator/internal/bazelremote"
 	"github.com/expbuild/expbuild/operator/internal/gateway"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	"github.com/expbuild/expbuild/operator/internal/monitoring"
-	"github.com/expbuild/expbuild/operator/internal/webdav"
+	"github.com/expbuild/expbuild/operator/internal/templates"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -109,7 +108,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 		}
 	}
-	if c.Spec.TemplateRef.Version != "0.1.0" || (c.Spec.Access.Exposure != "ClusterInternal" && c.Spec.Access.Exposure != "Gateway") || (c.Spec.Storage.DeletionPolicy != "Retain" && c.Spec.Storage.DeletionPolicy != "Delete") {
+	if (c.Spec.Access.Exposure != "ClusterInternal" && c.Spec.Access.Exposure != "Gateway") || (c.Spec.Storage.DeletionPolicy != "Retain" && c.Spec.Storage.DeletionPolicy != "Delete") {
 		return r.report(ctx, &c, false, "InvalidConfiguration", "Unsupported template, exposure, policy or deletion mode")
 	}
 	if c.Spec.Access.Exposure == "Gateway" && c.Spec.DesiredState != "Suspended" && r.Gateway == nil {
@@ -134,22 +133,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.RemoveFinalizer(&c, GatewayFinalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	render := bazelremote.Render
-	image := r.Image
-	switch c.Spec.TemplateRef.Name {
-	case "bazel-remote":
-		if c.Spec.Eviction.EnginePolicy != "lru" {
-			return r.report(ctx, &c, false, "InvalidConfiguration", "Bazel Remote requires lru eviction")
-		}
-	case "webdav-apache":
-		if c.Spec.Eviction.EnginePolicy != "none" || c.Spec.Eviction.MaxCacheGiB != 0 || r.WebDAVImage == "" {
-			return r.report(ctx, &c, false, "InvalidConfiguration", "WebDAV requires an approved image and no engine eviction policy")
-		}
-		render, image = webdav.Render, r.WebDAVImage
-	default:
-		return r.report(ctx, &c, false, "InvalidConfiguration", "Unsupported template")
+	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage)
+	if err != nil {
+		return r.report(ctx, &c, false, "InvalidConfiguration", err.Error())
 	}
-	objects, err := render(config(&c, image))
+	objects, err := adapter.Render(config(&c, ""), c.Spec.Eviction.EnginePolicy)
 	if err != nil {
 		return r.report(ctx, &c, false, "InvalidConfiguration", err.Error())
 	}
@@ -242,10 +230,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	c.Status.AppliedConfigHash = sts.Spec.Template.Annotations["cache.expbuild.io/config-hash"]
 	c.Status.CredentialRevision = secret.ResourceVersion
 	c.Status.AppliedTemplateVersion = c.Spec.TemplateRef.Version
-	c.Status.Endpoints = []cachev1.Endpoint{{Protocol: "reapi", URL: fmt.Sprintf("grpc://%s.%s.svc:9092", c.Name, c.Namespace)}, {Protocol: "bazel-http", URL: fmt.Sprintf("http://%s.%s.svc:8080", c.Name, c.Namespace)}}
-	if c.Spec.TemplateRef.Name == "webdav-apache" {
-		c.Status.Endpoints = []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", c.Name, c.Namespace)}}
-	}
+	c.Status.Endpoints = adapter.Endpoints(c.Name, c.Namespace)
 	if c.Spec.Access.Exposure == "Gateway" {
 		c.Status.Endpoints = r.Gateway.Endpoints(&c)
 	}

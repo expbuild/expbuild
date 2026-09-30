@@ -114,7 +114,7 @@ kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
 
 撤销何时影响已有连接取决于 CNI；需要立即撤销凭据时还应轮换实例密码。
 策略不授予客户端出站权限，客户端所在 namespace 如限制 egress，仍需允许目标缓存端口
-以及 DNS 解析。当前不提供外部公网访问，TLS/独立域名入口待实现。
+以及 DNS 解析。可选 Gateway 模式已支持 TLS 与实例独立域名；部署方准备 DNS、证书和共享入口，详见 [Gateway 配置](../../../docs/k8s-platform/gateway.md)。
 
 升级前创建的项目会在下一次创建实例时补齐客户端策略；只有既有实例且不新建时，
 需要部署方补装对应策略（可从新项目已生成策略核对字段，不要直接复制项目身份）。

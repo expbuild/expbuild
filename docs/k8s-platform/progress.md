@@ -191,3 +191,7 @@ Cilium 第三轮（提交 90a77c5）：[集群回归](https://github.com/expbuil
 同一轮 internal 任务在首次 ResourceQuota used 初始化处超过四分钟。原生 Kubernetes 1.32 控制器的隔离复现确认：运行中新增 CRD 后，内置资源计数已初始化而自定义 count 项暂缺；平台正确保持 Pending。验收窗口已调整为七分钟，覆盖官方默认五分钟重同步周期，实际请求超时和就绪判断保持原要求。另修复连接地址尾斜杠导致 SDK 请求路径出现双斜杠的问题，并补充配额失败的安全状态码和 CI 状态诊断。
 
 配额启动时序复现完成：本机独立 API Server/etcd 加固定 SHA256 的官方 kube-controller-manager v1.32.0，仅启用 resourcequota 控制器；控制器启动后再安装 CRD，先观察到 used 缺少自定义 count，约五分钟后由真实控制器补齐，平台原有判断返回就绪。没有手工填充本次 status，也没有放宽缺失计数条件。隔离进程已正常停止。
+
+提交 3872cfe 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36679678906)四项全部成功：WebDAV、Helm internal、Gateway、Cilium isolation。包含只读资源对账的孤立 PVC 检测、不自动删除、人工移除后恢复，以及首次硬配额初始化等待窗口的回归。管理 API、平台回归和四镜像构建亦成功。
+
+模板扩展第一步：Operator 新增 internal/templates 注册表，以完整名称/版本选择编译内适配器，统一受信镜像、淘汰策略校验、资源渲染和内部端点生成。未知版本不回退，调用者无法覆盖安装配置中的镜像。控制器与双引擎回归和模板边界测试通过。当前不支持动态插件；API schema/能力目录、探测、入口和监控仍需进一步统一，不能将这一阶段视为完整模板扩展框架。
