@@ -135,3 +135,57 @@ func TestSharedAPITemplateFixtures(t *testing.T) {
 		})
 	}
 }
+
+func TestIntegrationCapabilitiesMatchRenderedService(t *testing.T) {
+	data, err := os.ReadFile("../../../tests/contracts/templates.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name, Version, EnginePolicy string
+		StorageGiB, CacheGiB        int64
+		HTTPPort, GRPCPort          int32
+		Statistics                  bool
+	}
+	if err := json.Unmarshal(data, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	image := "registry.example/cache@sha256:" + strings.Repeat("a", 64)
+	for _, fixture := range fixtures {
+		ref := cachev1.TemplateRef{Name: fixture.Name, Version: fixture.Version}
+		capabilities, err := Describe(ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if capabilities.HTTPPort != fixture.HTTPPort || capabilities.GRPCPort != fixture.GRPCPort || (capabilities.MetricsPort > 0) != fixture.Statistics {
+			t.Fatalf("capability contract drift for %s", fixture.Name)
+		}
+		adapter, err := Resolve(ref, image, image)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resources := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m"), corev1.ResourceMemory: resource.MustParse("512Mi")}
+		c := instance.Config{Name: "contract", Namespace: "project", InstanceID: "instance", ProjectID: "project", StorageClass: "standard", Capacity: fmt.Sprintf("%dGi", fixture.StorageGiB), MaxCacheGiB: fixture.CacheGiB, CredentialsSecret: "auth", DesiredState: "Running", Resources: corev1.ResourceRequirements{Requests: resources, Limits: resources}}
+		objects, err := adapter.Render(c, fixture.EnginePolicy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ports := map[string]int32{}
+		for _, object := range objects {
+			if service, ok := object.(*corev1.Service); ok && service.Name == c.Name {
+				for _, port := range service.Spec.Ports {
+					ports[port.Name] = port.Port
+				}
+			}
+		}
+		if ports["http"] != capabilities.HTTPPort || ports["grpc"] != capabilities.GRPCPort {
+			t.Fatalf("route backend not served for %s", fixture.Name)
+		}
+		if capabilities.MetricsPort > 0 && (ports[capabilities.MetricsPortName] != capabilities.MetricsPort || capabilities.MetricsPath != "/metrics") {
+			t.Fatal("metrics endpoint not served")
+		}
+	}
+	if _, err := Describe(cachev1.TemplateRef{Name: "bazel-remote", Version: "unknown"}); err == nil {
+		t.Fatal("accepted unknown version")
+	}
+}

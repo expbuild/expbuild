@@ -9,7 +9,7 @@ import (
 )
 
 func TestBoundIdentityCredentialsAndNarrowIngress(t *testing.T) {
-	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache-a", Namespace: "project-a", UID: "uid-a"}, Spec: cachev1.CacheInstanceSpec{ProjectID: "project-a", InstanceID: "instance-a", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote"}, Access: cachev1.AccessSpec{CredentialsSecretRef: "auth-v2"}}}
+	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache-a", Namespace: "project-a", UID: "uid-a"}, Spec: cachev1.CacheInstanceSpec{ProjectID: "project-a", InstanceID: "instance-a", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote", Version: "0.1.0"}, Access: cachev1.AccessSpec{CredentialsSecretRef: "auth-v2"}}}
 	objects, err := (Config{Namespace: "monitoring"}).Render(c)
 	if err != nil {
 		t.Fatal(err)
@@ -33,5 +33,12 @@ func TestBoundIdentityCredentialsAndNarrowIngress(t *testing.T) {
 	c.Spec.TemplateRef.Name = "webdav-apache"
 	if _, err := (Config{Namespace: "monitoring"}).Render(c); err == nil {
 		t.Fatal("unsupported engine accepted")
+	}
+}
+
+func TestUnknownTemplateVersionCannotEnableMonitoring(t *testing.T) {
+	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "project", UID: "uid"}, Spec: cachev1.CacheInstanceSpec{TemplateRef: cachev1.TemplateRef{Name: "bazel-remote", Version: "0.2.0"}}}
+	if objects, err := (Config{Namespace: "monitoring"}).Render(c); err == nil || len(objects) > 0 {
+		t.Fatal("enabled metrics for unknown template version")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
+	"github.com/expbuild/expbuild/operator/internal/templates"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +49,10 @@ func (c Config) Render(instance *cachev1.CacheInstance) ([]client.Object, error)
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
+	capabilities, err := templates.Describe(instance.Spec.TemplateRef)
+	if err != nil {
+		return nil, err
+	}
 	if len(validation.IsDNS1123Label("grpc-"+string(instance.UID))) > 0 {
 		return nil, fmt.Errorf("instance UID cannot form a DNS hostname")
 	}
@@ -58,25 +63,26 @@ func (c Config) Render(instance *cachev1.CacheInstance) ([]client.Object, error)
 	backend := func(port int32) gatewayv1.BackendRef {
 		return gatewayv1.BackendRef{BackendObjectReference: gatewayv1.BackendObjectReference{Group: ptr.To(gatewayv1.Group("")), Kind: ptr.To(gatewayv1.Kind("Service")), Name: gatewayv1.ObjectName(instance.Name), Port: ptr.To(gatewayv1.PortNumber(port))}, Weight: ptr.To(int32(1))}
 	}
-	http := &gatewayv1.HTTPRoute{ObjectMeta: metadata("-http"), Spec: gatewayv1.HTTPRouteSpec{CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: []gatewayv1.ParentReference{c.Parent()}}, Hostnames: []gatewayv1.Hostname{gatewayv1.Hostname(c.Host(instance, "http"))}, Rules: []gatewayv1.HTTPRouteRule{{Matches: []gatewayv1.HTTPRouteMatch{{Path: &gatewayv1.HTTPPathMatch{Type: ptr.To(gatewayv1.PathMatchPathPrefix), Value: ptr.To("/")}}}, BackendRefs: []gatewayv1.HTTPBackendRef{{BackendRef: backend(8080)}}}}}}
+	http := &gatewayv1.HTTPRoute{ObjectMeta: metadata("-http"), Spec: gatewayv1.HTTPRouteSpec{CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: []gatewayv1.ParentReference{c.Parent()}}, Hostnames: []gatewayv1.Hostname{gatewayv1.Hostname(c.Host(instance, "http"))}, Rules: []gatewayv1.HTTPRouteRule{{Matches: []gatewayv1.HTTPRouteMatch{{Path: &gatewayv1.HTTPPathMatch{Type: ptr.To(gatewayv1.PathMatchPathPrefix), Value: ptr.To("/")}}}, BackendRefs: []gatewayv1.HTTPBackendRef{{BackendRef: backend(capabilities.HTTPPort)}}}}}}
 	objects := []client.Object{http}
-	if instance.Spec.TemplateRef.Name == "bazel-remote" {
-		objects = append(objects, &gatewayv1.GRPCRoute{ObjectMeta: metadata("-grpc"), Spec: gatewayv1.GRPCRouteSpec{CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: []gatewayv1.ParentReference{c.Parent()}}, Hostnames: []gatewayv1.Hostname{gatewayv1.Hostname(c.Host(instance, "grpc"))}, Rules: []gatewayv1.GRPCRouteRule{{BackendRefs: []gatewayv1.GRPCBackendRef{{BackendRef: backend(9092)}}}}}})
+	if capabilities.GRPCPort > 0 {
+		objects = append(objects, &gatewayv1.GRPCRoute{ObjectMeta: metadata("-grpc"), Spec: gatewayv1.GRPCRouteSpec{CommonRouteSpec: gatewayv1.CommonRouteSpec{ParentRefs: []gatewayv1.ParentReference{c.Parent()}}, Hostnames: []gatewayv1.Hostname{gatewayv1.Hostname(c.Host(instance, "grpc"))}, Rules: []gatewayv1.GRPCRouteRule{{BackendRefs: []gatewayv1.GRPCBackendRef{{BackendRef: backend(capabilities.GRPCPort)}}}}}})
 	}
-	ports := []networkingv1.NetworkPolicyPort{{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(8080))}}
-	if instance.Spec.TemplateRef.Name == "bazel-remote" {
-		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(9092))})
+	ports := []networkingv1.NetworkPolicyPort{{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(capabilities.HTTPPort))}}
+	if capabilities.GRPCPort > 0 {
+		ports = append(ports, networkingv1.NetworkPolicyPort{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(capabilities.GRPCPort))})
 	}
 	objects = append(objects, &networkingv1.NetworkPolicy{ObjectMeta: metadata("-gateway"), Spec: networkingv1.NetworkPolicySpec{PodSelector: metav1.LabelSelector{MatchLabels: labels}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": c.DataPlaneNamespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"cache.expbuild.io/gateway": "true"}}}}, Ports: ports}}}})
 	return objects, nil
 }
 func (c Config) Endpoints(instance *cachev1.CacheInstance) []cachev1.Endpoint {
-	protocol := "bazel-http"
-	if instance.Spec.TemplateRef.Name == "webdav-apache" {
-		protocol = "webdav"
+	capabilities, err := templates.Describe(instance.Spec.TemplateRef)
+	if err != nil {
+		return nil
 	}
+	protocol := capabilities.HTTPProtocol
 	result := []cachev1.Endpoint{{Protocol: protocol, URL: "https://" + c.Host(instance, "http") + "/"}}
-	if protocol == "bazel-http" {
+	if capabilities.GRPCPort > 0 {
 		result = append(result, cachev1.Endpoint{Protocol: "reapi", URL: "grpcs://" + c.Host(instance, "grpc")})
 	}
 	return result

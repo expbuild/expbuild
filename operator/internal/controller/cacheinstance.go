@@ -85,7 +85,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.AddFinalizer(&c, Finalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	monitoringActive := r.Monitoring != nil && c.Spec.TemplateRef.Name == "bazel-remote" && c.Spec.DesiredState == "Running"
+	capabilities, capabilityErr := templates.Describe(c.Spec.TemplateRef)
+	monitoringActive := r.Monitoring != nil && capabilityErr == nil && capabilities.MetricsPort > 0 && c.Spec.DesiredState == "Running"
 	if previous := meta.FindStatusCondition(c.Status.Conditions, "MonitoringConfigured"); monitoringActive && (previous == nil || previous.ObservedGeneration != c.Generation) {
 		monitoringCondition(&c, metav1.ConditionUnknown, "NotVerified", "Monitoring configuration has not been checked")
 	}

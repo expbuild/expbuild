@@ -42,7 +42,7 @@ test('published configuration contracts and generated instances match each regis
 });
 
 test('API definitions satisfy the shared Operator template fixtures', () => {
-  const fixtures = JSON.parse(readFileSync(new URL('../../../tests/contracts/templates.json', import.meta.url), 'utf8')) as Array<{name:string;version:string;enginePolicy:string;storageGiB:number;cacheGiB:number;protocols:string[]}>;
+  const fixtures = JSON.parse(readFileSync(new URL('../../../tests/contracts/templates.json', import.meta.url), 'utf8')) as Array<{name:string;version:string;enginePolicy:string;storageGiB:number;cacheGiB:number;protocols:string[];statistics:boolean}>;
   const catalog = templateCatalog({ webdavEnabled: true });
   assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.map(t => t.name).sort());
   for (const fixture of fixtures) {
@@ -51,5 +51,6 @@ test('API definitions satisfy the shared Operator template fixtures', () => {
     assert.deepEqual(desired.spec.templateRef, { name: fixture.name, version: fixture.version });
     assert.equal(desired.spec.eviction.enginePolicy, fixture.enginePolicy);
     assert.deepEqual(catalog.find(t => t.name === fixture.name)!.protocols, fixture.protocols);
+    assert.equal(catalog.find(t => t.name === fixture.name)!.capabilities.statistics, fixture.statistics);
   }
 });

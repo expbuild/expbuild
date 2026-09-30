@@ -199,3 +199,7 @@ Cilium 第三轮（提交 90a77c5）：[集群回归](https://github.com/expbuil
 模板探测适配：认证 WebDAV 和 REAPI/容量探测已从通用 controller 移入各自引擎包，由模板注册表按名称及精确版本选择。未知模板或版本直接拒绝，不再隐式回退到 REAPI；镜像是否启用仍在渲染阶段独立检查。测试覆盖未知版本在网络访问前拒绝、已注册模板调用认证探测、真实 Apache 正确/错误凭据和既有协议断言；真实 bazel-remote、隔离 API Server 契约和受影响模块 race 检查通过。API 能力/schema、Gateway、监控和策略状态仍有引擎相关分支，继续统一；这次改动不增加新的协议或淘汰能力。
 
 API 模板目录统一：新增 template-catalog.ts，将配置 schema、版本、策略映射、公开协议/能力和创建启用判断集中定义；目录接口与 desiredObject 使用相同定义，不再分别硬编码策略和版本。停用模板仅阻止新建，已有实例仍可维护。新增 tests/contracts/templates.json，由 TypeScript 与 Go 两侧测试共同读取，验证目录完整性、版本/策略与实际渲染和内部端点契约；样例变化触发双方 CI。公共 WebDAV 的 http 标识表示传输能力，内部连接端点仍只声明 webdav。当前仍是编译内模板，Gateway/监控/策略状态与管理界面还需进一步按能力解耦，未提供动态插件或引擎升级。
+
+入口与监控模板能力统一：注册表按精确模板版本提供 HTTP 协议/端口、可选 gRPC 端口和可选指标端口/路径；Gateway 路由、入口 NetworkPolicy、ServiceMonitor、采集 NetworkPolicy 及监控启用条件读取此定义，删除对应引擎名判断。未知版本不能渲染路由/监控或发布端点，WebDAV 仍无 gRPC 和自动采集。共享契约补充端口与统计支持字段，测试实际 Service 端口与声明一致；TypeScript 契约及 Go 受影响模块 race 测试通过。具体协议探测、指标认证语义仍由编译内适配负责，不能仅添加一个端口就宣称支持新引擎。
+
+本轮隔离 API Server 验收：CacheInstance/RBAC、Gateway v1.2.1 和固定 ServiceMonitor CRD 三项契约测试实际运行通过，覆盖重复调谐、归属及清理；不把 API 对象验证等同于新提交的完整代理/采集链路，完整集群回归由后续 CI 确认。

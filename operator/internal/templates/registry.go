@@ -14,12 +14,22 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// Capabilities describes only integrations certified for an exact template version.
+// Zero GRPCPort or MetricsPort means unsupported; callers must not invent defaults.
+type Capabilities struct {
+	HTTPProtocol                 string
+	HTTPPort, GRPCPort           int32
+	MetricsPort                  int32
+	MetricsPortName, MetricsPath string
+}
+
 type Adapter struct {
-	image     string
-	probe     func(context.Context, *cachev1.CacheInstance, *corev1.Secret) error
-	policy    string
-	render    func(instance.Config) ([]runtime.Object, error)
-	endpoints func(string, string) []cachev1.Endpoint
+	capabilities Capabilities
+	image        string
+	probe        func(context.Context, *cachev1.CacheInstance, *corev1.Secret) error
+	policy       string
+	render       func(instance.Config) ([]runtime.Object, error)
+	endpoints    func(string, string) []cachev1.Endpoint
 }
 
 // lookup fails closed on unknown versions; there is no fallback to latest.
@@ -27,6 +37,7 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 	adapters := map[cachev1.TemplateRef]Adapter{
 		{Name: "bazel-remote", Version: "0.1.0"}: {
 			policy: "lru", render: bazelremote.Render,
+			capabilities: Capabilities{HTTPProtocol: "bazel-http", HTTPPort: 8080, GRPCPort: 9092, MetricsPort: 8080, MetricsPortName: "http", MetricsPath: "/metrics"},
 			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
 				host := fmt.Sprintf("%s.%s.svc", c.Name, c.Namespace)
 				return bazelremote.CheckProtocol(ctx, c, s, "http://"+host+":8080", host+":9092")
@@ -37,6 +48,7 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 		},
 		{Name: "webdav-apache", Version: "0.1.0"}: {
 			policy: "none", render: webdav.Render,
+			capabilities: Capabilities{HTTPProtocol: "webdav", HTTPPort: 8080},
 			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
 				return webdav.CheckProtocol(ctx, s, fmt.Sprintf("http://%s.%s.svc:8080/", c.Name, c.Namespace))
 			},
@@ -92,4 +104,13 @@ func CheckProtocol(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secr
 		return err
 	}
 	return adapter.probe(ctx, c, s)
+}
+
+// Describe returns a value copy, independent of deployment image configuration.
+func Describe(ref cachev1.TemplateRef) (Capabilities, error) {
+	adapter, err := lookup(ref)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	return adapter.capabilities, nil
 }

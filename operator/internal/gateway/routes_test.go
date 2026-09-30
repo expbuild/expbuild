@@ -11,7 +11,7 @@ import (
 
 func TestRoutesAndStatus(t *testing.T) {
 	cfg := Config{Name: "shared", Namespace: "edge", SectionName: "https", BaseDomain: "cache.example.test", ControllerName: "example.test/controller", DataPlaneNamespace: "edge-pods"}
-	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "project", UID: "unique-uid"}, Spec: cachev1.CacheInstanceSpec{InstanceID: "id", ProjectID: "p", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote"}}}
+	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "project", UID: "unique-uid"}, Spec: cachev1.CacheInstanceSpec{InstanceID: "id", ProjectID: "p", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote", Version: "0.1.0"}}}
 	objects, err := cfg.Render(c)
 	if err != nil {
 		t.Fatal(err)
@@ -85,5 +85,18 @@ func TestHTTPSGatewayReadiness(t *testing.T) {
 	g.Spec.Listeners[0].TLS = nil
 	if cfg.Ready(g) {
 		t.Fatal("missing TLS configuration accepted")
+	}
+}
+
+func TestUnknownTemplateCannotPublishRoutesOrEndpoints(t *testing.T) {
+	cfg := Config{Name: "shared", Namespace: "edge", SectionName: "https", BaseDomain: "cache.example.test", ControllerName: "example.test/controller", DataPlaneNamespace: "edge-pods"}
+	for _, ref := range []cachev1.TemplateRef{{Name: "unknown", Version: "0.1.0"}, {Name: "bazel-remote", Version: "0.2.0"}, {Name: "webdav-apache"}} {
+		c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "project", UID: "unique-uid"}, Spec: cachev1.CacheInstanceSpec{TemplateRef: ref}}
+		if objects, err := cfg.Render(c); err == nil || len(objects) > 0 {
+			t.Fatal("published resources for unknown template")
+		}
+		if len(cfg.Endpoints(c)) > 0 {
+			t.Fatal("advertised unsupported protocol")
+		}
 	}
 }

@@ -4,6 +4,7 @@ package monitoring
 import (
 	"fmt"
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
+	"github.com/expbuild/expbuild/operator/internal/templates"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,8 +38,12 @@ func (cfg Config) Render(c *cachev1.CacheInstance) ([]client.Object, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if c.Spec.TemplateRef.Name != "bazel-remote" || c.UID == "" {
-		return nil, fmt.Errorf("monitoring requires a bound bazel-remote instance")
+	capabilities, err := templates.Describe(c.Spec.TemplateRef)
+	if err != nil {
+		return nil, err
+	}
+	if capabilities.MetricsPort == 0 || c.UID == "" {
+		return nil, fmt.Errorf("monitoring requires a bound instance with a supported metrics adapter")
 	}
 	labels := map[string]string{"app.kubernetes.io/managed-by": "expbuild", "cache.expbuild.io/project-id": c.Spec.ProjectID, "cache.expbuild.io/instance-id": c.Spec.InstanceID, "cache.expbuild.io/instance-uid": string(c.UID)}
 	selector := map[string]any{}
@@ -56,7 +61,7 @@ func (cfg Config) Render(c *cachev1.CacheInstance) ([]client.Object, error) {
 		"namespaceSelector": map[string]any{"matchNames": []any{c.Namespace}},
 		"sampleLimit":       int64(10000),
 		"endpoints": []any{map[string]any{
-			"port": "http", "path": "/metrics", "scheme": "http", "interval": "30s", "scrapeTimeout": "5s", "followRedirects": false, "honorLabels": false, "honorTimestamps": false,
+			"port": capabilities.MetricsPortName, "path": capabilities.MetricsPath, "scheme": "http", "interval": "30s", "scrapeTimeout": "5s", "followRedirects": false, "honorLabels": false, "honorTimestamps": false,
 			"basicAuth": map[string]any{
 				"username": map[string]any{"name": c.Spec.Access.CredentialsSecretRef, "key": "probe-username"},
 				"password": map[string]any{"name": c.Spec.Access.CredentialsSecretRef, "key": "probe-password"},
@@ -69,7 +74,7 @@ func (cfg Config) Render(c *cachev1.CacheInstance) ([]client.Object, error) {
 	}
 	policy := &networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: c.Name + "-metrics", Namespace: c.Namespace, Labels: labels}, Spec: networkingv1.NetworkPolicySpec{
 		PodSelector: metav1.LabelSelector{MatchLabels: labels}, PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-		Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.Namespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"cache.expbuild.io/monitoring": "true"}}}}, Ports: []networkingv1.NetworkPolicyPort{{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(8080))}}}},
+		Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": cfg.Namespace}}, PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"cache.expbuild.io/monitoring": "true"}}}}, Ports: []networkingv1.NetworkPolicyPort{{Protocol: ptr.To(corev1.ProtocolTCP), Port: ptr.To(intstr.FromInt32(capabilities.MetricsPort))}}}},
 	}}
 	return []client.Object{m, policy}, nil
 }
