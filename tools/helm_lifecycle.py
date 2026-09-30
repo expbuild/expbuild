@@ -150,6 +150,23 @@ def main(gateway_enabled=False, isolation_enabled=False):
                         return result and result['state'] == expected and result['counts'] == {'instances': 1, 'volumes': 1}
                     wait(observed, 'Read-only inventory reached ' + expected)
                 inventory_state('Healthy')
+                # Simulate a stale database reservation after an externally
+                # expanded volume. The repair must read the real CR/PVC again,
+                # raise accounting, and leave the data-plane resources intact.
+                updated = kubectl('-n', namespace, 'exec', 'postgres', '--', 'psql', '-U', 'postgres', '-d', 'postgres', '-tAc',
+                    "UPDATE instance_bindings SET reserved_storage_gib=1 WHERE id='" + iid + "' AND project_id='" + pid + "'")
+                assert updated == 'UPDATE 1', 'Expected exactly one test reservation to change'
+                api(inventory_path + '/refresh', 'POST', expected=202)
+                def reservation_drift():
+                    result = api(inventory_path)['result']
+                    return result and result['state'] == 'Drift' and any(issue['code'] == 'ResourceReservationInsufficient' and issue['instanceId'] == iid for issue in result['issues'])
+                wait(reservation_drift, 'Real cluster inventory detected insufficient reservation')
+                repaired = api(path + '/reservations/reconcile', 'POST')
+                assert repaired['reserved']['storageGiB'] == '2'
+                assert api(quota_path)['reserved']['storageGiB'] == 2
+                inventory_state('Healthy')
+                assert kubectl('-n', ns, 'get', 'pvc', resource + '-data', '-o', 'name') == 'persistentvolumeclaim/' + resource + '-data'
+                print('Resource reservation reconciliation passed against real CR and PVC', flush=True)
                 original_count = len(json.loads(kubectl('-n', ns, 'get', 'pvc', '-o', 'json'))['items'])
                 # Keep the untracked PVC within the remaining storage budget.
                 orphan_name = 'inventory-untracked'
