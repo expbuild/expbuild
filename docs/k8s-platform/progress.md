@@ -241,3 +241,5 @@ WebDAV 实时内容统计实现进行中：新建模板提升为 0.2.0，旧 0.1
 提交 7b413b1 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36704385247)四项全部成功：WebDAV、Helm 内部、Gateway 和 Cilium 隔离。真实 WebDAV 模式验证 `/status` 认证、文件数量与大小采样及轮换后旧凭据拒绝；Helm 内部日志明确确认管理 API 读取到内容快照，同时再次验证保留卷领回。镜像构建与平台测试亦通过。后续扫描器将目录读取改为每批 256 项并限制目录深度 128，以免平铺大目录单次载入所有名称；该优化的真实集群回归仍待下一轮 CI。
 
 提交 87a04da 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36706302289)四个模式全部成功；平台测试和镜像构建也成功。浏览器验收扩展为真实前端、管理 API、独立 PostgreSQL 与异步 worker 的实例创建、一次性凭据、暂停、恢复和删除流程；仅 Kubernetes 边界使用确定性的测试替身，不能替代上述真实集群的数据面验收。本地三条浏览器流程全部通过。WebDAV 创建表单的说明已按模板版本展示 0.2.0 的近似内容快照能力，仍明确无自动淘汰。
+
+Gradle HTTP 构建缓存引擎开发启动：新增独立 Go 数据面与非 root 镜像，支持认证 GET/PUT opaque archive、原子发布、条目上限、实例预算和最近访问淘汰；Go 协议/并发/重启测试和容器 smoke 已接入。当前未接入模板/管理 API/Helm，也未做原生 Gradle 或真实 PVC 验收，不作为已发布协议。详见 [Gradle HTTP 引擎记录](gradle-http.md)。

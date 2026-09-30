@@ -11,7 +11,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-COMPONENTS = {'admin-api', 'admin-web', 'operator', 'webdav'}
+COMPONENTS = {'admin-api', 'admin-web', 'operator', 'webdav', 'gradle-cache'}
 
 
 def docker(*args):
@@ -63,6 +63,10 @@ def main(component):
                 args += ['--mount', f'type=bind,src={root / "httpd.conf"},dst=/config/httpd.conf,readonly',
                          '--mount', f'type=bind,src={root / "htpasswd"},dst=/auth/htpasswd,readonly',
                          '--tmpfs', '/data:rw,nosuid,nodev,uid=1000,gid=1000,mode=0750,size=64m']
+            elif component == 'gradle-cache':
+                (root / 'htpasswd').write_text('cache:$2b$10$Z9RNLYUAIh7a19cBqRUKx.zSNfeY9lgPD3T6/fMX.JC82Or3o/5SW\n')
+                args += ['--mount', f'type=bind,src={root / "htpasswd"},dst=/auth/htpasswd,readonly',
+                         '--tmpfs', '/data:rw,nosuid,nodev,uid=1000,gid=1000,mode=0750,size=64m']
             elif component == 'admin-api':
                 port = 3001
                 network = prefix + '-net'
@@ -85,8 +89,9 @@ def main(component):
             docker('run', '-d', '--name', name, *flags, *args, '-p', f'127.0.0.1::{port}', image)
             address = docker('port', name, f'{port}/tcp')
             base = 'http://' + address
-            expected = 401 if component == 'webdav' else 200
-            wait_for(lambda: request(base + ('/' if component == 'webdav' else '/healthz'))[0] == expected, 'container HTTP startup')
+            expected = 401 if component in ('webdav', 'gradle-cache') else 200
+            probe = '/cache/' + 'a' * 32 if component == 'gradle-cache' else '/' if component == 'webdav' else '/healthz'
+            wait_for(lambda: request(base + probe)[0] == expected, 'container HTTP startup')
             if component == 'admin-web':
                 status, body, headers = request(base + '/')
                 assert status == 200 and b'<div id="root">' in body
@@ -99,7 +104,7 @@ def main(component):
                 assert json.loads(body)['csrfToken']
                 cookie = headers['Set-Cookie'].split(';')[0]
                 assert request(base + '/v1/auth/me', headers={'Cookie': cookie})[0] == 200
-            else:
+            elif component == 'webdav':
                 auth = {'Authorization': 'Basic ' + base64.b64encode(b'cache:engine-test-only').decode()}
                 assert request(base + '/cache', 'MKCOL', headers=auth)[0] == 201
                 assert request(base + '/cache/blob', 'PUT', b'smoke')[0] == 401
@@ -107,6 +112,16 @@ def main(component):
                 assert request(base + '/cache/blob', headers=auth)[:2] == (200, b'smoke')
                 assert request(base + '/cache/', 'PROPFIND', headers={**auth, 'Depth': '1'})[0] == 207
                 assert request(base + '/cache/blob', 'DELETE', headers=auth)[0] == 204
+            else:
+                key = 'a' * 32
+                auth = {'Authorization': 'Basic ' + base64.b64encode(b'cache:engine-test-only').decode()}
+                assert request(base + '/cache/' + key, 'PUT', b'smoke')[0] == 401
+                assert request(base + '/cache/' + key, 'PUT', b'smoke', auth)[0] == 201
+                assert request(base + '/cache/' + key, headers=auth)[:2] == (200, b'smoke')
+                assert request(base + '/cache/' + key, 'PUT', b'changed', auth)[0] == 409
+                status, body, _ = request(base + '/status', headers=auth)
+                assert status == 200 and json.loads(body)['sizeBytes'] == 5
+                assert request(base + '/cache/../outside', 'PUT', b'bad', auth)[0] == 404
         except BaseException:
             for name in containers:
                 subprocess.run(['docker', 'logs', '--tail', '50', name], check=False, timeout=15)
@@ -121,5 +136,5 @@ def main(component):
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 or sys.argv[1] not in COMPONENTS:
-        raise SystemExit('Usage: container_smoke.py admin-api|admin-web|operator|webdav')
+        raise SystemExit('Usage: container_smoke.py admin-api|admin-web|operator|webdav|gradle-cache')
     main(sys.argv[1])

@@ -3,6 +3,7 @@ module github.com/expbuild/expbuild/operator
 go 1.23.0
 
 require (
+	golang.org/x/crypto v0.28.0
 	google.golang.org/grpc v1.66.2
 	google.golang.org/protobuf v1.35.1
 	k8s.io/api v0.32.1
