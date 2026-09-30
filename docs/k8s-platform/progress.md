@@ -130,3 +130,12 @@ Helm 与管理 API 全链路验收（2026-09-30，提交 922b1fc）：
 所有测试均使用一次性资源；没有向业务集群应用权限或发布镜像。生产存储回收、物理数据擦除、领回和定期盘点仍不在本次验收范围。
 
 独立域名入口适配已编码：采用 Gateway API v1.2.1 HTTPRoute/GRPCRoute，HTTP 与 gRPC 分离子域名并绑定 CR UID；API/界面支持可选 exposure，Helm 管理共享 Gateway 引用与启用配置。Operator 检查当前 Gateway/监听器/路由接纳状态，保留 ExternalReachability=Unknown，并在暂停、切回内部访问或删除前撤销路由。入口网络策略同时匹配数据面 namespace 和 Pod 标签。渲染、状态版本、所有权、暂停清理与真实 Gateway CRD 幂等测试已通过；尚未运行实际 Gateway 代理，DNS/TLS、WebDAV 大文件、外部 REAPI 和 CNI 隔离均待验收。配置和验收边界见 [Gateway 说明](gateway.md)。
+
+Gateway 适配回归（2026-09-30，提交 5edc651）：
+
+- [管理 API/界面](https://github.com/expbuild/expbuild/actions/runs/36666795790)：成功，API 17 项、界面 22 项。
+- [Go、协议、Helm/RBAC 与 Gateway CRD 契约](https://github.com/expbuild/expbuild/actions/runs/36666795791)：成功，包含 race、真实 Gateway CRD 重复调谐无写入、状态版本/路由 spec 变化拒绝检查。Gateway 接纳状态由测试模拟，未运行实际代理。
+- [四镜像构建与运行](https://github.com/expbuild/expbuild/actions/runs/36666795764)：成功。
+- [原有 Operator 与 Helm/API 集群链路](https://github.com/expbuild/expbuild/actions/runs/36666795753)：成功，保持默认 Gateway 关闭，覆盖 WebDAV 和保留卷清理回归。
+
+独立域名仍未完成实际代理认证，不能以以上成功记录替代 TLS、外部 WebDAV/REAPI 和真实网络隔离验收。下一步继续固定一个实际 Gateway 实现并完成数据面测试。
