@@ -34,6 +34,17 @@ def wait(check, label, timeout=240):
     raise RuntimeError('Timed out: ' + label)
 
 
+def pin_loaded_image(cluster_name, image):
+    """Add a digest reference to an image that kind loaded from the local Docker daemon."""
+    node = cluster_name + '-control-plane'
+    source = 'docker.io/' + image
+    image_row = next(row for row in run('docker', 'exec', node, 'ctr', '-n', 'k8s.io', 'images', 'ls').splitlines() if row.startswith(source + ' '))
+    manifest = re.search(r'\bsha256:[a-f0-9]{64}\b', image_row).group()
+    pinned = source.rsplit(':', 1)[0] + '@' + manifest
+    run('docker', 'exec', node, 'ctr', '-n', 'k8s.io', 'images', 'tag', source, pinned)
+    return pinned
+
+
 def main():
     name = 'expbuild-e2e-' + uuid.uuid4().hex[:10]
     with tempfile.TemporaryDirectory(prefix=name) as directory:
@@ -72,15 +83,8 @@ def main():
             run('kind', 'create', 'cluster', '--name', name, '--kubeconfig', config, '--image', NODE, '--wait', '180s', timeout=480)
             run('kind', 'load', 'docker-image', 'expbuild/operator:test', '--name', name)
             run('kind', 'load', 'docker-image', 'expbuild/gradle-cache:test', '--name', name)
-            # Keep the production digest-only image contract in this test. Kind
-            # loads the local tag into containerd; add its actual manifest digest
-            # as a second reference so the kubelet can resolve the pinned image.
-            node = name + '-control-plane'
-            local_image = 'docker.io/expbuild/gradle-cache:test'
-            image_row = next(row for row in run('docker', 'exec', node, 'ctr', '-n', 'k8s.io', 'images', 'ls').splitlines() if row.startswith(local_image + ' '))
-            manifest = re.search(r'\bsha256:[a-f0-9]{64}\b', image_row).group()
-            gradle_image = 'docker.io/expbuild/gradle-cache@' + manifest
-            run('docker', 'exec', node, 'ctr', '-n', 'k8s.io', 'images', 'tag', local_image, gradle_image)
+            # Keep the production digest-only image contract in this test.
+            gradle_image = pin_loaded_image(name, 'expbuild/gradle-cache:test')
             apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': 'expbuild-system'}})
             apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': 'expbuild-demo', 'labels': {'app.kubernetes.io/managed-by': 'expbuild', 'cache.expbuild.io/project-id': 'demo'}}})
             kubectl('apply', '-f', 'operator/config/crd/cache.expbuild.io_cacheinstances.yaml')

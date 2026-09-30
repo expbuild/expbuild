@@ -98,6 +98,16 @@ jobs:
           tags: expbuild/admin-web:test
           cache-from: type=gha,scope=admin-web
           cache-to: type=gha,mode=max,scope=admin-web
+      - uses: docker/build-push-action@v6
+        if: matrix.mode == 'internal'
+        with:
+          context: .
+          file: images/gradle-cache/Dockerfile
+          load: true
+          push: false
+          tags: expbuild/gradle-cache:test
+          cache-from: type=gha,scope=gradle-cache
+          cache-to: type=gha,mode=max,scope=gradle-cache
       - uses: azure/setup-helm@v4
         with:
           version: v3.17.3
