@@ -44,7 +44,7 @@
 - 隔离 API Server 上安装 RBAC 清单并通过 SubjectAccessReview 验证允许/拒绝边界，包括 Secret 只读、禁止删除 PV、选主仅限控制面 namespace。
 - Helm 渲染后的身份和权限也在隔离 API Server 中安装验证：22 项授权检查覆盖跨 namespace 实例管理、Secret 读写职责、状态更新、选主范围，以及管理页面无资源权限；不启动工作负载，不应用到实际集群。
 - 前后端生产构建；界面组件测试覆盖登录、只读用户、容量校验、CSRF 与一次性凭据清除。操作列表有真实 PostgreSQL 的跨项目权限测试。尚未做真实浏览器视觉验收。
-- Helm strict lint、资源渲染、隔离 API Server 的 Deployment/Service/Job/Ingress/RBAC dry-run 校验、错误配置拒绝与 CRD 同步检查。本机没有容器运行时；提交 d90d0a7 的四个容器镜像已通过 GitHub Actions 实际构建，尚未进行容器启动及完整集群验收。
+- Helm strict lint、资源渲染、隔离 API Server 的 Deployment/Service/Job/Ingress/RBAC dry-run 校验、错误配置拒绝与 CRD 同步检查。本机没有容器运行时；提交 d90d0a7 的四个容器镜像已通过 GitHub Actions 实际构建，后续提交 69a520f 已增加并通过下述容器运行检查，完整集群验收仍待完成。
 - 用户管理确认交互、按邮箱添加成员、移除成员后的即时权限撤销、唯一管理员不可移除和审计落库；最近验证：API 16 项、界面 18 项测试通过。
 - 轮换切换响应丢失后的恢复、就绪前保留旧凭据、就绪后清理、普通更新不回退密码，以及 UI 重试保留原版本/幂等键。真实引擎拒绝旧密码仍待完整集群验收。
 
@@ -63,7 +63,7 @@ OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 
 3. bazel-remote 固定镜像与真实客户端验证；WebDAV 浏览器联调、淘汰和指标适配。
 4. 管理界面补齐模板扩展、统计与策略页面；浏览器联调与连接配置验证。
 5. TLS/独立域名入口、NetworkPolicy、指标采集和授权查询。
-6. 验证容器实际启动、Helm 完整安装升级卸载联调、API/SDK 真实集群 E2E 与兼容矩阵。
+6. Helm 完整安装升级卸载联调、Operator 集群运行、API/SDK 真实集群 E2E 与兼容矩阵。
 
 完整目标保持进行中；不能以当前模块测试通过代替上述验收。
 
@@ -86,3 +86,16 @@ OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 
 - [admin-api、admin-web、operator、webdav 四镜像构建](https://github.com/expbuild/expbuild/actions/runs/36662004310)：全部成功。
 
 构建流程 push=false，未发布镜像。构建成功不证明入口命令、非 root 卷权限或完整集群运行成功。
+
+容器运行检查（2026-09-30，提交 69a520f）：
+
+[四镜像构建与运行检查](https://github.com/expbuild/expbuild/actions/runs/36662736536)全部成功；
+[Kubernetes 回归](https://github.com/expbuild/expbuild/actions/runs/36662736517)成功。
+
+- admin-api：生产依赖镜像以非 root、只读根文件系统运行，连接临时 PostgreSQL，迁移、bootstrap、健康/就绪接口、登录和会话读取通过。
+- admin-web：非 root、只读根文件系统下启动，健康接口、页面、CSP 和 API 路径隔离通过。
+- webdav：使用 Operator 嵌入的同一份 Apache 配置，非 root、只读根文件系统及 uid=1000 临时数据挂载下，通过匿名拒绝、认证 MKCOL、PUT/GET、PROPFIND、DELETE。
+- operator：distroless 镜像中的可执行入口与参数帮助通过；未连接集群，不代表控制器在 Pod 内已完成调谐。
+
+测试 Docker 容器、临时数据库和网络在任务结束时清理，不发布镜像、不连接业务集群。
+WebDAV 使用 tmpfs，尚未验证 PVC、持久化重启及 CSI 权限；API 使用不执行实例操作的测试 kubeconfig。
