@@ -1,9 +1,9 @@
 name: Platform container builds
 on:
   push:
-    paths: ['apps/**', 'operator/**', 'images/**', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
+    paths: ['apps/**', 'operator/**', 'images/**', 'tools/container_smoke.py', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
   pull_request:
-    paths: ['apps/**', 'operator/**', 'images/**', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
+    paths: ['apps/**', 'operator/**', 'images/**', 'tools/container_smoke.py', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
 permissions:
   contents: read
 jobs:
@@ -21,6 +21,9 @@ jobs:
           context: .
           file: images/${{ matrix.component }}/Dockerfile
           push: false
+          load: true
           tags: expbuild/${{ matrix.component }}:test
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Run built container smoke checks
+        run: python3 tools/container_smoke.py "${{ matrix.component }}"

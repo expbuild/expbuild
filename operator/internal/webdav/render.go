@@ -4,6 +4,7 @@ package webdav
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"fmt"
 
 	"github.com/expbuild/expbuild/operator/internal/instance"
@@ -17,56 +18,9 @@ import (
 
 // Configuration keeps lock state outside the DAV document root. All methods,
 // including reads, require credentials. No CGI, indexes or symlinks are enabled.
-const Configuration = `ServerRoot "/usr/local/apache2"
-ServerName localhost
-Listen 0.0.0.0:8080
-PidFile /tmp/httpd.pid
-DefaultRuntimeDir /tmp
-LoadModule mpm_event_module modules/mod_mpm_event.so
-<IfModule !unixd_module>
-    LoadModule unixd_module modules/mod_unixd.so
-</IfModule>
-LoadModule authn_core_module modules/mod_authn_core.so
-LoadModule authz_core_module modules/mod_authz_core.so
-LoadModule authn_file_module modules/mod_authn_file.so
-LoadModule authz_user_module modules/mod_authz_user.so
-LoadModule auth_basic_module modules/mod_auth_basic.so
-LoadModule dav_module modules/mod_dav.so
-LoadModule dav_fs_module modules/mod_dav_fs.so
-User "#1000"
-Group "#1000"
-ErrorLog /proc/self/fd/2
-LogLevel warn
-ServerTokens Prod
-ServerSignature Off
-TraceEnable Off
-Timeout 60
-KeepAlive On
-MaxKeepAliveRequests 100
-KeepAliveTimeout 5
-StartServers 1
-ServerLimit 2
-ThreadsPerChild 25
-MaxRequestWorkers 50
-DocumentRoot "/data/content"
-DavLockDB "/data/locks/DavLock"
-DavDepthInfinity Off
-LimitXMLRequestBody 1048576
-<Directory />
-    AllowOverride None
-    Require all denied
-</Directory>
-<Directory "/data/content">
-    Options None
-    AllowOverride None
-    Dav On
-    AuthType Basic
-    AuthName "expbuild WebDAV"
-    AuthBasicProvider file
-    AuthUserFile "/auth/htpasswd"
-    Require valid-user
-</Directory>
-`
+//
+//go:embed httpd.conf
+var Configuration string
 
 func Render(c instance.Config) ([]runtime.Object, error) {
 	if err := c.ValidateCommon(); err != nil {

@@ -6,3 +6,4 @@ apps/*/dist/
 operator/bin/
 coverage/
 *.tsbuildinfo
+__pycache__/
