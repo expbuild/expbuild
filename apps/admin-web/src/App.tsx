@@ -767,6 +767,11 @@ function InstanceForm({
               />
             </label>
           ))}
+        <p className="muted">
+          {input.template === "bazel-remote"
+            ? "引擎按 LRU 自动淘汰较少使用的数据。容量调整需要重启实例，期间可能短暂不可用；以策略生效状态为准。暂不支持 TTL。"
+            : "此模板不支持自动淘汰或 TTL。存储卷容量不是自动清理阈值，请预留空间并管理文件。"}
+        </p>
         <label>
           运行状态
           <select
@@ -898,7 +903,13 @@ function InstanceDetail({
                 ? c.status === "True"
                   ? "服务已就绪"
                   : "服务尚未就绪"
-                : c.type}{" "}
+                 : c.type === "PolicyApplied"
+                  ? c.reason === "NotSupported"
+                    ? "不支持自动淘汰"
+                    : c.status === "True" && String(c.observedGeneration) === detail.revision?.split(":").at(-1)
+                      ? "缓存策略已生效"
+                      : "缓存策略尚未确认生效"
+                  : c.type}{" "}
               · {c.reason}
               {c.message && <p>{c.message}</p>}
             </div>
@@ -908,7 +919,9 @@ function InstanceDetail({
               {e.protocol} <code>{e.url}</code>
             </p>
           ))}
-          <p className="muted">连接地址当前仅供集群内部使用。</p>
+          <p className="muted">{detail.spec.access?.exposure === "Gateway"
+            ? "通过独立域名访问，请确认证书受信任且域名可达。"
+            : "连接地址当前仅供集群内部使用。"}</p>
           {detail.spec.templateRef.name === "bazel-remote" ? (
             <Statistics
               path={`${base}/instances/${id}`}

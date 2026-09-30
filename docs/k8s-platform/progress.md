@@ -147,3 +147,5 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 真实入口最终验收（2026-09-30，提交 ea1aaa7）：[隔离 Kubernetes 生命周期 CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)三个任务全部成功：Operator WebDAV、Helm 内部模式、Helm Gateway 模式。实际日志确认 WebDAV TLS/16 MiB/锁、暂停恢复与删除后的数据面撤销；REAPI TLS capabilities/FindMissing/8 MiB ByteStream、HTTP CAS、非 root PVC 运行和凭据轮换保留数据均通过。两个 Go RPC 阶段确实执行并通过，没有跳过。该结果更新以上历史记录中的入口待验收状态；详见 [Gateway 验证边界](gateway.md)和[引擎记录](engine-validation.md)。
 
 下一阶段仍需真实 CNI 流量隔离、Bazel 构建客户端与 ActionCache、独立指标及历史趋势、WebDAV 淘汰适配、配额和模板扩展、资源对账与浏览器端到端验证。整体重构目标继续进行中。
+
+策略生效状态：新增 `PolicyApplied`，当前工作负载和认证引擎容量验证通过后才标为 True；未就绪或探测失败撤回为 Unknown，WebDAV 明确 NotSupported。管理端核对 observedGeneration 与当前 revision，拒绝显示旧版本策略为已生效；表单解释 LRU、重启生效和 WebDAV 无自动清理。模板目录发布 policyApplyMode/policyCondition。Go 与隔离 API Server 回归、API 17 项和 UI 24 项通过。新增真实集群测试将 REAPI 缓存预算从 1 GiB 改为 2 GiB，核对运行容量、状态版本和数据保留；该新增链路等待远程 CI，不提前声称已通过。

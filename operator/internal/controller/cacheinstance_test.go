@@ -88,8 +88,19 @@ func TestReadyRequiresProtocolAndCurrentRevision(t *testing.T) {
 	if !meta.IsStatusConditionTrue(c.Status.Conditions, "Ready") {
 		t.Fatal("not ready after successful probe")
 	}
+	policy := meta.FindStatusCondition(c.Status.Conditions, "PolicyApplied")
+	if policy == nil || policy.Status != metav1.ConditionTrue || policy.ObservedGeneration != c.Generation {
+		t.Fatal("current engine policy not confirmed after authenticated verification")
+	}
 	if c.Status.AppliedConfigHash == "" || c.Status.CredentialRevision == "" {
 		t.Fatal("missing applied revisions")
+	}
+	r.Probe = probeResult{err: fmt.Errorf("engine budget differs")}
+	reconcile(t, r, c)
+	_ = r.Get(ctx, client.ObjectKeyFromObject(c), c)
+	policy = meta.FindStatusCondition(c.Status.Conditions, "PolicyApplied")
+	if policy == nil || policy.Status != metav1.ConditionUnknown {
+		t.Fatal("stale policy confirmation survived a failed probe")
 	}
 }
 
@@ -207,5 +218,28 @@ func TestDeleteRetainsVolumeAndWaitsForPods(t *testing.T) {
 	var pvc corev1.PersistentVolumeClaim
 	if err := r.Get(ctx, types.NamespacedName{Namespace: c.Namespace, Name: c.Name + "-data"}, &pvc); err != nil {
 		t.Fatal("retained volume removed", err)
+	}
+}
+
+func TestPolicyNotConfirmedForUnsupportedOrStoppedEngines(t *testing.T) {
+	for _, template := range []string{"bazel-remote", "webdav-apache"} {
+		t.Run(template, func(t *testing.T) {
+			r, c := setup(t)
+			c.Spec.TemplateRef.Name = template
+			c.Spec.DesiredState = "Suspended"
+			if _, err := r.report(context.Background(), c, false, "Suspended", "Stopped"); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.Get(context.Background(), client.ObjectKeyFromObject(c), c); err != nil {
+				t.Fatal(err)
+			}
+			policy := meta.FindStatusCondition(c.Status.Conditions, "PolicyApplied")
+			if policy == nil || policy.Status != metav1.ConditionUnknown {
+				t.Fatal("stopped/unsupported policy must not be confirmed")
+			}
+			if template == "webdav-apache" && policy.Reason != "NotSupported" {
+				t.Fatal("unsupported eviction must be explicit")
+			}
+		})
 	}
 }

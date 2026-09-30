@@ -11,6 +11,7 @@ let operations: Operation[] = [];
 let webdavEnabled = false;
 let gatewayEnabled = false;
 let webdavInstance = false;
+let policyGeneration: number | undefined;
 let role = "admin",
   platform = true;
 let requests: { path: string; options: RequestInit }[];
@@ -26,6 +27,7 @@ beforeEach(() => {
   webdavEnabled = false;
   gatewayEnabled = false;
   webdavInstance = false;
+  policyGeneration = undefined;
   platform = true;
   requests = [];
   operations = [];
@@ -62,13 +64,13 @@ beforeEach(() => {
           lifecycle: "active",
           revision: "uid:1",
           spec: {
-            templateRef: { name: "webdav-apache", version: "0.1.0" },
+            templateRef: { name: policyGeneration === undefined ? "webdav-apache" : "bazel-remote", version: "0.1.0" },
             desiredState: "Running",
             storage: { capacity: "10Gi", deletionPolicy: "Retain" },
             eviction: { maxCacheGiB: 0 },
             resources: { limits: { cpu: "500m", memory: "512Mi" } },
           },
-          status: {},
+          status: policyGeneration === undefined ? {} : { conditions: [{ type: "PolicyApplied", status: "True", reason: "EngineBudgetVerified", observedGeneration: policyGeneration }] },
         });
       if (path === "/v1/auth/login")
         return response({ csrfToken: "test-csrf" });
@@ -192,6 +194,16 @@ describe("management console", () => {
       template: "webdav-apache",
       cacheGiB: 0,
     });
+  });
+  it.each([1, 2])("only confirms policy for the current revision (observed %s)", async (generation) => {
+    webdavInstance = true;
+    policyGeneration = generation;
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "详情" }));
+    await screen.findByText(generation === 1 ? /缓存策略已生效/ : /缓存策略尚未确认生效/);
+    if (generation !== 1) expect(screen.queryByText(/缓存策略已生效/)).toBeNull();
   });
   it("keeps an existing WebDAV template immutable and does not poll unsupported statistics", async () => {
     webdavInstance = true;

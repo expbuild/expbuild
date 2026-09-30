@@ -107,6 +107,8 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal((await pool.query('SELECT state FROM projects WHERE id=$1', [projectId])).rows[0].state, 'ready');
     const templates = await app.inject({ url: '/v1/templates', headers });
     assert.equal(templates.statusCode, 200, templates.body);
+    assert.equal(templates.json().items[0].capabilities.policyApplyMode, "restart");
+    assert.equal(templates.json().items[0].capabilities.policyCondition, "PolicyApplied");
     const input = { name: 'Build cache', storageGiB: 10, cacheGiB: 8 };
     const create = () => app.inject({ method: 'POST', url: path, headers: { ...headers, 'idempotency-key': 'create-cache-1' }, payload: input });
     const accepted = await create(); assert.equal(accepted.statusCode, 202, accepted.body);
@@ -298,6 +300,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
     const catalog = (await app.inject({ url: '/v1/templates', headers })).json().items;
     assert.equal(catalog[1].name, 'webdav-apache');
     assert.equal(catalog[1].capabilities.statistics, false);
+    assert.equal(catalog[1].capabilities.policyApplyMode, "unsupported");
     assert.equal((await create(app, { ...payload, cacheGiB: 8 })).statusCode, 400);
     const accepted = await create(app);
     assert.equal(accepted.statusCode, 202, accepted.body);

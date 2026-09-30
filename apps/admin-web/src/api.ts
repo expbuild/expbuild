@@ -112,6 +112,7 @@ export type Detail = {
       status: string;
       reason: string;
       message?: string;
+      observedGeneration?: number;
     }[];
   };
 };

@@ -84,3 +84,11 @@ Kubernetes spec/status 仍按开放对象描述，精确字段以受版本控制
 管理员调用同路径 `DELETE`，附带 `Idempotency-Key` 和 `If-Match`。这里 `If-Match` 使用查询返回的 **PVC UID**，不是实例的 `UID:generation`。202 返回 `volume.delete` 操作，按常规操作接口轮询。幂等重放保留原操作结果；失败后重新检查卷，使用新幂等键再次明确提交。不要对响应丢失更换幂等键。
 
 执行器校验实例为 detached、原 CR UID 和项目归属未变；实际删除前检查同名 CR 不存在、没有 Pod 引用卷，并使用 PVC UID/resourceVersion 删除前置条件。完成表示 PVC 已不存在，实例记录转为 deleted，不意味着底层磁盘数据已擦除。无保留卷领回接口。
+
+## 淘汰策略与生效状态
+
+模板目录的 `capabilities.policyApplyMode` 为 `restart`（bazel-remote）或 `unsupported`（WebDAV），`policyCondition` 指向实例条件 `PolicyApplied`。bazel-remote 使用固定的原生 LRU，`cacheGiB` 配置缓存预算，调整通过工作负载重启生效；当前不支持 TTL。WebDAV 的 PVC 容量不是自动淘汰阈值，不会因接近容量而自动清理文件。
+
+`PolicyApplied=True` 只有在当前工作负载版本、认证协议及引擎返回的实际缓存预算通过核对后发布。客户端必须同时核对条件的 `observedGeneration` 与实例 `revision` 中的 generation，不能把旧版本的 True 当作新配置生效。暂停、未就绪和探测失败时为 Unknown；WebDAV 为 Unknown/NotSupported。Gateway 模式仍需路由就绪才发布 True，因此入口未就绪时可能保守地保持 Unknown。
+
+该状态确认配置已被当前运行实例应用，不是淘汰性能、磁盘满保护或整个 PVC 使用量的保证。

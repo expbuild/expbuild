@@ -183,7 +183,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if pvc.Status.Phase != corev1.ClaimBound {
 		return r.report(ctx, &c, false, "StoragePending", "Waiting for volume binding")
 	}
-	// Ready reports workload readiness only; protocol probes will be a separate gate.
+	// Verify the current workload revision before probing the running engine.
 	if sts.Status.ObservedGeneration < sts.Generation || sts.Status.ReadyReplicas != 1 || sts.Status.UpdatedReplicas != 1 || sts.Status.CurrentRevision == "" || sts.Status.CurrentRevision != sts.Status.UpdateRevision {
 		return r.report(ctx, &c, false, "WorkloadPending", "Waiting for current StatefulSet revision")
 	}
@@ -300,6 +300,16 @@ func (r *Reconciler) report(ctx context.Context, c *cachev1.CacheInstance, ready
 		value = metav1.ConditionTrue
 	}
 	meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "Ready", Status: value, Reason: reason, Message: message, ObservedGeneration: c.Generation})
+	policy := metav1.Condition{Type: "PolicyApplied", Status: metav1.ConditionUnknown, Reason: "VerificationPending", Message: "Current running engine policy has not been verified", ObservedGeneration: c.Generation}
+	if c.Spec.TemplateRef.Name == "webdav-apache" {
+		policy.Reason = "NotSupported"
+		policy.Message = "This template does not support automatic eviction"
+	} else if ready && c.Spec.TemplateRef.Name == "bazel-remote" {
+		policy.Status = metav1.ConditionTrue
+		policy.Reason = "EngineBudgetVerified"
+		policy.Message = "Current workload uses native LRU and the authenticated engine status confirms the requested cache budget"
+	}
+	meta.SetStatusCondition(&current.Status.Conditions, policy)
 	if c.Spec.Access.Exposure == "Gateway" {
 		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "EndpointReady", Status: value, Reason: reason, Message: "HTTPS Gateway, route acceptance and backend readiness; external reachability is a separate check", ObservedGeneration: c.Generation})
 		meta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{Type: "ExternalReachability", Status: metav1.ConditionUnknown, Reason: "NotProbed", Message: "External DNS, certificate trust and client connectivity have not been probed", ObservedGeneration: c.Generation})

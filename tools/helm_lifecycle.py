@@ -152,11 +152,15 @@ def main(gateway_enabled=False):
                 assert api(retained_path)['lifecycle'] == 'deleted'
                 print('Retain storage inspection and explicit API cleanup passed', flush=True)
                 if gateway:
-                    reapi = submit(f'/projects/{pid}/instances', data={**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'cacheGiB': 1, 'memoryMiB': 512})
+                    reapi_spec = {**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'storageGiB': 3, 'cacheGiB': 1, 'memoryMiB': 512}
+                    reapi = submit(f'/projects/{pid}/instances', data=reapi_spec)
                     complete(reapi)
                     reapi_id = reapi['operation']['instance_id']
                     reapi_path = f'/projects/{pid}/instances/{reapi_id}'
-                    endpoints = api(reapi_path)['status']['endpoints']
+                    detail = api(reapi_path)
+                    policy = next(c for c in detail['status']['conditions'] if c['type'] == 'PolicyApplied')
+                    assert policy['status'] == 'True' and str(policy['observedGeneration']) == detail['revision'].split(':')[-1]
+                    endpoints = detail['status']['endpoints']
                     grpc_host = urlparse(next(e['url'] for e in endpoints if e['protocol'] == 'reapi')).hostname
                     http_host = urlparse(next(e['url'] for e in endpoints if e['protocol'] == 'bazel-http')).hostname
                     def grpc_contract(credentials, phase, old_password=''):
@@ -171,6 +175,13 @@ def main(gateway_enabled=False):
                     cas_path = '/cas/' + hashlib.sha256(artifact).hexdigest()
                     assert gateway.request(http_host, cas_path, 'PUT', artifact, basic(reapi['credentials']))[0] == 200
                     assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[:2] == (200, artifact)
+                    complete(submit(reapi_path, 'PATCH', {**reapi_spec, 'cacheGiB': 2}, api(reapi_path)['revision']))
+                    adjusted = api(reapi_path)
+                    applied = next(c for c in adjusted['status']['conditions'] if c['type'] == 'PolicyApplied')
+                    assert applied['status'] == 'True' and str(applied['observedGeneration']) == adjusted['revision'].split(':')[-1]
+                    assert api(reapi_path + '/statistics')['capacityBytes'] == 2 * 1024**3
+                    assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[:2] == (200, artifact)
+                    print('Cache budget update applied to running engine and preserved data', flush=True)
                     changed = submit(reapi_path + '/credentials/rotate', revision=api(reapi_path)['revision'])
                     complete(changed)
                     grpc_contract(changed['credentials'], 'read', reapi['credentials']['password'])
