@@ -70,3 +70,32 @@ it("marks old observations stale", async () => {
   await screen.findByText("结果已过期，请重新对账后判断当前状态。");
   expect(screen.queryByText("未发现资源差异")).toBeNull();
 });
+
+it("explains template and reservation differences", async () => {
+  vi.mocked(api).mockResolvedValue({
+    checkedAt: new Date().toISOString(),
+    result: {
+      ...result,
+      state: "Drift",
+      issueCount: 2,
+      issues: [
+        {
+          code: "TemplateIdentityConflict",
+          kind: "CacheInstance",
+          resourceName: "cache",
+          instanceId: "id",
+        },
+        {
+          code: "ResourceReservationInsufficient",
+          kind: "PersistentVolumeClaim",
+          resourceName: "cache-data",
+          instanceId: "id",
+        },
+      ],
+    },
+  });
+  render(<ResourceInventory base="/projects/one" />);
+  fireEvent.click(screen.getByText("查看资源对账"));
+  await screen.findByText("模板名称或版本与平台绑定不一致");
+  await screen.findByText("实际资源配置超过账面预留");
+});

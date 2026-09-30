@@ -19,6 +19,11 @@ type Snapshot = {
   };
 };
 const messages: Record<string, string> = {
+  TemplateIdentityConflict: "模板名称或版本与平台绑定不一致",
+  TemplateVersionUnknown: "平台记录缺少模板版本",
+  ResourceReservationUnknown: "资源预留记录未知，需要核对",
+  ResourceReservationInsufficient: "实际资源配置超过账面预留",
+  ResourceQuantityInvalid: "资源数量无法解析，不能确认预留",
   InstanceIdentityConflict: "实例身份与平台记录不一致",
   InstanceOwnershipConflict: "实例归属标记不一致",
   UnexpectedInstance: "已删除或已分离的实例仍存在",

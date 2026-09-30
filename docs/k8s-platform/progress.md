@@ -219,3 +219,7 @@ API 模板目录统一：新增 template-catalog.ts，将配置 schema、版本�
 企业监控查询认证：管理 API 支持可选 Prometheus Bearer token，Helm 引用控制面现有 Secret 的 bearer-token 键，仅向 API 注入；默认不认证，配置 token 时必须有查询 URL。凭据校验拒绝空值、控制字符和超长输入，使用 JS 私有字段避免对象序列化泄漏；请求仍拒绝重定向。真实 HTTP 服务验证正确/错误认证和不跟随重定向，31 项 API 回归全部通过，包含真实 Prometheus 采集历史；Helm 渲染和真实 API Server/RBAC 契约通过。Secret 轮换需重启 API，尚不支持其他查询认证适配。
 
 浏览器 CI 首轮 cfe6799 在 npm ci 阶段失败，原因是新增包的锁文件使用本机镜像源 mirrors.tencentyun.com，GitHub runner 无法解析。三个 Playwright 包已逐个核对官方 npm 完整性摘要，并替换为 registry.npmjs.org 下载地址；不更换包版本或摘要。继续以干净安装、构建和真实浏览器流程验证修复。
+
+资源对账增强：新增独立模板名称/版本核对，以及实际 CR CPU/内存/存储、归属 PVC 请求与分配容量是否超过预留的只读校验。暂停保留资源承诺，detached 只核对存储，未知预留与无效数量明确报告；不自动释放历史较高预留。资源数量采用有界 BigInt 比例比较，避免浮点精度和不同单位导致的错误结论。模板/预留字段纳入扫描指纹，真实 PostgreSQL 测试确认扫描中改账撤回为 InProgress。32 项 API 测试通过（1 项真实 Prometheus 本轮未启用），44 项界面测试及构建通过；新增具体用例覆盖模板冲突、预留不足、卷实际扩容、暂停、detached 和只读语义。自动修复与账目校正仍待实现。
+
+浏览器远程验收：ddc0f91 的管理 API CI 36688902197 成功，已包含安装 Chromium 与真实浏览器管理流程；官方源锁文件修复生效。同提交 Kubernetes 平台与容器构建成功，完整隔离集群仍在运行。

@@ -27,6 +27,11 @@ function fixture() {
     resource_name: instance.metadata.name,
     kubernetes_uid: "cr-uid",
     lifecycle: "active",
+    template_name: "bazel-remote",
+    template_version: "0.1.0",
+    reserved_storage_gib: "3",
+    reserved_cpu_millis: "500",
+    reserved_memory_mib: "512",
     busy: false,
     expected_spec: structuredClone(instance.spec),
     operation_stamp: "stamp",
@@ -137,6 +142,7 @@ test(
         [instance, project, user],
       );
       let changed = false,
+        reservationChanged = false,
         fail = false,
         expired = false,
         calls = 0;
@@ -151,6 +157,11 @@ test(
           if (changed)
             await pool.query(
               "UPDATE instance_bindings SET lifecycle='detached' WHERE id=$1",
+              [instance],
+            );
+          if (reservationChanged)
+            await pool.query(
+              "UPDATE instance_bindings SET reserved_storage_gib=4 WHERE id=$1",
               [instance],
             );
           if (expired)
@@ -205,6 +216,16 @@ test(
         "detached",
         "failure never frees reservations or erases bindings",
       );
+      await due();
+      reservationChanged = true;
+      await inventory.tick();
+      reservationChanged = false;
+      assert.equal(
+        (await read()).state,
+        "InProgress",
+        "reservation edits invalidate in-flight snapshots",
+      );
+      assert.equal((await read()).error, "platform_changed_during_scan");
       const previous = await read();
       await due();
       expired = true;
@@ -214,7 +235,7 @@ test(
         previous,
         "stale worker cannot publish an observation",
       );
-      assert.equal(calls, 4);
+      assert.equal(calls, 5);
     } finally {
       await pool.end();
       await root.query(`DROP DATABASE "${database}"`);
@@ -222,3 +243,85 @@ test(
     }
   },
 );
+
+test("inventory compares immutable template bindings and actual resources against reservations", () => {
+  let { binding, resources } = fixture();
+  binding.expected_spec = null;
+  resources.instances[0].spec.templateRef.version = "9.0.0";
+  assert.equal(
+    compareInventory("project", [binding], resources).issues[0].code,
+    "TemplateIdentityConflict",
+  );
+  resources.instances[0].spec.templateRef.version = "0.1.0";
+  binding.template_version = null;
+  assert.equal(
+    compareInventory("project", [binding], resources).issues[0].code,
+    "TemplateVersionUnknown",
+  );
+  ({ binding, resources } = fixture());
+  binding.reserved_cpu_millis = "499";
+  assert.ok(
+    compareInventory("project", [binding], resources).issues.some(
+      (i) => i.code === "ResourceReservationInsufficient",
+    ),
+  );
+  binding.reserved_cpu_millis = "1000";
+  assert.equal(
+    compareInventory("project", [binding], resources).state,
+    "Healthy",
+    "larger historical reservations are not released or reported as insufficient",
+  );
+  resources.instances[0].spec.desiredState = "Suspended";
+  binding.expected_spec = structuredClone(resources.instances[0].spec);
+  binding.reserved_memory_mib = "511";
+  assert.ok(
+    compareInventory("project", [binding], resources).issues.some(
+      (i) => i.code === "ResourceReservationInsufficient",
+    ),
+    "suspension still reserves resume capacity",
+  );
+  binding.reserved_memory_mib = null;
+  assert.ok(
+    compareInventory("project", [binding], resources).issues.some(
+      (i) => i.code === "ResourceReservationUnknown",
+    ),
+  );
+  ({ binding, resources } = fixture());
+  resources.volumes[0].spec = { resources: { requests: { storage: "4Gi" } } };
+  assert.ok(
+    compareInventory("project", [binding], resources).issues.some(
+      (i) =>
+        i.code === "ResourceReservationInsufficient" &&
+        i.kind === "PersistentVolumeClaim",
+    ),
+  );
+  resources.instances = [];
+  binding.lifecycle = "detached";
+  binding.reserved_cpu_millis = binding.reserved_memory_mib = null;
+  binding.reserved_storage_gib = "4";
+  assert.equal(
+    compareInventory("project", [binding], resources).state,
+    "Healthy",
+    "detached storage does not reserve CPU or memory",
+  );
+  resources.volumes[0].status = {
+    phase: "Bound",
+    capacity: { storage: "5Gi" },
+  };
+  assert.equal(
+    compareInventory("project", [binding], resources).issues[0].code,
+    "ResourceReservationInsufficient",
+    "allocated volume capacity is checked too",
+  );
+  resources.volumes[0].status.capacity!.storage = "invalid";
+  const saved = structuredClone({ binding, resources });
+  assert.equal(
+    compareInventory("project", [binding], resources).issues[0].code,
+    "ResourceQuantityInvalid",
+  );
+  assert.deepEqual(
+    { binding, resources },
+    saved,
+    "observation never edits resources or reservation accounting",
+  );
+});

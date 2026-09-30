@@ -1,3 +1,4 @@
+import { quantityExceeds } from "./quantities.js";
 import type pg from "pg";
 import type { V1PersistentVolumeClaim } from "@kubernetes/client-node";
 import { randomUUID, createHash } from "node:crypto";
@@ -21,6 +22,11 @@ export type InventoryBinding = {
   resource_name: string;
   kubernetes_uid: string | null;
   lifecycle: string;
+  template_name: string;
+  template_version: string | null;
+  reserved_storage_gib: string | number | null;
+  reserved_cpu_millis: string | number | null;
+  reserved_memory_mib: string | number | null;
   busy: boolean;
   expected_spec: CacheObject["spec"] | null;
   operation_stamp: string | null;
@@ -65,10 +71,14 @@ export function compareInventory(
       busyInstances++;
       continue;
     }
+    const reported = new Set<string>();
     const issue = (
       code: string,
       kind: InventoryIssue["kind"] = "CacheInstance",
-    ) =>
+    ) => {
+      const key = `${kind}/${code}`;
+      if (reported.has(key)) return;
+      reported.add(key);
       add(
         code,
         kind,
@@ -76,7 +86,35 @@ export function compareInventory(
           (kind === "PersistentVolumeClaim" ? "-data" : ""),
         binding.id,
       );
+    };
     const terminal = ["deleted", "detached"].includes(binding.lifecycle);
+    const checkReservation = (
+      actual: (string | undefined)[],
+      reserved: string | number | null,
+      suffix: string,
+      kind: InventoryIssue["kind"],
+    ) => {
+      if (
+        reserved === null ||
+        (typeof reserved === "number" && !Number.isSafeInteger(reserved)) ||
+        !/^(0|[1-9][0-9]*)$/.test(String(reserved))
+      ) {
+        issue("ResourceReservationUnknown", kind);
+        return;
+      }
+      try {
+        const quantities = actual.filter((x): x is string => x !== undefined);
+        // Evaluate all values even if one exceeds the budget, so malformed
+        // observations are never hidden by short-circuiting.
+        const exceeded = quantities.map((value) =>
+          quantityExceeds(value, String(reserved) + suffix),
+        );
+        if (exceeded.some(Boolean))
+          issue("ResourceReservationInsufficient", kind);
+      } catch {
+        issue("ResourceQuantityInvalid", kind);
+      }
+    };
     if (instance) {
       const meta = instance.metadata;
       if (
@@ -95,10 +133,52 @@ export function compareInventory(
       else if (terminal) issue("UnexpectedInstance");
       else if (meta.deletionTimestamp) issue("UnexpectedInstanceDeletion");
       else if (
+        instance.spec.templateRef.name !== binding.template_name ||
+        (binding.template_version !== null &&
+          instance.spec.templateRef.version !== binding.template_version)
+      )
+        issue("TemplateIdentityConflict");
+      else if (binding.template_version === null)
+        issue("TemplateVersionUnknown");
+      else if (
         binding.expected_spec &&
         !isDeepStrictEqual(instance.spec, binding.expected_spec)
       )
         issue("ConfigurationDrift");
+      if (
+        !terminal &&
+        meta.uid === binding.kubernetes_uid &&
+        instance.spec.projectId === project &&
+        instance.spec.instanceId === binding.id &&
+        meta.labels?.[projectLabel] === project &&
+        meta.labels?.[instanceLabel] === binding.id &&
+        meta.labels?.["app.kubernetes.io/managed-by"] === "expbuild"
+      ) {
+        checkReservation(
+          [instance.spec.storage.capacity],
+          binding.reserved_storage_gib,
+          "Gi",
+          "CacheInstance",
+        );
+        checkReservation(
+          [
+            instance.spec.resources.requests.cpu,
+            instance.spec.resources.limits.cpu,
+          ],
+          binding.reserved_cpu_millis,
+          "m",
+          "CacheInstance",
+        );
+        checkReservation(
+          [
+            instance.spec.resources.requests.memory,
+            instance.spec.resources.limits.memory,
+          ],
+          binding.reserved_memory_mib,
+          "Mi",
+          "CacheInstance",
+        );
+      }
     } else if (!terminal)
       issue(
         binding.lifecycle === "active"
@@ -128,8 +208,19 @@ export function compareInventory(
         issue("ResidualVolume", "PersistentVolumeClaim");
       else if (meta?.deletionTimestamp)
         issue("VolumeDeletionInProgress", "PersistentVolumeClaim");
-      else if (volume.status?.phase !== "Bound")
-        issue("VolumeNotBound", "PersistentVolumeClaim");
+      else {
+        if (volume.status?.phase !== "Bound")
+          issue("VolumeNotBound", "PersistentVolumeClaim");
+        checkReservation(
+          [
+            volume.spec?.resources?.requests?.storage,
+            volume.status?.capacity?.storage,
+          ],
+          binding.reserved_storage_gib,
+          "Gi",
+          "PersistentVolumeClaim",
+        );
+      }
     } else if (
       binding.lifecycle === "active" ||
       binding.lifecycle === "detached"
@@ -163,7 +254,7 @@ export function compareInventory(
   };
 }
 
-const bindingSQL = `SELECT i.id,i.resource_name,i.kubernetes_uid,i.lifecycle,
+const bindingSQL = `SELECT i.id,i.resource_name,i.kubernetes_uid,i.lifecycle,i.template_name,i.template_version,i.reserved_storage_gib,i.reserved_cpu_millis,i.reserved_memory_mib,
   EXISTS(SELECT 1 FROM operations o WHERE o.instance_id=i.id AND o.state IN ('pending','applying','reconciling')) AS busy,
   last.request #> '{desired,spec}' AS expected_spec,
   (SELECT string_agg(o.id::text||':'||o.state||':'||o.updated_at::text,',' ORDER BY o.created_at,o.id) FROM operations o WHERE o.instance_id=i.id) AS operation_stamp
