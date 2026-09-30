@@ -1,9 +1,9 @@
 name: Isolated Kubernetes lifecycle
 on:
   push:
-    paths: ['operator/**', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
   pull_request:
-    paths: ['operator/**', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
 permissions:
   contents: read
 jobs:
@@ -37,3 +37,54 @@ jobs:
           cache-to: type=gha,mode=max,scope=operator
       - name: Verify Operator lifecycle on a disposable kind cluster
         run: python3 tools/cluster_lifecycle.py
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: operator/go.sum
+      - run: go install sigs.k8s.io/kind@v0.27.0
+      - name: Install matching kubectl
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/kubectl" https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl
+          curl -fsSLo "$RUNNER_TEMP/kubectl.sha256" https://dl.k8s.io/release/v1.32.2/bin/linux/amd64/kubectl.sha256
+          cd "$RUNNER_TEMP"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check
+          chmod +x kubectl
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/operator/Dockerfile
+          load: true
+          push: false
+          tags: expbuild/operator:test
+          cache-from: type=gha,scope=operator
+          cache-to: type=gha,mode=max,scope=operator
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/admin-api/Dockerfile
+          load: true
+          push: false
+          tags: expbuild/admin-api:test
+          cache-from: type=gha,scope=admin-api
+          cache-to: type=gha,mode=max,scope=admin-api
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/admin-web/Dockerfile
+          load: true
+          push: false
+          tags: expbuild/admin-web:test
+          cache-from: type=gha,scope=admin-web
+          cache-to: type=gha,mode=max,scope=admin-web
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+      - name: Verify Helm and management API on a disposable kind cluster
+        run: python3 tools/helm_lifecycle.py

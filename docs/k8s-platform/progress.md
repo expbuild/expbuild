@@ -99,3 +99,9 @@ OpenAPI 标准校验、全部已注册路由覆盖、引用解析、发布 JSON 
 
 测试 Docker 容器、临时数据库和网络在任务结束时清理，不发布镜像、不连接业务集群。
 WebDAV 使用 tmpfs，尚未验证 PVC、持久化重启及 CSI 权限；API 使用不执行实例操作的测试 kubeconfig。
+
+隔离 Kubernetes 生命周期验收（2026-09-30，提交 614f283）：
+
+[真实 kind 集群测试](https://github.com/expbuild/expbuild/actions/runs/36663333298)通过。Operator 以两副本运行，验证 WebDAV 的真实 PVC、Pod 重建后数据保留、暂停恢复、认证引用切换、选主接管、Retain 保留 PVC 和 Delete 删除 PVC。该流程直接创建 CR，尚不覆盖管理 API 或 Helm 安装。使用 kind 自带存储；不代表生产 CSI 或网络策略已认证。
+
+新增 `tools/helm_lifecycle.py` 与 CI Helm 任务：使用独立临时集群安装实际 Chart，通过管理 API 创建项目/实例、暂停恢复、密码轮换、升级与删除，再卸载控制面。安装迁移与 bootstrap 使用 Chart 原有钩子。关闭 Ingress，通过本地端口转发访问，因而不验证 TLS 或网络隔离。实际运行结果待 CI 确认。
