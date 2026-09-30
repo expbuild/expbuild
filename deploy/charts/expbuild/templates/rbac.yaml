@@ -1,0 +1,88 @@
+{{- $root := . -}}
+{{- range $component := list "api" "web" "operator" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $component }}
+automountServiceAccountToken: {{ ne $component "web" }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-{{ include "expbuild.name" . }}-operator
+rules:
+  - apiGroups: [cache.expbuild.io]
+    resources: [cacheinstances, cacheinstances/status, cacheinstances/finalizers]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [services, configmaps, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [pods, secrets]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-{{ include "expbuild.name" . }}-api
+rules:
+  - apiGroups: ['']
+    resources: [namespaces]
+    verbs: [get, create]
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [get, create, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, create]
+  - apiGroups: [cache.expbuild.io]
+    resources: [cacheinstances]
+    verbs: [get, create, update, delete]
+{{- range $component := list "api" "operator" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $root.Release.Namespace }}-{{ include "expbuild.name" $root }}-{{ $component }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "expbuild.name" $root }}-{{ $component }}
+    namespace: {{ $root.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $root.Release.Namespace }}-{{ include "expbuild.name" $root }}-{{ $component }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "expbuild.name" . }}-leader
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "expbuild.name" . }}-leader
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "expbuild.name" . }}-operator
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "expbuild.name" . }}-leader

@@ -1,0 +1,70 @@
+# Create expbuild-system first. Projects use separate managed namespaces.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: expbuild-operator
+  namespace: expbuild-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: expbuild-operator
+rules:
+  - apiGroups: [cache.expbuild.io]
+    resources: [cacheinstances]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [cache.expbuild.io]
+    resources: [cacheinstances/status, cacheinstances/finalizers]
+    verbs: [get, update, patch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [services, configmaps, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: ['']
+    resources: [pods, secrets]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [namespaces]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: expbuild-operator
+subjects:
+  - kind: ServiceAccount
+    name: expbuild-operator
+    namespace: expbuild-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: expbuild-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: expbuild-operator-leader
+  namespace: expbuild-system
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: expbuild-operator-leader
+  namespace: expbuild-system
+subjects:
+  - kind: ServiceAccount
+    name: expbuild-operator
+    namespace: expbuild-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: expbuild-operator-leader

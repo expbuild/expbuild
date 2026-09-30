@@ -1,0 +1,54 @@
+{{- $root := . -}}
+{{- range $job := list "migrations" "bootstrap" }}
+{{- if (index $root.Values $job).enabled }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $job }}
+  annotations:
+    helm.sh/hook: {{ if eq $job "migrations" }}pre-install,pre-upgrade{{ else }}post-install{{ end }}
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "expbuild.podSecurity" $root | nindent 8 }}
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: {{ $job }}
+          image: {{ $root.Values.images.api | quote }}
+          imagePullPolicy: {{ $root.Values.imagePullPolicy }}
+          command: [node, {{ if eq $job "migrations" }}apps/admin-api/dist/migrate.js{{ else }}apps/admin-api/dist/bootstrap.js{{ end }}]
+          securityContext:
+            {{- include "expbuild.containerSecurity" $root | nindent 12 }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default $root.Values.secrets.database $root.Values.secrets.migrationDatabase | quote }}
+                  key: DATABASE_URL
+          {{- if eq $job "bootstrap" }}
+          envFrom:
+            - secretRef:
+                name: {{ required "secrets.bootstrap is required when bootstrap.enabled" $root.Values.secrets.bootstrap | quote }}
+          {{- end }}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: '1', memory: 512Mi}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+{{- end }}
+{{- end }}

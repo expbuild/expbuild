@@ -1,0 +1,16 @@
+apiVersion: cache.expbuild.io/v1alpha1
+kind: CacheInstance
+metadata:
+  name: webdav-demo
+  namespace: expbuild-demo
+spec:
+  instanceId: webdav-demo
+  projectId: demo
+  templateRef: {name: webdav-apache, version: 0.1.0}
+  desiredState: Running
+  storage: {className: standard, capacity: 10Gi, deletionPolicy: Retain}
+  access: {exposure: ClusterInternal, credentialsSecretRef: webdav-demo-auth}
+  eviction: {enginePolicy: none, maxCacheGiB: 0}
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}

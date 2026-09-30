@@ -1,0 +1,41 @@
+# All platform images must be built and pushed before installation.
+images:
+  api: ''
+  web: ''
+  operator: ''
+  bazelRemote: '' # Required repository@sha256:digest; no mutable engine tags.
+  webdav: '' # Optional Apache WebDAV image; digest required when enabled.
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+appOrigin: '' # e.g. https://expbuild.example.com; must match ingress.host
+storageClass: ''
+secrets:
+  database: '' # Existing Secret key: DATABASE_URL
+  operationEncryption: '' # Existing Secret key: OPERATION_ENCRYPTION_KEY
+  migrationDatabase: '' # Optional separate DDL-capable DATABASE_URL Secret
+  bootstrap: '' # Existing ADMIN_EMAIL and ADMIN_PASSWORD Secret; needed only when bootstrap.enabled
+api:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: '1', memory: 512Mi}
+web:
+  replicas: 1
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 128Mi}
+operator:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
+migrations:
+  enabled: true
+bootstrap:
+  enabled: false
+ingress:
+  enabled: true
+  className: ''
+  host: ''
+  tlsSecret: ''
+  annotations: {}

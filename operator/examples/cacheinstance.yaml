@@ -1,0 +1,29 @@
+apiVersion: cache.expbuild.io/v1alpha1
+kind: CacheInstance
+metadata:
+  name: cache-demo
+  namespace: expbuild-demo
+spec:
+  instanceId: demo-001
+  projectId: demo
+  templateRef:
+    name: bazel-remote
+    version: "0.1.0"
+  desiredState: Running
+  storage:
+    className: standard
+    capacity: 10Gi
+    deletionPolicy: Retain
+  access:
+    exposure: ClusterInternal
+    credentialsSecretRef: cache-demo-auth
+  eviction:
+    maxCacheGiB: 8
+    enginePolicy: lru
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi

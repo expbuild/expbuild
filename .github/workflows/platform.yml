@@ -1,0 +1,42 @@
+name: Kubernetes platform
+on:
+  push:
+    paths: ['operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', '.github/workflows/platform.yml']
+  pull_request:
+    paths: ['operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', '.github/workflows/platform.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+      - run: helm lint ../deploy/charts/expbuild -f ../deploy/charts/expbuild/ci-values.yaml --strict
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: operator/go.sum
+      - run: make check test
+      - run: go test -race ./...
+      - run: go build ./cmd/render
+      - run: make build
+      - name: Verify actual cache engine protocol contract
+        run: |
+          python3 ../tools/download_bazel_remote.py "$RUNNER_TEMP/bazel-remote"
+          BAZEL_REMOTE_BIN="$RUNNER_TEMP/bazel-remote" go test ./internal/controller -run TestRealBazelRemoteContract -count=1
+      - name: Verify actual Apache WebDAV contract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apache2-bin
+          APACHE_BIN=/usr/sbin/apache2 APACHE_MODULES=/usr/lib/apache2/modules go test ./internal/webdav -run TestApacheWebDAVContract -count=1
+      - name: Install API server test assets
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20250517180713-32e5e9e948a5
+          echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.32.0 -p path)" >> "$GITHUB_ENV"
+      - run: HELM_BIN="$(command -v helm)" go test ./internal/controller -run TestAPIServerContract -count=1
