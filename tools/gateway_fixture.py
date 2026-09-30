@@ -129,6 +129,42 @@ class GatewayFixture:
                 stream.seek(max(0, path.stat().st_size - 8192))
                 print(stream.read().decode('utf8', errors='replace'), flush=True)
 
+    def diagnose_proxy(self):
+        # Access logs can contain client headers and paths. Emit only transport
+        # fields, never raw lines, request headers, query strings or credentials.
+        fields = ('start_time', 'protocol', 'response_code', 'response_flags',
+                  'response_code_details', 'connection_termination_details',
+                  'upstream_transport_failure_reason', 'duration',
+                  'bytes_received', 'bytes_sent')
+        try:
+            pods = json.loads(self.kubectl('-n', 'edge', 'get', 'pods', '-l',
+                'gateway.envoyproxy.io/owning-gateway-name=caches', '-o', 'json'))['items']
+            for pod in pods[:4]:
+                name = pod['metadata']['name']
+                statuses = [{key: status.get(key) for key in ('name', 'ready', 'restartCount')}
+                            for status in pod.get('status', {}).get('containerStatuses', [])]
+                print('Gateway proxy status:', json.dumps({'name': name,
+                    'phase': pod.get('status', {}).get('phase'), 'containers': statuses}), flush=True)
+                logs = self.kubectl('-n', 'edge', 'logs', name, '-c', 'envoy', '--tail=100', '--timestamps=false')
+                ignored = 0
+                for line in logs.splitlines():
+                    try:
+                        event = json.loads(line)
+                    except (ValueError, TypeError):
+                        ignored += 1
+                        continue
+                    if not isinstance(event, dict):
+                        ignored += 1
+                        continue
+                    summary = {key: event[key] for key in fields if key in event and
+                               isinstance(event[key], (str, int, float, bool, type(None)))}
+                    if summary:
+                        print('Gateway transport outcome:', json.dumps(summary), flush=True)
+                print('Gateway non-JSON diagnostic lines omitted:', ignored, flush=True)
+        except Exception as error:
+            # Diagnostic failure must not replace the original test failure.
+            print('Gateway proxy diagnostics unavailable:', type(error).__name__, flush=True)
+
     def close(self):
         if self.process:
             self.process.terminate()

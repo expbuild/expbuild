@@ -1,5 +1,8 @@
 """Read-only fixture transport recovery must not weaken TLS or HTTP assertions."""
 import http.client
+import io
+import json
+from contextlib import redirect_stdout
 import ssl
 import unittest
 from unittest.mock import Mock, patch
@@ -48,6 +51,28 @@ class RecoveryTest(unittest.TestCase):
         result, calls, _ = self.probe([])
         self.assertEqual(result[0], 401)
         self.assertEqual(len(calls), 1)
+
+class ProxyDiagnosticsTest(unittest.TestCase):
+    def test_only_transport_fields_are_printed(self):
+        fixture = GatewayFixture(Mock(), None, '/tmp', 'unused', 'unused')
+        fixture.kubectl.side_effect = [json.dumps({'items': [{'metadata': {'name': 'proxy'}, 'status': {'phase': 'Running', 'containerStatuses': [{'name': 'envoy', 'ready': True, 'restartCount': 0, 'secret': 'not-for-output'}]}}]}),
+            json.dumps({'response_code': 0, 'response_flags': 'DPE', 'response_code_details': 'http1.codec_error', 'authorization': 'private-token', 'path': '/private-path', 'protocol': 'HTTP/1.1'}) + '\nraw-private-token\n[]']
+        output = io.StringIO()
+        with redirect_stdout(output): fixture.diagnose_proxy()
+        text = output.getvalue()
+        self.assertIn('http1.codec_error', text)
+        self.assertIn('DPE', text)
+        self.assertIn('restartCount', text)
+        for secret in ('private-token', 'private-path', 'not-for-output'):
+            self.assertNotIn(secret, text)
+        self.assertIn('--tail=100', fixture.kubectl.call_args.args)
+
+    def test_diagnostic_failure_does_not_replace_original_failure(self):
+        fixture = GatewayFixture(Mock(side_effect=RuntimeError('private-error-context')), None, '/tmp', 'unused', 'unused')
+        output = io.StringIO()
+        with redirect_stdout(output): fixture.diagnose_proxy()
+        self.assertIn('RuntimeError', output.getvalue())
+        self.assertNotIn('private-error-context', output.getvalue())
 
 if __name__ == '__main__':
     unittest.main()

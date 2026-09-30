@@ -286,6 +286,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     except Exception: pass
             if gateway:
                 gateway.diagnose_transport()
+                gateway.diagnose_proxy()
                 for args in [('get', 'gateway,httproute,grpcroute', '-A', '-o', 'yaml'), ('-n', 'edge', 'logs', 'deployment/envoy-gateway', '--tail=80')]:
                     try: print(kubectl(*args), flush=True)
                     except Exception: pass
