@@ -10,6 +10,8 @@ import socket
 import sys
 from urllib.parse import urlparse
 from gateway_fixture import GatewayFixture
+from monitoring_fixture import MonitoringFixture
+from datetime import datetime, timezone
 import subprocess
 import tempfile
 import uuid
@@ -24,6 +26,7 @@ def main(gateway_enabled=False):
     with tempfile.TemporaryDirectory(prefix=name) as directory:
         config = str(pathlib.Path(directory) / 'kubeconfig')
         gateway = None
+        monitoring = None
         def kubectl(*args, data=None):
             return run('kubectl', '--kubeconfig', config, '--context', 'kind-' + name, *args, data=data)
         def apply(obj):
@@ -57,11 +60,14 @@ def main(gateway_enabled=False):
             if gateway_enabled:
                 gateway = GatewayFixture(kubectl, apply, directory, config, 'kind-' + name)
                 gateway.install()
+                monitoring = MonitoringFixture(kubectl, apply, config, 'kind-' + name)
+                monitoring.install()
             values = pathlib.Path(directory) / 'values.json'
             values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512', 'webdav': APACHE}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
             if gateway:
                 settings = json.loads(values.read_text())
                 settings['gateway'] = gateway.values
+                settings['monitoring'] = monitoring.values
                 values.write_text(json.dumps(settings))
             helm('install', 'test', 'deploy/charts/expbuild', '-f', str(values), '--wait', '--timeout', '8m')
             print('Helm install, migration, bootstrap and workload readiness passed', flush=True)
@@ -182,20 +188,35 @@ def main(gateway_enabled=False):
                     assert api(reapi_path + '/statistics')['capacityBytes'] == 2 * 1024**3
                     assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[:2] == (200, artifact)
                     print('Cache budget update applied to running engine and preserved data', flush=True)
+                    def traffic(credentials):
+                        assert gateway.request(http_host, cas_path, headers=basic(credentials))[:2] == (200, artifact)
+                    assert gateway.request(http_host, '/metrics')[0] == 401
+                    assert gateway.request(http_host, '/metrics', headers=basic(reapi['credentials']))[0] == 200
+                    metric_uid = monitoring.verify(api, reapi_path, lambda: traffic(reapi['credentials']))
                     changed = submit(reapi_path + '/credentials/rotate', revision=api(reapi_path)['revision'])
                     complete(changed)
+                    rotation_finished = datetime.now(timezone.utc)
                     grpc_contract(changed['credentials'], 'read', reapi['credentials']['password'])
                     assert gateway.request(http_host, cas_path, headers=basic(reapi['credentials']))[0] == 401
                     assert gateway.request(http_host, cas_path, headers=basic(changed['credentials']))[:2] == (200, artifact)
+                    assert gateway.request(http_host, '/metrics', headers=basic(reapi['credentials']))[0] == 401
+                    assert gateway.request(http_host, '/metrics', headers=basic(changed['credentials']))[0] == 200
+                    monitoring.verify(api, reapi_path, lambda: traffic(changed['credentials']), after=rotation_finished)
                     complete(submit(reapi_path, 'DELETE'))
                     assert kubectl('-n', ns, 'get', 'httproute,grpcroute', '-l', 'cache.expbuild.io/instance-id=' + reapi_id, '-o', 'name') == ''
-                    print('REAPI and Bazel HTTP TLS, streaming, persistent credential rotation and route cleanup passed', flush=True)
+                    assert kubectl('-n', ns, 'get', 'servicemonitor', 'c-' + reapi_id + '-metrics', '--ignore-not-found', '-o', 'name') == ''
+                    monitoring.removed(metric_uid)
+                    print('REAPI TLS and automatic metrics collection, credential rotation and cleanup passed', flush=True)
             helm('uninstall', 'test', '--wait', '--timeout', '3m')
             assert kubectl('-n', namespace, 'get', 'deployment', '-l', 'app.kubernetes.io/instance=test', '-o', 'name') == ''
             # CRDs and external database/secrets are intentionally not owned by the release.
             assert kubectl('get', 'crd', 'cacheinstances.cache.expbuild.io', '-o', 'name')
             print('Helm uninstall passed; isolated control-plane E2E passed', flush=True)
         except BaseException:
+            if monitoring:
+                for args in [('-n', 'default', 'logs', 'deployment/prometheus-operator', '--tail=60'), ('-n', 'monitoring', 'get', 'prometheus,pods', '-o', 'wide'), ('get', 'servicemonitors', '-A', '-o', 'yaml')]:
+                    try: print(kubectl(*args), flush=True)
+                    except Exception: pass
             if gateway:
                 for args in [('get', 'gateway,httproute,grpcroute', '-A', '-o', 'yaml'), ('-n', 'edge', 'logs', 'deployment/envoy-gateway', '--tail=80')]:
                     try: print(kubectl(*args), flush=True)
@@ -205,6 +226,7 @@ def main(gateway_enabled=False):
                 except Exception: pass
             raise
         finally:
+            if monitoring: monitoring.close()
             if gateway: gateway.close()
             subprocess.run(['kind', 'delete', 'cluster', '--name', name, '--kubeconfig', config], timeout=180, check=False)
 

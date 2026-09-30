@@ -1,9 +1,9 @@
 name: Isolated Kubernetes lifecycle
 on:
   push:
-    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/monitoring_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
   pull_request:
-    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
+    paths: ['operator/**', 'apps/**', 'images/**', 'package*.json', '.dockerignore', 'deploy/charts/**', 'tools/helm_lifecycle.py', 'tools/gateway_fixture.py', 'tools/monitoring_fixture.py', 'tools/cluster_lifecycle.py', 'tools/container_smoke.py', '.github/workflows/cluster.yml']
 permissions:
   contents: read
 jobs:

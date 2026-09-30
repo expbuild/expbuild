@@ -159,3 +159,5 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 真实 Prometheus 合约已通过[远程 Management API CI](https://github.com/expbuild/expbuild/actions/runs/36671435062)（提交 b64d88c）。新增可选 ServiceMonitor 自动化：实例凭据引用同步、固定归属标签、headless 去重、采集网络入口、独立 MonitoringConfigured 状态和关闭/暂停/删除清理。官方 ServiceMonitor v0.94.1 CRD 的隔离 API Server 测试已验证幂等、轮换、归属冲突与关闭清理；缓存就绪不被监控 API 故障阻断的回归通过。真实 Prometheus Operator 与缓存引擎、网络策略执行以及轮换期间采集恢复仍待验证。
 
 ServiceMonitor 补充验证：暂停/恢复、实例删除后的采集对象清理和无变化时 CR 状态/ServiceMonitor 均不重复写入已通过真实 API Server 测试。Helm 启用配置 lint、隔离权限验证与 Go 回归通过；可选监控使用周期调谐，ServiceMonitor 权限限定 get/create/patch/delete。此前历史统计提交 e80621a 和真实 Prometheus 提交 b64d88c 的隔离集群回归也均已通过，均未启用新 ServiceMonitor 功能。
+
+ServiceMonitor 提交 89d3332 的本地 race 与[远程 Kubernetes 回归](https://github.com/expbuild/expbuild/actions/runs/36672451980)通过。新增真实集群监控 fixture，固定官方 Prometheus Operator 部署包与三个镜像摘要，在已有 Gateway 场景中接入实际 bazel-remote 指标、认证轮换、管理历史 API、采集目标去重及删除撤销；完整链路结果等待 CI。

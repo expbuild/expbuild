@@ -72,3 +72,7 @@ expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTT
 暂停、删除或关闭集成会清理精确归属的采集对象与网络策略，使用 UID/resourceVersion 删除前置条件；不接管其他 owner 的同名对象。清理标记在资源写入前添加，关闭功能后仍保留清理权限。Operator 只新增 ServiceMonitor get/create/patch/delete 权限，不获得 Prometheus 创建权限，管理 API 无 ServiceMonitor 写权限。
 
 关闭集成后等待清理完成，再卸载 CRD 或撤销清理权限。监控 API 缺失时无法确认清理，实例删除可能保留 finalizer；不要直接移除标记掩盖未完成的资源清理。当前自动采集仅针对 bazel-remote，WebDAV 尚无相应指标适配。
+
+## 隔离集群采集验收
+
+Gateway 集群任务新增固定 Prometheus Operator v0.94.1 部署包 SHA256，以及 Operator、config-reloader 和 Prometheus v3.15.0 镜像摘要。只在脚本创建的临时 kind/context 中安装，使用临时监控数据，不修改现有集群。脚本要求一个实例仅有一个活跃目标，指标端点匿名/旧凭据被拒绝，管理 API 历史包含当前项目/UID 的真实 CAS 读取速率；轮换后必须出现新的成功采样和新的历史时间点，删除后目标移除。该新增完整链路尚待远程 CI 验证，不能以既有 CRD 或受控 exporter 测试代替。
