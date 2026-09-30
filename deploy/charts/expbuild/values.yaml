@@ -50,3 +50,7 @@ gateway:
   baseDomain: ''
   controllerName: ''
   dataPlaneNamespace: '' # Gateway Pods must have cache.expbuild.io/gateway=true
+
+# Optional external Prometheus; collectors must label samples with project/CR UID.
+monitoring:
+  prometheusURL: ''

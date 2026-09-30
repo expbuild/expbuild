@@ -75,7 +75,8 @@ test('instance queue recovers a lost create response, serializes updates and ret
   const pool = createPool(url.toString()), kube = new Cluster(), key = randomBytes(32);
   const origin = 'http://localhost:5173';
   let statisticsCalls=0;
-  const app = await buildApp(pool, { origin, secureCookies: false, kube, encryptionKey: key, storageClass: 'test',statistics:{readStatistics:async()=>{statisticsCalls++;return {source:'bazel-remote-status',observedAt:new Date().toISOString(),usedBytes:1024,capacityBytes:8589934592,itemCount:2,reservedBytes:null,uncompressedBytes:null};}} });
+  const historyTargets: {projectId: string; instanceUID: string}[] = [];
+  const app = await buildApp(pool, { origin, secureCookies: false, kube, encryptionKey: key, storageClass: 'test',history:{read:async(target,window)=>{historyTargets.push(target);return {source:'prometheus',metric:'cache-lookups',window,start:0,end:1,stepSeconds:60,rateWindowSeconds:300,series:[]};}},statistics:{readStatistics:async()=>{statisticsCalls++;return {source:'bazel-remote-status',observedAt:new Date().toISOString(),usedBytes:1024,capacityBytes:8589934592,itemCount:2,reservedBytes:null,uncompressedBytes:null};}} });
   const worker = new OperationWorker(pool, kube, key);
   const tick = async () => {
     await pool.query("UPDATE operations SET next_attempt_at=now()-interval '1 second'");
@@ -130,6 +131,12 @@ test('instance queue recovers a lost create response, serializes updates and ret
     assert.equal(safeOperation.json().secret_payload, undefined); assert.equal(safeOperation.json().request, undefined);
     kube.ready(); await tick();
     assert.equal((await pool.query('SELECT secret_payload FROM operations WHERE id=$1', [operation.id])).rows[0].secret_payload, null);
+    const historyPath = `${path}/${instanceId}/statistics/history`;
+    assert.equal((await app.inject({url:historyPath,headers})).statusCode,200);
+    const recordedUID = (await pool.query('SELECT kubernetes_uid FROM instance_bindings WHERE id=$1',[instanceId])).rows[0].kubernetes_uid;
+    assert.deepEqual(historyTargets.at(-1),{projectId,instanceUID:recordedUID});
+    assert.equal((await app.inject({url:historyPath+'?query=up',headers})).statusCode,400);
+    assert.equal((await app.inject({url:historyPath+'?window=30d',headers})).statusCode,400);
     const beforeRotation=await app.inject({url:`${path}/${instanceId}`,headers});
     const oldSecret=[...kube.secrets.keys()][0]!;
     const rotationHeaders={...headers,'idempotency-key':'rotate-credentials-1','if-match':beforeRotation.headers.etag as string};
@@ -204,6 +211,11 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const viewerLogin = await app.inject({ method: 'POST', url: '/v1/auth/login', headers: { origin }, payload: { email: 'volume-viewer@test.local', password } });
     const viewerHeaders = { origin, cookie: `expbuild_session=${viewerLogin.cookies[0]!.value}`, 'x-csrf-token': viewerLogin.json().csrfToken, 'if-match': volumeUid, 'idempotency-key': 'viewer-volume-delete' };
     assert.equal((await app.inject({ url: volumePath, headers: viewerHeaders })).statusCode, 200);
+    assert.equal((await app.inject({url:historyPath,headers:viewerHeaders})).statusCode,200,'detached instances retain authorized UID-scoped history');
+    const beforeDenied = historyTargets.length;
+    assert.equal((await app.inject({url:`/v1/projects/${randomUUID()}/instances/${instanceId}/statistics/history`,headers:viewerHeaders})).statusCode,404);
+    assert.equal(historyTargets.length,beforeDenied,'unauthorized requests must not query metrics');
+
     assert.equal((await app.inject({ method: 'DELETE', url: volumePath, headers: viewerHeaders })).statusCode, 403);
     assert.equal((await app.inject({ url: `/v1/projects/${randomUUID()}/instances/${instanceId}/retained-volume`, headers: viewerHeaders })).statusCode, 404);
     const removeVolume = (key: string, uid = volumeUid) => app.inject({ method: 'DELETE', url: volumePath, headers: { ...headers, 'idempotency-key': key, 'if-match': uid } });

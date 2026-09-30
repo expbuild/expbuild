@@ -149,3 +149,7 @@ Gateway 适配回归（2026-09-30，提交 5edc651）：
 下一阶段仍需真实 CNI 流量隔离、Bazel 构建客户端与 ActionCache、独立指标及历史趋势、WebDAV 淘汰适配、配额和模板扩展、资源对账与浏览器端到端验证。整体重构目标继续进行中。
 
 策略生效状态：新增 `PolicyApplied`，当前工作负载和认证引擎容量验证通过后才标为 True；未就绪或探测失败撤回为 Unknown，WebDAV 明确 NotSupported。管理端核对 observedGeneration 与当前 revision，拒绝显示旧版本策略为已生效；表单解释 LRU、重启生效和 WebDAV 无自动清理。模板目录发布 policyApplyMode/policyCondition。Go 与隔离 API Server 回归、API 17 项和 UI 24 项通过。新增真实集群测试将 REAPI 缓存预算从 1 GiB 改为 2 GiB，核对运行容量、状态版本和数据保留；该新增链路等待远程 CI，不提前声称已通过。
+
+策略状态真实集群验收：提交 94be03a 的[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36670160457)三个任务全部成功。Gateway 日志确认容量预算从 1 GiB 调整到 2 GiB 后，PolicyApplied 版本匹配、实际引擎容量更新且数据保留。
+
+独立历史统计第一阶段：新增可选 Prometheus 查询适配、按项目/原 CR UID 授权的历史 API 与按需查看界面；区分 AC/CAS、get/contains、hit/miss，缺失数据不转成零。支持已删除实例的授权历史查询。自动采集部署和真实 Prometheus 联调尚未完成，部署与验证边界见 [监控说明](monitoring.md)。

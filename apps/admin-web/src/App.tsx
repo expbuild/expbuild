@@ -1,3 +1,4 @@
+import { LookupHistory } from "./LookupHistory";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   api,
@@ -959,6 +960,7 @@ function InstanceDetail({
           </div>
         </>
       )}
+      {(detail?.template ?? detail?.spec?.templateRef.name) === "bazel-remote" && <LookupHistory path={`${base}/instances/${id}`} />}
       {editing && detail && (
         <InstanceForm
           key={detail.id}

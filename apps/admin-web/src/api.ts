@@ -97,6 +97,7 @@ export type Detail = {
   name: string;
   lifecycle: string;
   revision: string | null;
+  template?: TemplateName;
   spec: null | {
     templateRef: { name: TemplateName; version: string };
     access?: { exposure: "ClusterInternal" | "Gateway" };

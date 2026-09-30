@@ -119,6 +119,7 @@ const schemas: Record<string, Schema> = {
     created_at: { type: "string", format: "date-time" },
   }),
   InstanceDetail: object({
+    template: {type: "string", enum: ["bazel-remote", "webdav-apache"]},
     id: uuid,
     name: string,
     lifecycle: string,
@@ -155,6 +156,7 @@ type Options = {
   revisionDescription?: string;
   description?: string;
   headers?: Record<string, unknown>;
+  query?: Record<string, unknown>[];
 };
 const paths: Record<string, Record<string, unknown>> = {};
 function route(
@@ -172,6 +174,7 @@ function route(
     required: true,
     schema: uuid,
   }));
+  parameters.push(...(options.query ?? []));
   if (method !== "get") {
     parameters.push({
       name: "Origin",
@@ -550,6 +553,22 @@ route(
     response: ref("Statistics"),
     description:
       "Current engine snapshot, not PVC usage. Suspended instances and templates without statistics support return 409. Collection failures return 503 rather than zero values.",
+  },
+);
+route(
+  "get", base + "/{instanceId}/statistics/history", "statisticsHistory",
+  "Project member: AC/CAS lookup history",
+  {
+    query: [{name: "window", in: "query", required: false, schema: {type: "string", enum: ["1h", "6h", "24h"], default: "1h"}}],
+    response: object({
+      source: {const: "prometheus"}, metric: {const: "cache-lookups"}, window: {type: "string", enum: ["1h", "6h", "24h"]},
+      start: {type: "number"}, end: {type: "number"}, stepSeconds: {type: "integer"}, rateWindowSeconds: {const: 300},
+      series: {type: "array", maxItems: 8, items: object({
+        kind: {type: "string", enum: ["ac", "cas"]}, method: {type: "string", enum: ["get", "contains"]}, outcome: {type: "string", enum: ["hit", "miss"]},
+        points: {type: "array", maxItems: 300, items: {type: "array", prefixItems: [{type: "number"}, {type: ["number", "null"], minimum: 0}], minItems: 2, maxItems: 2}},
+      })},
+    }),
+    description: "Optional Prometheus integration. Query window is 1h (default), 6h or 24h; arbitrary queries are rejected. Returns five-minute per-second lookup rates separated by kind, get/contains and hit/miss. Empty series means no data. Nonfinite samples are null. Uses the recorded immutable CR UID, including after deletion; membership is always required. This is not a build hit ratio.",
   },
 );
 route(

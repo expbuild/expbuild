@@ -54,6 +54,7 @@ spec:
           {{- if eq $component "api" }}
           env:
             - {name: HOST, value: "0.0.0.0"}
+            - {name: PROMETHEUS_URL, value: {{ $root.Values.monitoring.prometheusURL | quote }}}
             - {name: GATEWAY_ENABLED, value: {{ $root.Values.gateway.enabled | quote }}}
             - {name: APP_ORIGIN, value: {{ $root.Values.appOrigin | quote }}}
             - {name: WEBDAV_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.webdav)) | quote }}}

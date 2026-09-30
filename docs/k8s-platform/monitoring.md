@@ -1,0 +1,40 @@
+# 查询历史（Prometheus 接入）
+
+管理 API 和界面支持可选的 Prometheus 历史查询。当前实现查询适配与权限控制，**尚未自动部署 Prometheus、生成采集对象或同步采集凭据轮换**；部署方需要已有的受信任采集系统。无配置时返回 503，采集无数据时返回空序列，不伪造零值。
+
+## 配置与指标契约
+
+Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。当前不支持上游查询认证配置，应连接企业内部受控查询入口。
+
+采集对象是 bazel-remote 的 `/metrics`，使用实例当前有效的 Basic 凭据。请求需要满足已有网络策略；本阶段不自动开放监控 namespace 的访问。
+
+每条样本必须由采集系统附加可信标签：
+
+| 指标标签 | 来源 |
+| --- | --- |
+| `expbuild_project_id` | CacheInstance 的不可变项目 ID / Pod 的 `cache.expbuild.io/project-id` |
+| `expbuild_instance_uid` | Kubernetes 分配的 CR UID / Pod 的 `cache.expbuild.io/instance-uid` |
+
+不能只使用实例名或 namespace 代替 UID，否则删除重建会混入旧数据。多集群共用监控时也需保证这些 UID 标识的归属可信。避免同一目标被重复采集后相加；配置重标签时不能允许引擎自身标签覆盖上述归属标签。
+
+本次映射锁定 bazel-remote v2.6.2 的 `bazel_remote_incoming_requests_total`，来源见官方 [计数器定义](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/options.go)和[计数行为](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/metrics.go)：
+
+- `kind=ac|cas` 分别表示动作缓存与内容缓存。
+- `method=get` 表示读取；`contains` 表示存在性检查，FindMissing 按 digest 数量计数。
+- `status=hit|miss` 表示引擎实际查询结果。错误不会自动算作未命中。
+
+平台使用五分钟 `rate`，按上述三个标签分别聚合，每秒查询次数与构建命中率不同。暂不合并读取与存在性检查，也不把 HTTP/gRPC 成功状态解释为缓存命中。
+
+## 管理 API
+
+`GET /v1/projects/{projectId}/instances/{instanceId}/statistics/history?window=1h`
+
+支持 `1h`、`6h`、`24h`，对应步长 60、120、300 秒；结束时间对齐步长。服务端从授权后的数据库绑定读取原 CR UID，调用者不能提交 PromQL 或标签选择器。项目成员可读取，历史实例删除后仍按原 UID 查询；当前保留多久取决于外部 Prometheus 的配置。
+
+返回 `series`，每条包含 kind、method、outcome 和 `[Unix秒, 每秒次数或null]` 点列。非有限值转为 null，空序列表示无有效数据。上游警告、错误、过大响应、重复序列或异常时间戳被拒绝；请求限时 5 秒，响应最多 1 MiB、8 条序列、每条最多 300 点。接口不返回上游查询文本或地址。
+
+界面按需加载，不持续轮询历史查询。可选时间范围、缓存类型和查询类型；监控失败时显示不可用，缺失样本显示空缺。实时容量仍从引擎状态接口采集，与历史查询独立。
+
+## 验证范围与后续工作
+
+单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。真实 Prometheus 采集/查询、实例采集自动化、网络入口、凭据轮换和长期负载尚待验收。资源指标、延迟、流量和 WebDAV 指标仍未接入。

@@ -17,6 +17,7 @@ import {
 } from "./instance-contract.js";
 import type { KubernetesPort } from "./kubernetes.js";
 import type { InstanceStatistics } from './statistics.js';
+import { historyWindow, type HistoryReader } from './history.js';
 
 type Actor = { id: string; platform_admin: boolean };
 type Auth = {
@@ -33,6 +34,7 @@ export type InstanceOptions = {
   storageClass?: string;
   webdavEnabled?: boolean;
   gatewayEnabled?: boolean;
+  history?: HistoryReader;
   statistics?: {readStatistics(object: CacheObject): Promise<InstanceStatistics>};
 };
 const ids = z.object({
@@ -49,6 +51,18 @@ export async function registerInstanceRoutes(
   options: InstanceOptions,
   auth: Auth,
 ) {
+  app.get('/v1/projects/:projectId/instances/:instanceId/statistics/history', async (request, reply) => {
+    const {projectId, instanceId} = ids.parse(request.params);
+    await auth.projectAccess(request, projectId, ['admin', 'maintainer', 'viewer']);
+    const {window} = z.object({window: historyWindow.default('1h')}).strict().parse(request.query);
+    const b = await binding(projectId, instanceId);
+    reply.header('Cache-Control', 'no-store');
+    if (!b.kubernetes_uid) throw new HttpError(409, 'Instance identity has not been established');
+    if (b.template_name !== 'bazel-remote') throw new HttpError(409, 'This template does not support lookup history');
+    if (!options.history) throw new HttpError(503, 'Prometheus history is not configured');
+    try { return await options.history.read({projectId, instanceUID: b.kubernetes_uid}, window); }
+    catch { throw new HttpError(503, 'Lookup history is temporarily unavailable'); }
+  });
   app.get('/v1/projects/:projectId/instances/:instanceId/statistics',async(request,reply)=>{
     const {projectId,instanceId}=ids.parse(request.params);
     await auth.projectAccess(request,projectId,['admin','maintainer','viewer']);
@@ -196,6 +210,7 @@ export async function registerInstanceRoutes(
       return {
         id: b.id,
         name: b.display_name,
+        template: b.template_name,
         lifecycle: b.lifecycle,
         revision: c ? revision(c) : null,
         spec: c?.spec ?? null,

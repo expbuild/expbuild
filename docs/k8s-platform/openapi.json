@@ -4185,6 +4185,239 @@
         }
       }
     },
+    "/v1/projects/{projectId}/instances/{instanceId}/statistics/history": {
+      "get": {
+        "operationId": "statisticsHistory",
+        "summary": "Project member: AC/CAS lookup history",
+        "description": "Optional Prometheus integration. Query window is 1h (default), 6h or 24h; arbitrary queries are rejected. Returns five-minute per-second lookup rates separated by kind, get/contains and hit/miss. Empty series means no data. Nonfinite samples are null. Uses the recorded immutable CR UID, including after deletion; membership is always required. This is not a build hit ratio.",
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "instanceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1h",
+                "6h",
+                "24h"
+              ],
+              "default": "1h"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "const": "prometheus"
+                    },
+                    "metric": {
+                      "const": "cache-lookups"
+                    },
+                    "window": {
+                      "type": "string",
+                      "enum": [
+                        "1h",
+                        "6h",
+                        "24h"
+                      ]
+                    },
+                    "start": {
+                      "type": "number"
+                    },
+                    "end": {
+                      "type": "number"
+                    },
+                    "stepSeconds": {
+                      "type": "integer"
+                    },
+                    "rateWindowSeconds": {
+                      "const": 300
+                    },
+                    "series": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "ac",
+                              "cas"
+                            ]
+                          },
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "get",
+                              "contains"
+                            ]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "hit",
+                              "miss"
+                            ]
+                          },
+                          "points": {
+                            "type": "array",
+                            "maxItems": 300,
+                            "items": {
+                              "type": "array",
+                              "prefixItems": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": [
+                                    "number",
+                                    "null"
+                                  ],
+                                  "minimum": 0
+                                }
+                              ],
+                              "minItems": 2,
+                              "maxItems": 2
+                            }
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "method",
+                          "outcome",
+                          "points"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "source",
+                    "metric",
+                    "window",
+                    "start",
+                    "end",
+                    "stepSeconds",
+                    "rateWindowSeconds",
+                    "series"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required or invalid credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission, Origin or CSRF denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found, including inaccessible projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict, stale version, active operation or invariant violation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Login rate limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Kubernetes or engine temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/projects/{projectId}/operations": {
       "get": {
         "operationId": "listOperations",
@@ -5091,6 +5324,13 @@
       "InstanceDetail": {
         "type": "object",
         "properties": {
+          "template": {
+            "type": "string",
+            "enum": [
+              "bazel-remote",
+              "webdav-apache"
+            ]
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -5139,6 +5379,7 @@
           }
         },
         "required": [
+          "template",
           "id",
           "name",
           "lifecycle",
