@@ -99,7 +99,7 @@ jobs:
           cache-from: type=gha,scope=admin-web
           cache-to: type=gha,mode=max,scope=admin-web
       - uses: docker/build-push-action@v6
-        if: matrix.mode == 'internal'
+        if: matrix.mode != 'isolation'
         with:
           context: .
           file: images/gradle-cache/Dockerfile

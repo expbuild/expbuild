@@ -61,7 +61,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 network.install()
             run('kind', 'load', 'docker-image', 'expbuild/operator:test', 'expbuild/admin-api:test', 'expbuild/admin-web:test', '--name', name)
             gradle_image = ''
-            if not gateway_enabled:
+            if not isolation_enabled:
                 run('kind', 'load', 'docker-image', 'expbuild/gradle-cache:test', '--name', name)
                 gradle_image = pin_loaded_image(name, 'expbuild/gradle-cache:test')
             apply({'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': namespace, 'labels': {'cache.expbuild.io/control-plane': 'true'}}})
@@ -264,7 +264,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 assert api(quota_path)['reserved'] == {'instances': 0, 'storageGiB': 0, 'cpuMillis': 0, 'memoryMiB': 0}
                 print('Project quotas rejected excess admission and released reservations after confirmed cleanup', flush=True)
                 print('Retained PVC reclaim preserved data and explicit cleanup passed', flush=True)
-                if not gateway:
+                if not network:
                     gradle_spec = {**spec, 'template': 'gradle-http', 'name': 'Gradle via API', 'storageGiB': 2, 'cacheGiB': 1, 'cpuMillis': 200, 'memoryMiB': 256}
                     gradle = submit(f'/projects/{pid}/instances', data=gradle_spec)
                     complete(gradle)
@@ -273,9 +273,17 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     gradle_resource = 'c-' + gradle_id
                     key = 'b' * 64
                     payload = b'Gradle archive through management API'
+                    gradle_host = None
+                    if gateway:
+                        endpoint = next(item['url'] for item in api(gradle_path)['status']['endpoints'] if item['protocol'] == 'gradle-http')
+                        assert urlparse(endpoint).path == '/cache/'
+                        gradle_host = urlparse(endpoint).hostname
                     with connection(ns, gradle_resource, 8080) as cache:
                         assert request(cache + '/cache/' + key, 'PUT', payload, basic(gradle['credentials']))[0] == 201
                         assert request(cache + '/cache/' + key, headers=basic(gradle['credentials']))[:2] == (200, payload)
+                    if gateway:
+                        gateway.forward()
+                        assert gateway.request(gradle_host, '/cache/' + key, headers=basic(gradle['credentials']))[:2] == (200, payload)
                     def gradle_sampled():
                         code, body, _ = request(url + '/v1' + gradle_path + '/statistics', headers=auth)
                         if code != 200: return False
@@ -288,8 +296,13 @@ def main(gateway_enabled=False, isolation_enabled=False):
                     with connection(ns, gradle_resource, 8080) as cache:
                         assert request(cache + '/cache/' + key, headers=basic(gradle['credentials']))[0] == 401
                         assert request(cache + '/cache/' + key, headers=basic(changed['credentials']))[:2] == (200, payload)
+                    if gateway:
+                        assert gateway.request(gradle_host, '/cache/' + key, headers=basic(gradle['credentials']))[0] == 401
+                        assert gateway.request(gradle_host, '/cache/' + key, headers=basic(changed['credentials']))[:2] == (200, payload)
                     complete(submit(gradle_path, 'DELETE'))
                     assert kubectl('-n', ns, 'get', 'pvc', gradle_resource + '-data', '--ignore-not-found', '-o', 'name') == ''
+                    if gateway:
+                        wait(lambda: gateway.request(gradle_host, '/cache/' + key, headers=basic(changed['credentials']))[0] in (404, 503), 'Gradle HTTPS route revoked after deletion')
                     print('Gradle API provisioning, statistics, rotation and deletion passed', flush=True)
                 if gateway:
                     reapi_spec = {**spec, 'template': 'bazel-remote', 'name': 'REAPI via TLS', 'storageGiB': 3, 'cacheGiB': 1, 'memoryMiB': 512}
