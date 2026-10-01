@@ -61,17 +61,33 @@ describe("project quotas", () => {
   });
 });
 
-it('never presents an old quota observation as applied to the current revision', async () => {
-  vi.mocked(api).mockResolvedValue({...value,synchronization:{state:'Applied',observedRevision:'6',checkedAt:null,error:null}});
-  render(<ProjectQuota base="/projects/one" canEdit={false}/>);
-  fireEvent.click(screen.getByText('查看项目配额'));
-  await screen.findByText('集群硬配额：待同步');
-  expect(screen.queryByText('集群硬配额：已同步')).toBeNull();
+it("never presents an old quota observation as applied to the current revision", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...value,
+    synchronization: {
+      state: "Applied",
+      observedRevision: "6",
+      checkedAt: null,
+      error: null,
+    },
+  });
+  render(<ProjectQuota base="/projects/one" canEdit={false} />);
+  fireEvent.click(screen.getByText("查看项目配额"));
+  await screen.findByText("集群硬配额：待同步");
+  expect(screen.queryByText("集群硬配额：已同步")).toBeNull();
 });
 
-it('shows quota synchronization failure independently of a saved limit', async () => {
-  vi.mocked(api).mockResolvedValue({...value,synchronization:{state:'Failed',observedRevision:null,checkedAt:'2026-09-30T00:00:00Z',error:'quota_ownership_conflict'}});
-  render(<ProjectQuota base="/projects/one" canEdit={false}/>);
-  fireEvent.click(screen.getByText('查看项目配额'));
-  await screen.findByText('集群硬配额：同步失败，后台会重试');
+it("shows quota synchronization failure independently of a saved limit", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...value,
+    synchronization: {
+      state: "Failed",
+      observedRevision: null,
+      checkedAt: "2026-09-30T00:00:00Z",
+      error: "quota_ownership_conflict",
+    },
+  });
+  render(<ProjectQuota base="/projects/one" canEdit={false} />);
+  fireEvent.click(screen.getByText("查看项目配额"));
+  await screen.findByText("集群硬配额：同步失败，后台会重试");
 });

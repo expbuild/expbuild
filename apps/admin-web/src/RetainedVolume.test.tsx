@@ -18,12 +18,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
 });
-it("offers the verified retained volume to the project administrator for reclaim",async()=>{
-  vi.stubGlobal("fetch",vi.fn(async()=>new Response(JSON.stringify(volume))));
-  const onReclaim=vi.fn();
-  const user=userEvent.setup();
-  render(<RetainedVolume path="/projects/p/instances/i/retained-volume" canAdmin onChange={vi.fn()} onReclaim={onReclaim} />);
-  await user.click(await screen.findByRole("button",{name:"使用保留卷恢复实例"}));
+it("offers the verified retained volume to the project administrator for reclaim", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(JSON.stringify(volume))),
+  );
+  const onReclaim = vi.fn();
+  const user = userEvent.setup();
+  render(
+    <RetainedVolume
+      path="/projects/p/instances/i/retained-volume"
+      canAdmin
+      onChange={vi.fn()}
+      onReclaim={onReclaim}
+    />,
+  );
+  await user.click(
+    await screen.findByRole("button", { name: "使用保留卷恢复实例" }),
+  );
   expect(onReclaim).toHaveBeenCalledWith(volume);
 });
 it("requires the exact volume name and preserves identity and idempotency after an ambiguous response", async () => {

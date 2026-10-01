@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
+test.use({ locale: 'zh-CN' });
+
 async function login(page: Page, email = 'admin@browser.test') {
   await page.goto('/');
   await page.getByLabel('邮箱', { exact: true }).fill(email);
@@ -21,7 +23,7 @@ test('real sessions, persisted quotas, CSRF rejection and cross-project denial',
   await login(page);
   const project = await createProject(page, 'Browser persisted quota');
   await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
-  await page.getByRole('button', { name: '查看项目配额' }).click();
+  await page.getByRole('link', { name: '资源与配额' }).click();
   await page.getByLabel('实例数上限', { exact: true }).fill('0');
   await page.getByLabel('存储（GiB）上限', { exact: true }).fill('12');
   await page.getByRole('button', { name: '保存配额', exact: true }).click();
@@ -32,7 +34,7 @@ test('real sessions, persisted quotas, CSRF rejection and cross-project denial',
   }, project);
   expect(rejected).toBe(403);
   await page.reload();
-  await page.getByRole('button', { name: '查看项目配额' }).click();
+  await page.getByRole('link', { name: '资源与配额' }).click();
   await expect(page.getByLabel('实例数上限', { exact: true })).toHaveValue('0');
   await expect(page.getByLabel('存储（GiB）上限', { exact: true })).toHaveValue('12');
   const cookie = (await page.context().cookies()).find(c => c.name === 'expbuild_session');
@@ -73,6 +75,7 @@ test('instance creation, one-time credentials, pause, resume and deletion throug
   expect((await suspending).status()).toBe(202);
   await expect(page.getByText('服务尚未就绪')).toBeVisible();
   await expect(page.getByText('暂停', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true })).toBeEnabled();
 
   await page.getByRole('button', { name: '编辑配置' }).click();
   await page.getByLabel('运行状态').selectOption('Running');
@@ -111,12 +114,12 @@ test('Gradle template can be created and displays a ready client configuration',
 test('two browser tabs cannot silently overwrite a stale quota revision', async ({ page }) => {
   await login(page);
   await createProject(page, 'Browser quota conflict');
-  await page.getByRole('button', { name: '查看项目配额' }).click();
+  await page.getByRole('link', { name: '资源与配额' }).click();
   await expect(page.getByLabel('实例数上限', { exact: true })).toBeVisible();
   const opened = page.waitForEvent('popup');
   await page.evaluate(() => { window.open('/', '_blank'); });
   const second = await opened;
-  await second.getByRole('button', { name: '查看项目配额' }).click();
+  await second.getByRole('link', { name: '资源与配额' }).click();
   await expect(second.getByLabel('实例数上限', { exact: true })).toBeVisible();
   await page.getByLabel('实例数上限', { exact: true }).fill('2');
   await page.getByRole('button', { name: '保存配额', exact: true }).click();

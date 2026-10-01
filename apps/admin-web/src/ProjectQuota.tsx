@@ -1,3 +1,4 @@
+import { t, formatDate, formatNumber } from "./i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 
@@ -25,11 +26,13 @@ const keys = Object.keys(fields) as Key[];
 export function ProjectQuota({
   base,
   canEdit,
+  initiallyOpen = false,
 }: {
   base: string;
   canEdit: boolean;
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false),
+  const [open, setOpen] = useState(initiallyOpen),
     [refresh, setRefresh] = useState(0);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [draft, setDraft] = useState<Record<Key, string>>({
@@ -66,7 +69,7 @@ export function ProjectQuota({
       })
       .catch((e) => {
         if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : "配额读取失败");
+          setError(e instanceof Error ? e.message : t("配额读取失败"));
       })
       .finally(() => {
         if (!abort.signal.aborted) setLoading(false);
@@ -89,7 +92,7 @@ export function ProjectQuota({
           (!Number.isSafeInteger(value) || value < 0 || value > 2147483647),
       )
     ) {
-      setError("配额请输入 0 到 2147483647 的整数，或留空表示不限。");
+      setError(t("配额请输入 0 到 2147483647 的整数，或留空表示不限。"));
       return;
     }
     setSaving(true);
@@ -105,80 +108,94 @@ export function ProjectQuota({
       );
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存失败");
+      setError(e instanceof Error ? e.message : t("保存失败"));
     } finally {
       setSaving(false);
     }
   }
   return (
     <section className="panel">
-      <h2>项目配额</h2>
+      <h2>{t("项目配额")}</h2>
       {!open ? (
-        <button onClick={() => setOpen(true)}>查看项目配额</button>
+        <button onClick={() => setOpen(true)}>{t("查看项目配额")}</button>
       ) : (
         <>
           <p className="muted">
-            额度按已受理的配置预留，并非实时用量。暂停实例仍占用额度，保留卷继续占用存储。
+            {t(
+              "额度按已受理的配置预留，并非实时用量。暂停实例仍占用额度，保留卷继续占用存储。",
+            )}
           </p>
           <button
             type="button"
             disabled={loading || saving}
             onClick={() => setRefresh((value) => value + 1)}
           >
-            刷新配额
+            {t("刷新配额")}
           </button>
-          {loading && <p role="status">正在读取配额…</p>}
-          {error && <p role="alert">{error} 可刷新后核对当前配额再操作。</p>}
-          {saved && <p role="status">配额已保存</p>}
+          {loading && <p role="status">{t("正在读取配额…")}</p>}
+          {error && (
+            <p role="alert">
+              {error}
+              {t("可刷新后核对当前配额再操作。")}
+            </p>
+          )}
+          {saved && <p role="status">{t("配额已保存")}</p>}
           {snapshot && (
             <>
               <p role="status">
-                集群硬配额：
+                {t("集群硬配额：")}
                 {snapshot.synchronization?.state === "Applied" &&
                 snapshot.synchronization.observedRevision === snapshot.revision
-                  ? "已同步"
+                  ? t("已同步")
                   : snapshot.synchronization?.state === "Failed"
-                    ? "同步失败，后台会重试"
-                    : "待同步"}
+                    ? t("同步失败，后台会重试")
+                    : t("待同步")}
               </p>
               {snapshot.synchronization?.checkedAt && (
                 <p className="muted">
-                  最近核对：
-                  {new Date(
-                    snapshot.synchronization.checkedAt,
-                  ).toLocaleString()}
+                  {t("最近核对：")}
+                  {formatDate(snapshot.synchronization.checkedAt)}
                 </p>
               )}
               {snapshot.unknownReservations > 0 && (
                 <p role="alert">
-                  有 {snapshot.unknownReservations}{" "}
-                  个资源预留待核对，已知预留不代表完整用量。
+                  {t("有 {count} 个资源预留待核对，已知预留不代表完整用量。", {
+                    count: formatNumber(snapshot.unknownReservations),
+                  })}
                 </p>
               )}
               <table>
                 <thead>
                   <tr>
-                    <th>资源</th>
-                    <th>已知预留</th>
-                    <th>上限</th>
+                    <th>{t("资源")}</th>
+                    <th>{t("已知预留")}</th>
+                    <th>{t("上限")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {keys.map((key) => (
                     <tr key={key}>
-                      <th>{fields[key]}</th>
-                      <td>{snapshot.reserved[key]}</td>
-                      <td>{snapshot.limits[key] ?? "不限"}</td>
+                      <th>{t(fields[key])}</th>
+                      <td>{formatNumber(snapshot.reserved[key])}</td>
+                      <td>
+                        {snapshot.limits[key] === null
+                          ? t("不限")
+                          : formatNumber(snapshot.limits[key])}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
               {canEdit ? (
                 <form onSubmit={save}>
-                  <p>留空表示不限，0 表示不允许预留。上限不能低于已有预留。</p>
+                  <p>
+                    {t(
+                      "留空表示不限，0 表示不允许预留。上限不能低于已有预留。",
+                    )}
+                  </p>
                   {keys.map((key) => (
                     <label key={key}>
-                      {fields[key]}上限
+                      {t("{resource}上限", { resource: t(fields[key]) })}
                       <input
                         type="number"
                         min="0"
@@ -196,11 +213,11 @@ export function ProjectQuota({
                     </label>
                   ))}
                   <button type="submit" disabled={saving || loading}>
-                    {saving ? "保存中…" : "保存配额"}
+                    {saving ? t("保存中…") : t("保存配额")}
                   </button>
                 </form>
               ) : (
-                <p className="muted">配额由平台管理员调整。</p>
+                <p className="muted">{t("配额由平台管理员调整。")}</p>
               )}
             </>
           )}

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { useState, type FormEvent } from "react";
 import { api } from "./api";
 
@@ -19,7 +20,7 @@ export function PasswordForm({
       data = new FormData(form);
     setError("");
     if (data.get("password") !== data.get("confirm")) {
-      setError("两次输入的新密码不一致。");
+      setError(t("两次输入的新密码不一致。"));
       return;
     }
     setBusy(true);
@@ -38,14 +39,18 @@ export function PasswordForm({
         onChanged?.();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "密码变更失败");
+      setError(e instanceof Error ? e.message : t("密码变更失败"));
     } finally {
       setBusy(false);
     }
   }
   return (
     <section className="panel">
-      <h2>{target ? `重置 ${target.email} 的密码` : "修改我的密码"}</h2>
+      <h2>
+        {target
+          ? t("重置 {value0} 的密码", { value0: target.email })
+          : t("修改我的密码")}
+      </h2>
       {error && (
         <div role="alert" className="alert">
           {error}
@@ -53,16 +58,20 @@ export function PasswordForm({
       )}
       {done ? (
         <>
-          <p role="status">密码已更新，旧会话已撤销。请使用新密码重新登录。</p>
-          <button onClick={onClose}>关闭</button>
+          <p role="status">
+            {t("密码已更新，旧会话已撤销。请使用新密码重新登录。")}
+          </p>
+          <button onClick={onClose}>{t("关闭")}</button>
         </>
       ) : (
         <form onSubmit={submit}>
-          <p className="muted">更新后，该账号所有设备上的登录会话都会失效。</p>
+          <p className="muted">
+            {t("更新后，该账号所有设备上的登录会话都会失效。")}
+          </p>
           <div className="form-grid">
             {!target && (
               <label>
-                当前密码
+                {t("当前密码")}
                 <input
                   name="currentPassword"
                   type="password"
@@ -72,7 +81,7 @@ export function PasswordForm({
               </label>
             )}
             <label>
-              新密码
+              {t("新密码")}
               <input
                 name="password"
                 type="password"
@@ -83,7 +92,7 @@ export function PasswordForm({
               />
             </label>
             <label>
-              确认新密码
+              {t("确认新密码")}
               <input
                 name="confirm"
                 type="password"
@@ -96,10 +105,10 @@ export function PasswordForm({
           </div>
           <div className="actions">
             <button className="primary" disabled={busy}>
-              {busy ? "正在更新…" : "确认更新密码"}
+              {busy ? t("正在更新…") : t("确认更新密码")}
             </button>
             <button type="button" disabled={busy} onClick={onClose}>
-              取消
+              {t("取消")}
             </button>
           </div>
         </form>

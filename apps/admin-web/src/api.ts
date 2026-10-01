@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export class APIError extends Error {
   constructor(
     public status: number,
@@ -30,10 +31,12 @@ export async function api<T>(
         (x: { path: string[]; message: string }) =>
           `${x.path.join(".")}: ${x.message}`,
       )
-      .join("；");
+      .join("; ");
     throw new APIError(
       response.status,
-      details || body.error || `请求失败（${response.status}）`,
+      details ||
+        body.error ||
+        t("请求失败（{value0}）", { value0: response.status }),
     );
   }
   return body as T;
@@ -51,7 +54,9 @@ export type Template = {
   version: string;
   protocols: string[];
   exposures?: ("ClusterInternal" | "Gateway")[];
-  inputSchema?: { properties?: Record<string, { minimum?: number; maximum?: number }> };
+  inputSchema?: {
+    properties?: Record<string, { minimum?: number; maximum?: number }>;
+  };
   capabilities: {
     policyApplyMode?: "restart" | "unsupported";
     capacity: boolean;
@@ -68,7 +73,7 @@ export const templateLabel = (name: string) =>
       ? "REAPI / Bazel HTTP"
       : name === "gradle-http"
         ? "Gradle HTTP"
-      : name;
+        : name;
 export type Instance = {
   template_name: string;
   id: string;

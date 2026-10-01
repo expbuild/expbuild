@@ -1,0 +1,502 @@
+// Chinese source messages and their English translations. Keep complete sentences together.
+export const messages: Record<string, string> = {
+  "请求失败，请重试": "Request failed. Please try again.",
+  "正在恢复会话…": "Restoring your session…",
+  缓存平台: "Cache platform",
+  "让每一次构建，": "Less waiting.",
+  "少一些等待。": "More building.",
+  "在一个地方管理团队的构建缓存、资源配置与服务状态。":
+    "Manage your team's build caches, resources, and service status in one place.",
+  构建缓存管理: "Build cache management",
+  欢迎回来: "Welcome back",
+  登录管理控制台: "Sign in to your workspace",
+  邮箱: "Email",
+  密码: "Password",
+  "正在登录…": "Signing in…",
+  登录: "Sign in",
+  "没有账号？请联系平台管理员。":
+    "Need an account? Contact your platform administrator.",
+  工作空间: "Workspace",
+  项目: "Project",
+  "＋ 新建项目": "+ New project",
+  用户管理: "Users",
+  修改密码: "Change password",
+  退出登录: "Sign out",
+  项目名称: "Project name",
+  创建项目: "Create project",
+  取消: "Cancel",
+  开始管理构建缓存: "Start managing your build cache",
+  "创建第一个项目，为团队配置缓存实例。":
+    "Create your first project to provision caches for your team.",
+  "尚未加入项目，请联系管理员。":
+    "You have not joined a project yet. Contact an administrator.",
+  "初始化再次失败，请查看操作记录，修复后可继续重试。":
+    "Initialization failed again. Check the operation log, resolve the issue, and retry.",
+  "项目 /": "Project /",
+  缓存实例: "Cache instances",
+  "独立配置、按需分配。让团队复用每一次构建成果。":
+    "Dedicated resources. Shared build results.",
+  "＋ 创建实例": "+ Create instance",
+  "项目状态：": "Project status:",
+  "。初始化完成后可以创建实例。":
+    ". You can create instances once initialization is complete.",
+  "正在提交…": "Submitting…",
+  重试已提交: "Retry submitted",
+  重试初始化: "Retry initialization",
+  当前实例: "Current instances",
+  进行中的操作: "Operations in progress",
+  保存连接凭据: "Save connection credentials",
+  "密码只显示一次，关闭后无法再次查看。请保存到团队的凭据管理工具。":
+    "This password is shown only once. Save it in your team's credential manager before closing.",
+  用户名: "Username",
+  "已保存，关闭": "Saved, close",
+  创建缓存实例: "Create cache instance",
+  "选择协议模板，配置独立的存储与运行资源。":
+    "Choose a protocol template and configure dedicated storage and compute resources.",
+  实例列表: "Instances",
+  "每 3 秒刷新": "Refreshes every 3 seconds",
+  名称: "Name",
+  协议: "Protocol",
+  管理状态: "Management state",
+  收起: "Collapse",
+  详情: "Details",
+  尚无缓存实例: "No cache instances yet",
+  "创建一个实例，接入团队的构建工具。":
+    "Create an instance to connect your team's build tools.",
+  最近操作: "Recent operations",
+  暂无操作记录: "No operations yet",
+  "原协议模板版本当前不可用，无法领回该实例。":
+    "The original template version is unavailable. This instance cannot be reclaimed.",
+  "当前没有可创建的模板。": "No templates are currently available.",
+  "缓存容量必须小于存储卷容量，以预留运行空间。":
+    "Cache capacity must be smaller than the volume capacity to leave operating space.",
+  "正在加载可用模板…": "Loading available templates…",
+  协议模板: "Protocol template",
+  访问方式: "Access mode",
+  集群内部: "Internal network",
+  "独立域名（HTTPS / gRPC TLS）": "Dedicated domain (HTTPS / gRPC TLS)",
+  实例名称: "Instance name",
+  "存储卷容量（GiB）": "Volume capacity (GiB)",
+  "缓存容量（GiB）": "Cache capacity (GiB)",
+  "CPU（毫核）": "CPU (millicores)",
+  "内存（MiB）": "Memory (MiB)",
+  "缓存预算必须小于存储卷容量。配置调整可能重启实例，以策略生效状态为准。":
+    "The cache budget must be smaller than the volume capacity. Changes may restart the instance; check the policy status to confirm they have taken effect.",
+  "此模板未提供引擎容量预算。存储卷容量不是自动清理阈值，请预留空间并管理文件。":
+    "This template does not support an engine capacity budget. Volume capacity is not an automatic cleanup threshold. Leave free space and manage files.",
+  " 引擎支持 LRU 淘汰。": " The engine supports LRU eviction.",
+  " 暂不支持 TTL。": " TTL is not supported yet.",
+  运行状态: "Desired state",
+  运行: "Running",
+  暂停: "Suspended",
+  删除实例时: "When deleting this instance",
+  保留存储卷: "Retain storage volume",
+  同时删除存储卷: "Delete storage volume",
+  "WebDAV 支持认证文件读写与锁，不提供自动淘汰。":
+    "WebDAV supports authenticated file access and locking, without automatic eviction.",
+  "运行后可查看近似内容快照。":
+    "An approximate content snapshot is available while running.",
+  "此版本不提供内容统计。": "This version does not provide content statistics.",
+  "存储卷容量不是文件系统硬配额。":
+    "Volume capacity is not a hard filesystem quota.",
+  保存配置: "Save configuration",
+  确认领回实例: "Confirm reclaim",
+  创建实例: "Create instance",
+  实例详情: "Instance details",
+  从保留卷恢复实例: "Restore from retained volume",
+  "将重新创建服务并沿用已确认的存储卷。请核对容量和协议配置；新密码只在提交时显示一次。":
+    "The service will be recreated using the verified volume. Check capacity and protocol settings. The new password is shown only on submission.",
+  "领回请求已提交。此请求已受理过，密码不会再次返回；请等待操作完成，再轮换凭据。":
+    "The reclaim request was already accepted. The password will not be returned again. Wait for completion, then rotate credentials.",
+  关闭: "Close",
+  "请保存恢复后的新密码，关闭后无法再次查看。":
+    "Save the restored instance's new password before closing. It will not be shown again.",
+  淘汰策略: "Eviction policy",
+  不支持自动淘汰: "Automatic eviction unsupported",
+  模板能力未知: "Unknown template capabilities",
+  存储卷: "Storage volume",
+  期望状态: "Desired state",
+  服务已就绪: "Service ready",
+  服务尚未就绪: "Service not ready",
+  缓存策略已生效: "Cache policy applied",
+  缓存策略尚未确认生效: "Cache policy not yet verified",
+  "通过独立域名访问，请确认证书受信任且域名可达。":
+    "Access uses a dedicated domain. Verify DNS reachability and trust the TLS certificate.",
+  "连接地址当前仅供集群内部使用。":
+    "These endpoints are accessible only within the cluster.",
+  "此模板暂不支持容量统计。":
+    "This template does not support capacity statistics.",
+  "模板能力未知，暂不查询统计。":
+    "Template capabilities are unknown. Statistics are unavailable.",
+  编辑配置: "Edit configuration",
+  轮换凭据: "Rotate credentials",
+  删除实例: "Delete instance",
+  "确认删除「": "Delete “",
+  "存储卷也会被删除，缓存数据将丢失。":
+    "The storage volume will also be deleted and cached data will be lost.",
+  "存储卷将保留，服务访问会停止。":
+    "The storage volume will be retained and service access will stop.",
+  确认删除: "Confirm deletion",
+  "read -r -p '缓存用户名：' CACHE_USER":
+    "read -r -p 'Cache username: ' CACHE_USER",
+  "read -r -s -p '缓存密码：' CACHE_PASSWORD":
+    "read -r -s -p 'Cache password: ' CACHE_PASSWORD",
+  "# curl 将提示输入密码；此请求只查询目录信息。":
+    "# curl prompts for a password. This request only reads directory information.",
+  "read -r -p '缓存用户名：' EXPBUILD_CACHE_USER":
+    "read -r -p 'Cache username: ' EXPBUILD_CACHE_USER",
+  "read -r -s -p '缓存密码：' EXPBUILD_CACHE_PASSWORD":
+    "read -r -s -p 'Cache password: ' EXPBUILD_CACHE_PASSWORD",
+  客户端连接指引: "Client connection guide",
+  "当前配置尚未确认就绪，恢复运行并就绪后显示连接示例。":
+    "Connection examples are available once the current configuration is running and verified ready.",
+  "当前端点尚无匹配的客户端示例。":
+    "No client examples are available for these endpoints.",
+  "在 Bash 终端运行。使用创建或轮换时保存的实例凭据；示例不包含实际密码。":
+    "Run in Bash using the credentials saved during creation or rotation. Examples contain no actual passwords.",
+  "客户端需要能够解析实例域名，并信任入口 TLS 证书。":
+    "The client must resolve the instance domain and trust the gateway TLS certificate.",
+  "这些地址仅供集群内部访问，请在可访问该服务的构建环境执行。":
+    "These addresses are internal. Run the commands in a build environment with access to this service.",
+  "在 Bazel 项目目录执行，将 //... 替换为需要构建的目标。该配置使用远程缓存，不启用远程执行。":
+    "Run in your Bazel project. Replace //... with your build target. This enables remote caching, without remote execution.",
+  "在 Gradle 项目目录执行。仅当 CI=true 时向远程缓存上传；开发机默认只读取。请确保客户端信任入口 TLS 证书。":
+    "Run in your Gradle project. Uploads are enabled only when CI=true; developer machines default to read-only. Ensure the client trusts the gateway TLS certificate.",
+  历史统计不可用: "Historical statistics unavailable",
+  缓存查询历史: "Cache lookup history",
+  收起查询历史: "Collapse lookup history",
+  查看查询历史: "View lookup history",
+  "每秒查询次数，使用五分钟窗口平均。读取和存在性检查分别统计，不能代表构建命中率。缺少数据时显示空缺。":
+    "Queries per second, averaged over five minutes. Reads and existence checks are counted separately and do not represent build hit rates. Missing samples are shown as gaps.",
+  时间范围: "Time range",
+  最近一小时: "Last hour",
+  最近六小时: "Last 6 hours",
+  最近一天: "Last 24 hours",
+  缓存类型: "Cache type",
+  "CAS 内容缓存": "CAS content cache",
+  "AC 动作缓存": "AC action cache",
+  查询类型: "Query type",
+  读取: "Reads",
+  "存在性检查（含 FindMissing）": "Existence checks (including FindMissing)",
+  "历史统计暂不可用，需要管理员配置 Prometheus 及实例采集。":
+    "History is unavailable. Ask an administrator to configure Prometheus and instance scraping.",
+  "正在读取历史统计…": "Loading historical statistics…",
+  "查询速率（次/秒），最新记录在前": "Queries per second, newest first",
+  时间: "Time",
+  命中: "Hits",
+  未命中: "Misses",
+  "此范围暂无有效采样，不表示查询次数为零。":
+    "No valid samples in this range. This does not mean there were zero queries.",
+  请求失败: "Request failed",
+  管理员: "Administrator",
+  维护者: "Maintainer",
+  只读: "Viewer",
+  平台管理: "Administration",
+  "创建账号，再按项目分配权限。停用账号会立即撤销登录会话。":
+    "Create accounts and assign project access. Disabling an account immediately revokes its sessions.",
+  创建用户: "Create user",
+  用户邮箱: "User email",
+  初始密码: "Initial password",
+  "初始密码至少 12 字符，请通过安全渠道交给账号使用者。":
+    "Use at least 12 characters. Share the initial password through a secure channel.",
+  创建账号: "Create account",
+  用户列表: "User directory",
+  刷新: "Refresh",
+  "正在加载…": "Loading…",
+  平台身份: "Platform role",
+  状态: "Status",
+  操作: "Actions",
+  平台管理员: "Platform administrator",
+  普通用户: "Standard user",
+  启用: "Enable",
+  停用: "Disable",
+  已启用: "Enabled",
+  已停用: "Disabled",
+  重置密码: "Reset password",
+  停用账号: "Disable account",
+  确认停用: "Confirm disable",
+  "？该账号的会话将立即失效。唯一项目管理员必须先移交权限。":
+    "? All sessions will be revoked immediately. A sole project administrator must transfer their role first.",
+  项目管理: "Project settings",
+  成员权限: "Members & access",
+  审计记录: "Audit log",
+  "按邮箱添加已有账号。管理员管理成员及凭据；维护者配置实例；只读成员查看状态。":
+    "Add existing accounts by email. Administrators manage members and credentials; maintainers configure instances; viewers can inspect status.",
+  成员邮箱: "Member email",
+  项目角色: "Project role",
+  添加成员: "Add member",
+  角色: "Role",
+  移除: "Remove",
+  "对此项目的访问权限？": "'s access to this project?",
+  确认移除: "Confirm removal",
+  重试项目初始化: "Retry project initialization",
+  更新成员权限: "Update member permissions",
+  移除成员: "Remove member",
+  更新实例: "Update instance",
+  清理保留卷: "Delete retained volume",
+  操作完成: "Operation completed",
+  操作失败: "Operation failed",
+  恢复操作检查: "Resume operation checks",
+  操作被替代: "Operation superseded",
+  "最近 100 条记录；系统操作以“系统”显示。":
+    "Most recent 100 entries. Automated changes are attributed to System.",
+  刷新记录: "Refresh log",
+  事件: "Event",
+  操作者: "Actor",
+  系统: "System",
+  暂无审计记录: "No audit entries yet",
+  "两次输入的新密码不一致。": "The new passwords do not match.",
+  密码变更失败: "Password change failed",
+  修改我的密码: "Change my password",
+  "密码已更新，旧会话已撤销。请使用新密码重新登录。":
+    "Password updated and previous sessions revoked. Sign in with your new password.",
+  "更新后，该账号所有设备上的登录会话都会失效。":
+    "Changing the password signs this account out on every device.",
+  当前密码: "Current password",
+  新密码: "New password",
+  确认新密码: "Confirm new password",
+  "正在更新…": "Updating…",
+  确认更新密码: "Confirm password update",
+  实例数: "Instances",
+  "存储（GiB）": "Storage (GiB)",
+  配额读取失败: "Unable to load quota",
+  "配额请输入 0 到 2147483647 的整数，或留空表示不限。":
+    "Enter an integer from 0 to 2147483647, or leave blank for no limit.",
+  保存失败: "Save failed",
+  项目配额: "Project quotas",
+  查看项目配额: "View project quotas",
+  "额度按已受理的配置预留，并非实时用量。暂停实例仍占用额度，保留卷继续占用存储。":
+    "Reservations reflect accepted configuration, not live usage. Suspended instances still reserve resources; retained volumes still reserve storage.",
+  刷新配额: "Refresh quotas",
+  "正在读取配额…": "Loading quotas…",
+  "可刷新后核对当前配额再操作。":
+    "Refresh and check the current quota before trying again.",
+  配额已保存: "Quotas saved",
+  "集群硬配额：": "Cluster hard quota:",
+  已同步: "Synchronized",
+  "同步失败，后台会重试": "Synchronization failed; retrying in the background",
+  待同步: "Pending synchronization",
+  "最近核对：": "Last checked:",
+  有: "There are",
+  "个资源预留待核对，已知预留不代表完整用量。":
+    "resource reservations to verify. Known reservations are not the complete usage.",
+  资源: "Resource",
+  已知预留: "Known reservations",
+  上限: "Limit",
+  不限: "Unlimited",
+  "留空表示不限，0 表示不允许预留。上限不能低于已有预留。":
+    "Leave blank for unlimited; 0 prevents reservations. Limits cannot be lower than existing reservations.",
+  "保存中…": "Saving…",
+  保存配额: "Save quotas",
+  "配额由平台管理员调整。": "Platform administrators manage quotas.",
+  模板名称或版本与平台绑定不一致:
+    "Template name or version does not match the platform record",
+  平台记录缺少模板版本: "Template version is missing from the platform record",
+  "资源预留记录未知，需要核对":
+    "Unknown resource reservation; verification required",
+  实际资源配置超过账面预留: "Actual resources exceed recorded reservations",
+  "资源数量无法解析，不能确认预留":
+    "Resource quantity cannot be parsed; reservations are unverified",
+  实例身份与平台记录不一致:
+    "Instance identity does not match the platform record",
+  实例归属标记不一致: "Instance ownership labels do not match",
+  已删除或已分离的实例仍存在: "A deleted or detached instance still exists",
+  实例正在被外部删除: "Instance is being deleted externally",
+  实例配置偏离已提交配置:
+    "Instance configuration differs from the submitted configuration",
+  实例资源丢失: "Instance resource is missing",
+  实例尚未完成创建: "Instance provisioning is incomplete",
+  存储卷归属不一致: "Volume ownership does not match",
+  已删除实例仍有存储卷: "A deleted instance still has a volume",
+  存储卷正在删除: "Volume deletion in progress",
+  存储卷未就绪: "Volume is not ready",
+  保留卷丢失: "Retained volume is missing",
+  实例存储卷丢失: "Instance volume is missing",
+  发现未登记的实例: "Untracked instance found",
+  发现未登记的存储卷: "Untracked volume found",
+  对账结果读取失败: "Unable to load inventory results",
+  对账请求失败: "Inventory request failed",
+  "重新核对实际资源，并只增加该实例的资源预留？如果超出项目额度，后续创建和扩容会被阻止。":
+    "Recheck actual resources and increase this instance's reservations only? If the project quota is exceeded, new instances and expansions will be blocked.",
+  资源预留校正失败: "Reservation adjustment failed",
+  资源对账: "Resource inventory",
+  查看资源对账: "View resource inventory",
+  "核对平台记录与实际实例、存储卷。发现差异后需检查原因，不会自动删除或接管资源。":
+    "Compare platform records with actual instances and volumes. Investigate differences; resources are never deleted or adopted automatically.",
+  "提交中…": "Submitting…",
+  请求重新对账: "Request inventory check",
+  "已安排对账，结果将自动刷新。":
+    "Inventory check scheduled. Results will refresh automatically.",
+  "等待对账结果…": "Waiting for inventory results…",
+  "上次核对：": "Last checked:",
+  "结果已过期，请重新对账后判断当前状态。":
+    "These results are stale. Run another check before assessing the current state.",
+  上次未发现资源差异: "No differences found at the last check",
+  未发现资源差异: "No resource differences found",
+  "资源正在变化，等待下一次核对":
+    "Resources are changing. Waiting for the next check",
+  "无法完成对账，请检查集群连接或权限":
+    "Unable to complete inventory. Check cluster connectivity and permissions",
+  已观察: "Observed",
+  "个实例资源、": "instance resources and",
+  "个存储卷。": "storage volumes.",
+  "个实例有进行中的操作，暂缓判断其差异。":
+    "instances have operations in progress. Their differences will be assessed later.",
+  类型: "Type",
+  差异: "Difference",
+  处理: "Resolution",
+  实例: "Instance",
+  校正资源预留: "Adjust resource reservation",
+  "仅显示前 200 项差异，请先处理当前问题再核对。":
+    "Showing the first 200 differences. Resolve these issues before checking again.",
+  清理提交失败: "Cleanup request failed",
+  保留的存储卷: "Retained storage volume",
+  "操作失败后先核对原实例与存储卷；只在原实例已不存在且卷归属验证通过时继续处理。":
+    "After an operation failure, verify the original instance and volume. Continue only when the original instance no longer exists and volume ownership is confirmed.",
+  "实例已删除，存储卷可能仍占用容量和产生存储费用。":
+    "The instance has been deleted. Its volume may still consume capacity and incur storage costs.",
+  "清理会删除卷声明；底层数据按存储系统的回收策略处理，平台不保证可恢复。":
+    "Cleanup deletes the volume claim. The storage system's reclaim policy determines what happens to the data; recovery is not guaranteed.",
+  正在删除: "Deleting",
+  "存储卷声明已清理。": "The volume claim has been removed.",
+  "清理请求已接受，等待结果。": "Cleanup accepted. Waiting for the result.",
+  重新检查存储卷: "Recheck volume",
+  使用保留卷恢复实例: "Restore using retained volume",
+  输入卷名确认清理: "Enter the volume name to confirm cleanup",
+  永久清理保留卷: "Permanently remove retained volume",
+  "仅项目管理员可以恢复或清理保留卷。":
+    "Only project administrators can restore or remove retained volumes.",
+  恢复提交失败: "Recovery request failed",
+  "恢复请求已接受，请查看操作状态。":
+    "Recovery accepted. Check the operation status.",
+  "继续删除原实例并清理凭据，按原删除操作已记录的策略处理存储卷。此操作不会撤销删除；存在后续操作时无法恢复。":
+    "Continue deleting the original instance and credentials, using the recorded volume deletion policy. This does not undo deletion. Recovery is unavailable if later operations exist.",
+  "查找并核对这次创建留下的实例。只恢复配置和归属完全匹配的已有资源；资源不存在时不会重新创建，也不会生成新密码。":
+    "Find and verify the instance left by this creation attempt. Only existing resources with matching configuration and ownership are recovered. Missing resources are not recreated and no new password is generated.",
+  "继续检查已提交配置的运行结果。不会重新创建实例、重置配置或生成新密码；存在后续操作时无法恢复。":
+    "Continue checking the submitted configuration. The instance is not recreated, configuration is not reset, and no new password is generated. Recovery is unavailable if later operations exist.",
+  确认继续删除: "Confirm continued deletion",
+  确认恢复: "Confirm recovery",
+  继续删除: "Continue deletion",
+  恢复检查: "Resume checks",
+  轮换提交失败: "Credential rotation request failed",
+  轮换缓存凭据: "Rotate cache credentials",
+  "轮换已提交，请在操作记录中确认完成。服务切换期间可能短暂中断；完成后旧密码失效。暂停实例将在下次启动时使用新凭据。":
+    "Rotation submitted. Confirm completion in the operation log. There may be a brief interruption; the old password becomes invalid after completion. Suspended instances use the new credentials on their next start.",
+  "请保存新密码，关闭后无法再次查看。":
+    "Save the new password before closing. It will not be shown again.",
+  新用户名: "New username",
+  "此操作已提交过，密码不会重复返回。如首次响应丢失，请等待当前操作结束后重新发起轮换。":
+    "This operation was already submitted; the password will not be returned again. If the first response was lost, wait for completion before rotating again.",
+  "将生成新密码并滚动重启服务。新配置生效后，旧凭据会被撤销。请准备更新构建工具中的密码。":
+    "A new password will be generated and the service restarted. Old credentials are revoked once the new configuration takes effect. Be ready to update your build tools.",
+  确认轮换: "Confirm rotation",
+  统计暂不可用: "Statistics unavailable",
+  "实例未运行，实时统计不可用。":
+    "The instance is not running. Live statistics are unavailable.",
+  实例统计: "Instance statistics",
+  缓存容量: "Cache capacity",
+  "统计采集暂不可用。": "Statistics collection is unavailable.",
+  "以下保留最近一次结果。": "The last collected result is shown below.",
+  "暂无有效数据。": "No valid data available.",
+  已使用: "Used",
+  申请卷容量: "Requested volume capacity",
+  引擎容量: "Engine capacity",
+  文件条目: "File entries",
+  缓存条目: "Cache entries",
+  缓存容量使用率: "Cache capacity utilization",
+  "GET 命中": "GET hits",
+  "GET 缺失": "GET misses",
+  "PUT 成功": "PUT accepted",
+  "PUT 拒绝": "PUT rejected",
+  采集于: "Collected at",
+  "内容目录扫描是近似快照；申请卷容量不保证是底层存储硬上限，也不代表缓存命中率。":
+    "Directory scans are approximate snapshots. Requested volume capacity may not be a hard storage limit and does not measure cache hit rates.",
+  "请求计数从当前进程启动时累计；归档用量不代表整个存储卷使用量，GET 命中也不等同于构建任务命中率。":
+    "Request counts accumulate from the current process start. Archive size is not total volume usage, and GET hits do not represent build task hit rates.",
+  已预留: "Reserved",
+  未知: "Unknown",
+  "。这是引擎缓存统计，不代表整个存储卷的使用量。":
+    ". These are engine cache statistics, not total storage volume usage.",
+  "正在采集统计…": "Collecting statistics…",
+  等待处理: "Pending",
+  提交中: "Submitting",
+  部署中: "Reconciling",
+  已完成: "Completed",
+  失败: "Failed",
+  配置已被替代: "Superseded",
+  可用: "Ready",
+  已创建: "Created",
+  删除中: "Deleting",
+  已删除: "Deleted",
+  卷已保留: "Volume retained",
+  初始化项目: "Initialize project",
+  领回保留卷: "Reclaim retained volume",
+  跳至主要内容: "Skip to main content",
+  项目导航: "Project navigation",
+  平台导航: "Platform navigation",
+  切换导航: "Toggle navigation",
+  切换项目: "Switch project",
+  暂无项目: "No projects",
+  项目摘要: "Project summary",
+  不含已删除或已保留卷的实例: "Excludes deleted and detached instances",
+  "等待、提交或部署中的变更": "Pending, submitting, or reconciling changes",
+  失败操作: "Failed operations",
+  "最近 100 条操作中的失败记录": "Failures in the latest 100 operations",
+  协议类型: "Protocol types",
+  当前实例使用的缓存协议: "Protocols used by current instances",
+  缓存服务: "Cache services",
+  为团队管理每一份构建缓存: "One workspace for your team's build caches",
+  "查看实例配置、连接客户端，或跟踪最近的变更。":
+    "Configure instances, connect your build tools, and follow recent changes.",
+  查看所有实例: "View all instances",
+  搜索实例: "Search instances",
+  "搜索名称或资源标识…": "Search by name or resource ID…",
+  筛选协议: "Filter by protocol",
+  所有协议: "All protocols",
+  筛选状态: "Filter by state",
+  所有状态: "All states",
+  没有匹配的实例: "No matching instances",
+  "调整搜索条件或清除筛选后重试。":
+    "Try a different search or clear your filters.",
+  清除筛选: "Clear filters",
+  "显示 {shown} / {total} 个实例": "Showing {shown} of {total} instances",
+  查看全部: "View all",
+  "最近 100 条操作记录，按创建时间排序。":
+    "Latest 100 operations, ordered by creation time.",
+  "确认删除「{name}」？": "Delete “{name}”? ",
+  "{value0} 的角色": "Role for {value0}",
+  "移除 {email} 对此项目的访问权限？":
+    "Remove {email}'s access to this project?",
+  "重置 {value0} 的密码": "Reset password for {value0}",
+  "{resource}上限": "{resource} limit",
+  "发现 {value0} 项资源差异": "Resource differences found: {value0}",
+  "{count} 个实例有进行中的操作，暂缓判断其差异。":
+    "Instances with operations in progress: {count}. Their differences will be assessed later.",
+  "清理失败：{value0}": "Cleanup failed: {value0}",
+  "请求失败（{value0}）": "Request failed ({value0})",
+  项目概览: "Overview",
+  "查看项目资源、最近活动与待处理事项。":
+    "Your project resources, recent activity, and items that need attention.",
+  "管理团队的缓存服务、资源配置与连接方式。":
+    "Provision and manage dedicated build caches for your team.",
+  操作记录: "Operations",
+  "跟踪配置变更、部署进度与失败操作。":
+    "Track configuration changes, deployment progress, and failed operations.",
+  资源与配额: "Resources & quotas",
+  "核对资源归属，管理项目的容量与资源上限。":
+    "Verify resource ownership and manage project capacity and limits.",
+  "为项目成员分配访问与管理权限。":
+    "Manage project membership and access permissions.",
+  "查看项目变更及其操作者。": "Review project changes and who made them.",
+  "确认停用 {email}？该账号的会话将立即失效。唯一项目管理员必须先移交权限。":
+    "Disable {email}? All sessions will be revoked immediately. A sole project administrator must transfer their role first.",
+  "有 {count} 个资源预留待核对，已知预留不代表完整用量。":
+    "Resource reservations awaiting verification: {count}. Known reservations do not represent complete usage.",
+  "已观察 {instances} 个实例资源、{volumes} 个存储卷。":
+    "Observed {instances} instance resources and {volumes} storage volumes.",
+  "采集于 {time}。": "Collected at {time}. ",
+  "已预留 {size}。这是引擎缓存统计，不代表整个存储卷的使用量。":
+    "Reserved: {size}. These are engine cache statistics, not total storage volume usage.",
+  "数据暂不可用，正在重试…": "Data is unavailable. Retrying…",
+};

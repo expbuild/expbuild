@@ -61,11 +61,22 @@ it("does not display a late result from the previously selected instance", async
 });
 
 it("labels WebDAV content snapshots without claiming cache hits or a hard quota", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-    source: "webdav-content-scan", observedAt: new Date().toISOString(),
-    usedBytes: 1024, capacityBytes: 3 * 1024 ** 3, itemCount: 7,
-    reservedBytes: null,
-  }))));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            source: "webdav-content-scan",
+            observedAt: new Date().toISOString(),
+            usedBytes: 1024,
+            capacityBytes: 3 * 1024 ** 3,
+            itemCount: 7,
+            reservedBytes: null,
+          }),
+        ),
+    ),
+  );
   render(<Statistics path="/projects/p/instances/dav" running />);
   expect(await screen.findByText("申请卷容量")).toBeDefined();
   expect(screen.getByText("文件条目")).toBeDefined();
@@ -73,11 +84,28 @@ it("labels WebDAV content snapshots without claiming cache hits or a hard quota"
 });
 
 it("shows Gradle request counts without presenting GET hits as task hits", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-    source: "gradle-http-status", observedAt: new Date().toISOString(),
-    usedBytes: 1024, capacityBytes: 3 * 1024 ** 3, itemCount: 7,
-    reservedBytes: null, requestCounts: { getHits: 4, getMisses: 2, putSuccess: 1, putRejected: 0 },
-  }))));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            source: "gradle-http-status",
+            observedAt: new Date().toISOString(),
+            usedBytes: 1024,
+            capacityBytes: 3 * 1024 ** 3,
+            itemCount: 7,
+            reservedBytes: null,
+            requestCounts: {
+              getHits: 4,
+              getMisses: 2,
+              putSuccess: 1,
+              putRejected: 0,
+            },
+          }),
+        ),
+    ),
+  );
   render(<Statistics path="/projects/p/instances/gradle" running />);
   expect(await screen.findByText("GET 命中")).toBeDefined();
   expect(screen.getByText("GET 缺失")).toBeDefined();

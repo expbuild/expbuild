@@ -2,7 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ProjectManagement, UsersPanel } from "./Management";
+import { Members, UsersPanel } from "./Management";
 
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status });
@@ -55,12 +55,21 @@ it("requires confirmation before disabling a user and prevents self-disable", as
     path: "/v1/users/other",
     options: { body: JSON.stringify({ active: false }) },
   });
-  await user.click(within(screen.getByText('other@example.test').closest('tr')!).getByRole('button',{name:'重置密码'}));
-  await screen.findByRole('heading',{name:'重置 other@example.test 的密码'});
-  await user.type(screen.getByLabelText('新密码'),'reset-password-123');
-  await user.type(screen.getByLabelText('确认新密码'),'reset-password-123');
-  await user.click(screen.getByRole('button',{name:'确认更新密码'}));
-  expect(requests.find(x=>x.path==='/v1/users/other/password')?.options.body).toBe(JSON.stringify({password:'reset-password-123'}));
+  await user.click(
+    within(screen.getByText("other@example.test").closest("tr")!).getByRole(
+      "button",
+      { name: "重置密码" },
+    ),
+  );
+  await screen.findByRole("heading", {
+    name: "重置 other@example.test 的密码",
+  });
+  await user.type(screen.getByLabelText("新密码"), "reset-password-123");
+  await user.type(screen.getByLabelText("确认新密码"), "reset-password-123");
+  await user.click(screen.getByRole("button", { name: "确认更新密码" }));
+  expect(
+    requests.find((x) => x.path === "/v1/users/other/password")?.options.body,
+  ).toBe(JSON.stringify({ password: "reset-password-123" }));
 });
 
 it("adds members by email and preserves last-administrator errors", async () => {
@@ -78,8 +87,7 @@ it("adds members by email and preserves last-administrator errors", async () => 
     }),
   );
   const user = userEvent.setup();
-  render(<ProjectManagement base="/projects/one" />);
-  await user.click(screen.getByRole("button", { name: "成员权限" }));
+  render(<Members base="/projects/one" />);
   await screen.findByText("admin@example.test");
   await user.type(screen.getByLabelText("成员邮箱"), "new@example.test");
   await user.selectOptions(screen.getByLabelText("项目角色"), "maintainer");

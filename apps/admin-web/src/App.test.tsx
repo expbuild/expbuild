@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import type { Operation } from "./api";
+import { setLocale } from "./i18n";
 
 const projectId = "project-1";
 let projectState = "ready";
@@ -44,7 +45,9 @@ beforeEach(() => {
               name: "bazel-remote",
               version: "0.1.0",
               capabilities: { capacity: true },
-              exposures: gatewayEnabled ? ["ClusterInternal", "Gateway"] : ["ClusterInternal"],
+              exposures: gatewayEnabled
+                ? ["ClusterInternal", "Gateway"]
+                : ["ClusterInternal"],
             },
             ...(webdavEnabled
               ? [
@@ -65,15 +68,39 @@ beforeEach(() => {
           name: "Artifacts",
           lifecycle: "active",
           revision: "uid:1",
-          capabilities: { capacity: false, statistics: false, lookupHistory: false, lru: false, ttl: false },
+          capabilities: {
+            capacity: false,
+            statistics: false,
+            lookupHistory: false,
+            lru: false,
+            ttl: false,
+          },
           spec: {
-            templateRef: { name: policyGeneration === undefined ? "webdav-apache" : "bazel-remote", version: "0.1.0" },
+            templateRef: {
+              name:
+                policyGeneration === undefined
+                  ? "webdav-apache"
+                  : "bazel-remote",
+              version: "0.1.0",
+            },
             desiredState: "Running",
             storage: { capacity: "10Gi", deletionPolicy: "Retain" },
             eviction: { maxCacheGiB: 0 },
             resources: { limits: { cpu: "500m", memory: "512Mi" } },
           },
-          status: policyGeneration === undefined ? {} : { conditions: [{ type: "PolicyApplied", status: "True", reason: "EngineBudgetVerified", observedGeneration: policyGeneration }] },
+          status:
+            policyGeneration === undefined
+              ? {}
+              : {
+                  conditions: [
+                    {
+                      type: "PolicyApplied",
+                      status: "True",
+                      reason: "EngineBudgetVerified",
+                      observedGeneration: policyGeneration,
+                    },
+                  ],
+                },
         });
       if (path === "/v1/auth/login")
         return response({ csrfToken: "test-csrf" });
@@ -129,18 +156,29 @@ afterEach(() => {
 });
 
 describe("management console", () => {
-  it('exposes administrator-enabled Gateway access in the create form', async () => {
+  it("exposes administrator-enabled Gateway access in the create form", async () => {
     gatewayEnabled = true;
-    sessionStorage.setItem('expbuild-csrf', 'csrf');
-    const user = userEvent.setup(); render(<App />);
-    await user.click(await screen.findByRole('button', { name: '＋ 创建实例' }));
-    await screen.findByRole('option', { name: '独立域名（HTTPS / gRPC TLS）' });
-    await user.selectOptions(screen.getByLabelText('访问方式'), 'Gateway');
-    await user.type(screen.getByLabelText('实例名称'), 'Gateway build');
-    await user.click(screen.getByRole('button', { name: '创建实例' }));
-    await waitFor(() => expect(requests.some(r => r.options.method === 'POST' && r.path.endsWith('/instances'))).toBe(true));
-    const created = requests.find(r => r.options.method === 'POST' && r.path.endsWith('/instances'))!;
-    expect(JSON.parse(String(created.options.body)).exposure).toBe('Gateway');
+    sessionStorage.setItem("expbuild-csrf", "csrf");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "＋ 创建实例" }),
+    );
+    await screen.findByRole("option", { name: "独立域名（HTTPS / gRPC TLS）" });
+    await user.selectOptions(screen.getByLabelText("访问方式"), "Gateway");
+    await user.type(screen.getByLabelText("实例名称"), "Gateway build");
+    await user.click(screen.getByRole("button", { name: "创建实例" }));
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (r) => r.options.method === "POST" && r.path.endsWith("/instances"),
+        ),
+      ).toBe(true),
+    );
+    const created = requests.find(
+      (r) => r.options.method === "POST" && r.path.endsWith("/instances"),
+    )!;
+    expect(JSON.parse(String(created.options.body)).exposure).toBe("Gateway");
   });
 
   it.each(["admin", "maintainer", "viewer"])(
@@ -165,6 +203,9 @@ describe("management console", () => {
         { ...failed, id: "delete", kind: "instance.delete" },
       ];
       render(<App />);
+      await userEvent
+        .setup()
+        .click(await screen.findByRole("link", { name: "操作记录" }));
       await screen.findAllByText(/operation_deadline_exceeded/);
       expect(
         screen.queryAllByRole("button", { name: "恢复检查" }),
@@ -177,10 +218,22 @@ describe("management console", () => {
 
   it("uses advertised capabilities and schema for a new template name", async () => {
     sessionStorage.setItem("expbuild-csrf", "csrf");
-    catalogOverride = [{ name: "custom-cache", version: "1.0.0", capabilities: { capacity: true, lru: true, ttl: false }, exposures: ["ClusterInternal"], inputSchema: { properties: { cpuMillis: { minimum: 250, maximum: 2000 } } } }];
+    catalogOverride = [
+      {
+        name: "custom-cache",
+        version: "1.0.0",
+        capabilities: { capacity: true, lru: true, ttl: false },
+        exposures: ["ClusterInternal"],
+        inputSchema: {
+          properties: { cpuMillis: { minimum: 250, maximum: 2000 } },
+        },
+      },
+    ];
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await user.click(
+      await screen.findByRole("button", { name: "＋ 创建实例" }),
+    );
     await screen.findByRole("option", { name: "custom-cache" });
     expect(screen.getByLabelText("缓存容量（GiB）")).toBeTruthy();
     const cpu = screen.getByLabelText("CPU（毫核）") as HTMLInputElement;
@@ -189,21 +242,37 @@ describe("management console", () => {
     await user.type(screen.getByLabelText("实例名称"), "Custom");
     await user.click(screen.getByRole("button", { name: "创建实例" }));
     await screen.findByDisplayValue("one-time-password");
-    const sent = requests.find(r => r.options.method === "POST")!;
-    expect(JSON.parse(sent.options.body as string).template).toBe("custom-cache");
+    const sent = requests.find((r) => r.options.method === "POST")!;
+    expect(JSON.parse(sent.options.body as string).template).toBe(
+      "custom-cache",
+    );
   });
   it("normalizes the initial budget for templates without capacity support", async () => {
     sessionStorage.setItem("expbuild-csrf", "csrf");
-    catalogOverride = [{ name: "custom-files", version: "1.0.0", capabilities: { capacity: false }, exposures: ["ClusterInternal"] }];
+    catalogOverride = [
+      {
+        name: "custom-files",
+        version: "1.0.0",
+        capabilities: { capacity: false },
+        exposures: ["ClusterInternal"],
+      },
+    ];
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await user.click(
+      await screen.findByRole("button", { name: "＋ 创建实例" }),
+    );
     await screen.findByRole("option", { name: "custom-files" });
     expect(screen.queryByLabelText("缓存容量（GiB）")).toBeNull();
     await user.type(screen.getByLabelText("实例名称"), "Files");
     await user.click(screen.getByRole("button", { name: "创建实例" }));
     await screen.findByDisplayValue("one-time-password");
-    expect(JSON.parse(requests.find(r => r.options.method === "POST")!.options.body as string).cacheGiB).toBe(0);
+    expect(
+      JSON.parse(
+        requests.find((r) => r.options.method === "POST")!.options
+          .body as string,
+      ).cacheGiB,
+    ).toBe(0);
   });
   it("clears unsupported Gateway exposure when switching templates", async () => {
     sessionStorage.setItem("expbuild-csrf", "csrf");
@@ -211,12 +280,21 @@ describe("management console", () => {
     gatewayEnabled = true;
     const user = userEvent.setup();
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: "＋ 创建实例" }));
+    await user.click(
+      await screen.findByRole("button", { name: "＋ 创建实例" }),
+    );
     await screen.findByRole("option", { name: "WebDAV / HTTP" });
     await user.selectOptions(screen.getByLabelText("访问方式"), "Gateway");
-    await user.selectOptions(screen.getByLabelText("协议模板"), "webdav-apache");
-    expect((screen.getByLabelText("访问方式") as HTMLSelectElement).value).toBe("ClusterInternal");
-    expect(screen.queryByRole("option", { name: "独立域名（HTTPS / gRPC TLS）" })).toBeNull();
+    await user.selectOptions(
+      screen.getByLabelText("协议模板"),
+      "webdav-apache",
+    );
+    expect((screen.getByLabelText("访问方式") as HTMLSelectElement).value).toBe(
+      "ClusterInternal",
+    );
+    expect(
+      screen.queryByRole("option", { name: "独立域名（HTTPS / gRPC TLS）" }),
+    ).toBeNull();
   });
   it("creates WebDAV only from the enabled catalog without a cache budget", async () => {
     webdavEnabled = true;
@@ -241,42 +319,70 @@ describe("management console", () => {
       cacheGiB: 0,
     });
   });
-  it.each([1, 2])("only confirms policy for the current revision (observed %s)", async (generation) => {
-    webdavInstance = true;
-    policyGeneration = generation;
-    sessionStorage.setItem("expbuild-csrf", "csrf");
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByRole("button", { name: "详情" }));
-    await screen.findByText(generation === 1 ? /缓存策略已生效/ : /缓存策略尚未确认生效/);
-    if (generation !== 1) expect(screen.queryByText(/缓存策略已生效/)).toBeNull();
-  });
-  it.each([true, false])("uses instance capabilities rather than template names for statistics (%s)", async (supported) => {
-    webdavInstance = true;
-    sessionStorage.setItem("expbuild-csrf", "csrf");
-    const original = globalThis.fetch;
-    vi.stubGlobal("fetch", vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
-      const result = await original(url, options);
-      if (String(url).endsWith("/instances/dav")) {
-        const data = await result.json();
-        data.spec.templateRef.name = "custom-cache";
-        data.capabilities = supported ? { capacity: true, statistics: true, lookupHistory: true, lru: true, ttl: false } : null;
-        return response(data);
+  it.each([1, 2])(
+    "only confirms policy for the current revision (observed %s)",
+    async (generation) => {
+      webdavInstance = true;
+      policyGeneration = generation;
+      sessionStorage.setItem("expbuild-csrf", "csrf");
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "详情" }));
+      await screen.findByText(
+        generation === 1 ? /缓存策略已生效/ : /缓存策略尚未确认生效/,
+      );
+      if (generation !== 1)
+        expect(screen.queryByText(/缓存策略已生效/)).toBeNull();
+    },
+  );
+  it.each([true, false])(
+    "uses instance capabilities rather than template names for statistics (%s)",
+    async (supported) => {
+      webdavInstance = true;
+      sessionStorage.setItem("expbuild-csrf", "csrf");
+      const original = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
+          const result = await original(url, options);
+          if (String(url).endsWith("/instances/dav")) {
+            const data = await result.json();
+            data.spec.templateRef.name = "custom-cache";
+            data.capabilities = supported
+              ? {
+                  capacity: true,
+                  statistics: true,
+                  lookupHistory: true,
+                  lru: true,
+                  ttl: false,
+                }
+              : null;
+            return response(data);
+          }
+          return result;
+        }),
+      );
+      const user = userEvent.setup();
+      render(<App />);
+      await user.click(await screen.findByRole("button", { name: "详情" }));
+      if (supported) {
+        await screen.findByRole("button", { name: "查看查询历史" });
+        await waitFor(() =>
+          expect(requests.some((r) => r.path.endsWith("/statistics"))).toBe(
+            true,
+          ),
+        );
+      } else {
+        await screen.findByText("模板能力未知，暂不查询统计。");
+        expect(
+          screen.queryByRole("button", { name: "查看查询历史" }),
+        ).toBeNull();
+        expect(requests.some((r) => r.path.includes("/statistics"))).toBe(
+          false,
+        );
       }
-      return result;
-    }));
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(await screen.findByRole("button", { name: "详情" }));
-    if (supported) {
-      await screen.findByRole("button", { name: "查看查询历史" });
-      await waitFor(() => expect(requests.some(r => r.path.endsWith("/statistics"))).toBe(true));
-    } else {
-      await screen.findByText("模板能力未知，暂不查询统计。");
-      expect(screen.queryByRole("button", { name: "查看查询历史" })).toBeNull();
-      expect(requests.some(r => r.path.includes("/statistics"))).toBe(false);
-    }
-  });
+    },
+  );
   it("keeps an existing WebDAV template immutable and does not poll unsupported statistics", async () => {
     webdavInstance = true;
     sessionStorage.setItem("expbuild-csrf", "csrf");
@@ -376,4 +482,20 @@ describe("management console", () => {
       expect(screen.queryByDisplayValue("one-time-password")).toBeNull(),
     );
   });
+});
+
+it("does not expose administrative pages to a viewer through a saved URL", async () => {
+  platform = false;
+  role = "viewer";
+  sessionStorage.setItem("expbuild-csrf", "csrf");
+  history.replaceState(null, "", "#/projects/project-1/members");
+  setLocale("en");
+  render(<App />);
+  await screen.findByRole("heading", { name: "Cache instances" });
+  expect(screen.queryByRole("link", { name: "Members & access" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Audit log" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
+  expect(requests.some((request) => request.path.endsWith("/members"))).toBe(
+    false,
+  );
 });
