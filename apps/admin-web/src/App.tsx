@@ -1,3 +1,4 @@
+import { PlatformHealth, ProjectObservability, InstanceObservability } from "./Observability";
 import { t, formatDate, formatNumber, useLocale } from "./i18n";
 import {
   Brand,
@@ -236,6 +237,7 @@ function Console({ user, onLogout }: { user: User; onLogout: () => void }) {
     setMobileNav(false);
   }, [route.project, route.section, route.users]);
   const usersOpen = route.users && user.platform_admin;
+  const healthOpen = route.health && user.platform_admin;
   const canAdmin =
     user.platform_admin ||
     projects.find((p) => p.id === projectId)?.role === "admin";
@@ -272,7 +274,7 @@ function Console({ user, onLogout }: { user: User; onLogout: () => void }) {
                 key={item.id}
                 href={`#/projects/${projectId}/${item.id}`}
                 aria-current={
-                  !usersOpen && section === item.id ? "page" : undefined
+                  !usersOpen && !healthOpen && section === item.id ? "page" : undefined
                 }
               >
                 <Icon name={item.id} />
@@ -284,6 +286,7 @@ function Console({ user, onLogout }: { user: User; onLogout: () => void }) {
           <>
             <div className="sidebar-label">{t("平台管理")}</div>
             <nav aria-label={t("平台导航")}>
+              <a href="#/health" aria-current={healthOpen ? "page" : undefined}><Icon name="operations"/><span>{t("平台健康")}</span></a>
               <a href="#/users" aria-current={usersOpen ? "page" : undefined}>
                 <Icon name="members" />
                 <span>{t("用户管理")}</span>
@@ -374,12 +377,12 @@ function Console({ user, onLogout }: { user: User; onLogout: () => void }) {
             <span>{t("工作空间")}</span>
             <span>/</span>
             <span>
-              {usersOpen ? t("平台管理") : (project?.name ?? t("项目"))}
+              {(usersOpen || healthOpen) ? t("平台管理") : (project?.name ?? t("项目"))}
             </span>
             <span>/</span>
             <strong>
               {t(
-                usersOpen
+                healthOpen ? "平台健康" : usersOpen
                   ? "用户管理"
                   : sections.find((item) => item.id === section)!.label,
               )}
@@ -423,7 +426,7 @@ function Console({ user, onLogout }: { user: User; onLogout: () => void }) {
               </form>
             </Dialog>
           )}
-          {usersOpen && user.platform_admin ? (
+          {healthOpen ? <PlatformHealth /> : usersOpen && user.platform_admin ? (
             <UsersPanel actor={user} />
           ) : project ? (
             <ProjectView
@@ -915,6 +918,7 @@ function ProjectView({
           )}
         </section>
       )}
+      {(section === "observability" || section === "alerts") && <ProjectObservability key={section} base={base} canEdit={canWrite} alertsOnly={section === "alerts"} />}
       {section === "resources" && (
         <div className="resource-sections">
           <ProjectQuota
@@ -1347,6 +1351,7 @@ function InstanceDetail({
     [busy, setBusy] = useState(false);
   const [formBusy, setFormBusy] = useState(false);
   const [rotationBusy, setRotationBusy] = useState(false);
+  const [observationsOpen, setObservationsOpen] = useState(false);
   useEffect(() => {
     onBusyChange(busy || formBusy || rotationBusy);
   }, [busy, formBusy, rotationBusy, onBusyChange]);
@@ -1569,6 +1574,7 @@ function InstanceDetail({
           </div>
         </>
       )}
+      {detail?.revision && <details className="instance-observation-details" onToggle={event=>setObservationsOpen(event.currentTarget.open)}><summary>{t("指标与诊断")}</summary>{observationsOpen&&<InstanceObservability path={`${base}/instances/${id}`} canEdit={canWrite}/>}</details>}
       {detail?.capabilities?.lookupHistory && (
         <LookupHistory path={`${base}/instances/${id}`} />
       )}

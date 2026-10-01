@@ -181,6 +181,8 @@ type Options = {
   description?: string;
   headers?: Record<string, unknown>;
   query?: Record<string, unknown>[];
+  bearer?: boolean;
+  contentType?: string;
 };
 const paths: Record<string, Record<string, unknown>> = {};
 function route(
@@ -199,7 +201,7 @@ function route(
     schema: uuid,
   }));
   parameters.push(...(options.query ?? []));
-  if (method !== "get") {
+  if (method !== "get" && !options.bearer) {
     parameters.push({
       name: "Origin",
       in: "header",
@@ -260,14 +262,14 @@ function route(
         ? "Accepted for asynchronous processing; poll operation state."
         : "Successful response",
     ...(options.headers ? { headers: options.headers } : {}),
-    content: { "application/json": { schema: options.response ?? ok } },
+    content: { [options.contentType ?? "application/json"]: { schema: options.response ?? ok } },
   };
   paths[path] ??= {};
   paths[path][method] = {
     operationId: id,
     summary,
     description: options.description ?? summary,
-    security: options.public ? [] : [{ session: [] }],
+    security: options.bearer ? [{ telemetryBearer: [] }] : options.public ? [] : [{ session: [] }],
     parameters,
     ...(options.body
       ? {
@@ -637,6 +639,47 @@ route("get", "/v1/openapi.json", "openapi", "Authenticated API contract", {
   response: { type: "object" },
 });
 
+const observationState: Schema = {type:'string',enum:['ok','no_data','stale','unsupported','not_configured','error']};
+const timestamp: Schema = {type:'string',format:'date-time'};
+const number: Schema = {type:'number'};
+const observationList = (item:Schema,maxItems:number) => object({state:observationState,observedAt:timestamp,truncated:bool,items:{type:'array',maxItems,items:item}},['state','items']);
+route('get','/internal/metrics','platformMetrics','Installation bearer: scrape management and worker metrics',{
+  bearer:true,response:string,contentType:'text/plain; version=0.0.4',description:'Disabled unless METRICS_SCRAPE_TOKEN is configured. This endpoint does not accept a browser session. Tokens must have at least 32 characters.',
+});
+route('post','/internal/alerts','receiveAlerts','Installation bearer: receive Alertmanager webhook batches',{
+  bearer:true,body:object({alerts:{type:'array',maxItems:50,items:object({status:{enum:['firing','resolved']},fingerprint:string,startsAt:timestamp,endsAt:timestamp,labels:{type:'object',additionalProperties:string},annotations:{type:'object',additionalProperties:string}},['status','fingerprint','startsAt','endsAt','labels'])}}),
+  description:'Dedicated ALERT_WEBHOOK_TOKEN required; no browser Origin/CSRF needed with this valid token. Foreign cluster/project/UID alerts are ignored. Retries are idempotent per project, immutable instance UID, fingerprint and startsAt; resolved episodes cannot be reopened by a delayed firing delivery.',
+});
+route('get','/v1/platform/observability','platformObservability','Platform administrator: control plane observation snapshot',{
+  response:object({observedAt:timestamp,clusterId:string,database:{const:'ok'},workers:{type:'object',additionalProperties:object({lastSuccess:nullable(timestamp),lastFailure:nullable(timestamp)})},queues:{type:'array',items:object({kind:string,state:string,count:number,oldest_seconds:number})},connections:object({total:number,idle:number,waiting:number}),integrations:object({metrics:bool,logs:bool,alerts:bool,alertHistory:bool}),metricsEndpoint:bool}),
+  description:'Local replica worker polling status and database-backed queue snapshot. Integration flags describe configuration, not a successful live health check.',
+});
+route('get','/v1/projects/{projectId}/observability','projectObservability','Project member: latest background observations and coverage',{
+  response:object({observedAt:timestamp,total:number,covered:number,truncated:bool,items:{type:'array',maxItems:500,items:object({id:uuid,display_name:string,template_name:string,lifecycle:string,kubernetes_uid:nullable(string),observed_at:nullable(timestamp),dataState:observationState,payload:nullable(object({phase:{enum:['ready','starting','suspended','deleting','unknown']},collection:{enum:['ok','error','unsupported','suspended']},generation:nullable(number),conditions:{type:'array',items:object({type:string,status:string,reason:string,current:bool})},statistics:nullable(ref('Statistics'))}))})}}),
+});
+const observationBase='/v1/projects/{projectId}/instances/{instanceId}/observability';
+route('get',observationBase+'/metrics','instanceObservationMetrics','Project member: bounded metric trends',{
+  query:[{name:'group',in:'query',schema:{enum:['capacity','lookups','resources','performance'],default:'capacity'}},{name:'window',in:'query',schema:{enum:['1h','6h','24h'],default:'1h'}}],
+  response:object({state:observationState,source:string,group:string,start:number,end:number,step:number,observedAt:nullable(timestamp),series:{type:'array',maxItems:20,items:object({name:string,unit:string,points:{type:'array',maxItems:361,items:{type:'array',prefixItems:[number,nullable(number)],minItems:2,maxItems:2}}})}},['state','series']),
+  description:'Queries are server-owned and scoped to deployment cluster, project and original CR UID. Unknown query parameters are rejected. Null samples preserve gaps; zero is a measured value. observedAt is the last finite evaluation point, not the raw scrape timestamp. Rate windows are five minutes.',
+});
+route('get',observationBase+'/logs','instanceObservationLogs','Project administrator or maintainer: bounded instance logs',{
+  query:[{name:'minutes',in:'query',schema:{type:'integer',minimum:1,maximum:60,default:15}},{name:'level',in:'query',schema:{enum:['info','warn','error']}}],
+  response:observationList(object({time:timestamp,text:string}),500),description:'Maximum 500 lines and 1 MiB upstream response, five-second timeout. Identity is verified on every returned stream. Application-level redaction is defense in depth; sanitize at ingestion and never emit credentials.',
+});
+route('get',observationBase+'/events','instanceObservationEvents','Project member: latest condition changes and operations',{
+  response:observationList(object({id:uuid,time:timestamp,code:string,details:{type:'object'}}),100),description:'Retains the original immutable instance UID, including after deletion. At most 100 results; condition history is retained for 30 days. Operation and audit retention are independent.',
+});
+route('get','/v1/projects/{projectId}/observability/alerts','projectAlerts','Project member: active instance alerts',{
+  response:observationList(object({fingerprint:string,instanceUID:string,instanceId:uuid,instanceName:string,name:string,severity:string,summary:string,startsAt:timestamp,endsAt:timestamp,state:{enum:['unprocessed','active','suppressed']}}),500),
+});
+route('post',observationBase+'/silences','silenceInstanceAlert','Project administrator or maintainer: silence one bound alert rule',{
+  code:201,body:object({fingerprint:{type:'string',pattern:'^[a-fA-F0-9]{1,128}$'},minutes:{type:'integer',minimum:5,maximum:1440}},undefined,true),response:object({silenceID:uuid}),description:'Resolves the active fingerprint before constructing exact non-regex cluster/project/instance/rule matchers. Persists an audit attempt before the external write. If the outcome is unknown, refresh alerts before retrying.',
+});
+route('get','/v1/projects/{projectId}/observability/alert-history','projectAlertHistory','Project member: received alert episodes',{
+  response:observationList(object({fingerprint:string,starts_at:timestamp,ends_at:nullable(timestamp),received_at:timestamp,active_confirmed:nullable(bool),checked_at:nullable(timestamp),state:{enum:['firing','resolved']},payload:object({name:string,severity:string,summary:string}),instance_id:uuid,display_name:string}),100),description:'Webhook deliveries retained for 30 days after resolution. This is received history, not guaranteed complete backend history.',
+});
+
 export const openapi = {
   openapi: "3.1.0",
   info: {
@@ -651,6 +694,7 @@ export const openapi = {
   components: {
     securitySchemes: {
       session: { type: "apiKey", in: "cookie", name: "expbuild_session" },
+      telemetryBearer: {type:'http',scheme:'bearer',description:'Dedicated scrape or webhook credential, selected by endpoint; never a user session.'},
     },
     schemas,
   },

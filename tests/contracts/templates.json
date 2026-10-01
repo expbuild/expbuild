@@ -60,11 +60,32 @@
     "enginePolicy": "lru",
     "storageGiB": 3,
     "cacheGiB": 1,
-    "protocols": ["gradle-http"],
-    "endpointProtocols": ["gradle-http"],
+    "protocols": [
+      "gradle-http"
+    ],
+    "endpointProtocols": [
+      "gradle-http"
+    ],
     "httpPort": 8080,
     "grpcPort": 0,
     "statistics": true,
     "prometheusMetrics": false
+  },
+  {
+    "name": "gradle-http",
+    "version": "0.2.0",
+    "enginePolicy": "lru",
+    "storageGiB": 3,
+    "cacheGiB": 1,
+    "protocols": [
+      "gradle-http"
+    ],
+    "endpointProtocols": [
+      "gradle-http"
+    ],
+    "httpPort": 8080,
+    "grpcPort": 0,
+    "statistics": true,
+    "prometheusMetrics": true
   }
 ]

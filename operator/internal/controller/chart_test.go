@@ -145,6 +145,8 @@ func checkChartPermissions(t *testing.T, ctx context.Context, cl client.Client) 
 		{"api", "create", "", "secrets", "", "project-a", true},
 		{"api", "delete", "", "secrets", "", "project-b", true},
 		{"api", "list", "", "secrets", "", "project-a", false},
+		{"api", "list", "", "events", "", "project-a", true},
+		{"api", "create", "", "events", "", "project-a", false},
 		{"api", "update", "cache.expbuild.io", "cacheinstances", "", "project-a", true},
 		{"api", "update", "cache.expbuild.io", "cacheinstances", "status", "project-a", false},
 		{"api", "create", "networking.k8s.io", "networkpolicies", "", "project-b", true},

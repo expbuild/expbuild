@@ -114,6 +114,15 @@ test("international workspace: navigation, forms, language persistence and respo
   await expect(page.getByLabel("Member email", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Audit log" }).click();
   await expect(page.getByRole("columnheader", { name: "Actor" })).toBeVisible();
+  await page.getByRole('link',{name:'Observability',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Project observability'})).toBeVisible();
+  await expect(page.getByText('Valid observations cover 0 of 1 instances')).toBeVisible();
+  await page.getByRole('link',{name:'Alerts',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Alerts',exact:true,level:1})).toBeVisible();
+  await expect(page.getByText('No active alerts.')).toHaveCount(0);
+  await page.getByRole('link',{name:'Platform health',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Platform health',exact:true})).toBeVisible();
+  await page.screenshot({path:testInfo.outputPath('observability-health-en.png'),fullPage:true});
   await page.getByRole("link", { name: "Users", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "User directory" }),

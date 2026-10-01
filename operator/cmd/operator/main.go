@@ -15,11 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 func main() {
+	metricsAddress := flag.String("metrics-bind-address", "0", "optional authenticated metrics endpoint")
+	clusterID := flag.String("observability-cluster-id", "primary", "stable cluster identity for monitoring")
 	monitoringNamespace := flag.String("monitoring-namespace", "", "optional namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true; requires ServiceMonitor CRD")
 	image := flag.String("bazel-remote-image", "", "administrator-approved digest-pinned engine image")
 	webdavImage := flag.String("webdav-image", "", "optional approved digest-pinned Apache WebDAV image")
@@ -36,9 +37,14 @@ func main() {
 	flag.StringVar(&gatewayConfig.ControllerName, "gateway-controller-name", "", "expected Gateway API controller name")
 	flag.StringVar(&gatewayConfig.DataPlaneNamespace, "gateway-data-plane-namespace", "", "namespace of gateway Pods labeled cache.expbuild.io/gateway=true")
 	flag.Parse()
+	metricsOptions, err := monitoring.MetricsOptions(*metricsAddress, os.Getenv("METRICS_SCRAPE_TOKEN"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 	var monitoringOptions *monitoring.Config
 	if *monitoringNamespace != "" {
-		monitoringOptions = &monitoring.Config{Namespace: *monitoringNamespace}
+		monitoringOptions = &monitoring.Config{Namespace: *monitoringNamespace, ClusterID: *clusterID}
 		if err := monitoringOptions.Validate(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
@@ -74,7 +80,7 @@ func main() {
 	m, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme, Cache: cacheOptions,
 		LeaderElection: *leader, LeaderElectionID: "expbuild-cache-operator", LeaderElectionNamespace: *leaderNamespace,
-		HealthProbeBindAddress: ":8081", Metrics: metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress: ":8081", Metrics: metricsOptions,
 	})
 	if err != nil {
 		panic(err)

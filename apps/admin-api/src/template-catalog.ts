@@ -45,10 +45,16 @@ const templates = [
     enabled: (_options: TemplateOptions) => false,
   },
   {
-    name: 'gradle-http', version: '0.1.0', enginePolicy: 'lru',
+    name: 'gradle-http', version: '0.2.0', enginePolicy: 'lru',
     protocols: ['gradle-http'], input: gradleInput,
     capabilities: { capacity: true, statistics: true, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
     enabled: (options: TemplateOptions) => options.gradleEnabled === true,
+  },
+  {
+    name: 'gradle-http', version: '0.1.0', enginePolicy: 'lru',
+    protocols: ['gradle-http'], input: gradleInput,
+    capabilities: { capacity: true, statistics: true, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
+    enabled: (_options: TemplateOptions) => false,
   },
 ] as const;
 

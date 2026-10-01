@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import { PrometheusHistory, type History } from "./history.js";
+import { Backend, ObservationMetrics } from './observation-backends.js';
 
 test(
   "real Prometheus scrapes authenticated counters and isolates project and CR UID history",
@@ -31,7 +32,7 @@ test(
       const counter = (((Date.now() - started) / 1000) * multiplier).toFixed(4);
       response.setHeader("Content-Type", "text/plain; version=0.0.4");
       response.end(
-        `# TYPE bazel_remote_incoming_requests_total counter\nbazel_remote_incoming_requests_total{kind="cas",method="get",status="hit"} ${counter}\nbazel_remote_incoming_requests_total{kind="cas",method="get",status="miss"} 0\n`,
+        `# TYPE bazel_remote_incoming_requests_total counter\nbazel_remote_incoming_requests_total{kind="cas",method="get",status="hit"} ${counter}\nbazel_remote_incoming_requests_total{kind="cas",method="get",status="miss"} 0\n# TYPE expbuild_cache_lookups_total counter\nexpbuild_cache_lookups_total{outcome="hit"} ${counter}\nexpbuild_cache_lookups_total{outcome="miss"} 0\nexpbuild_instance_used_bytes{source="gradle-http-status"} 0\nexpbuild_instance_statistics_timestamp_seconds{source="gradle-http-status"} ${Date.now()/1000}\n`,
       );
     });
     exporter.listen(0, "127.0.0.1");
@@ -61,6 +62,7 @@ test(
               labels: {
                 expbuild_project_id: project,
                 expbuild_instance_uid: uid,
+                expbuild_cluster_id: 'primary',
               },
             },
           ],
@@ -146,6 +148,27 @@ test(
         ).series,
         [],
       );
+      const observations=new ObservationMetrics(new Backend(base));
+      const target={projectId:'project-1',instanceUID:'uid-1',namespace:'project-test',template:'gradle-http',version:'0.2.0'};
+      const observationDeadline=Date.now()+65_000;
+      while(Date.now()<observationDeadline) {
+        const sample=await observations.read(target,'lookups','1h');
+        if((sample.series.find(s=>s.name==='get_hit')?.points.at(-1)?.[1]??0)>0)break;
+        await delay(500);
+      }
+      for(const group of ['capacity','lookups','performance','resources'] as const) {
+        // The actual PromQL parser checks every preset, including resource joins
+        // when this fixture does not have kube-state-metrics installed.
+        const values=await observations.read(target,group,'1h');
+        if(group==='capacity') assert.equal(values.series.find(s=>s.name==='used_bytes')?.points.at(-1)?.[1],0);
+        if(group==='lookups') {
+          assert.ok((values.series.find(s=>s.name==='get_hit')?.points.at(-1)?.[1]??0)>0);
+          assert.equal(values.series.find(s=>s.name==='get_miss')?.points.at(-1)?.[1],0);
+          assert.equal(values.series.find(s=>s.name==='get_hit_ratio')?.points.at(-1)?.[1],100);
+        }
+      }
+      await observations.read({...target,template:'bazel-remote',version:'0.1.0'},'lookups','1h');
+      assert.equal((await observations.read({...target,instanceUID:'never-collected'},'capacity','1h')).state,'no_data');
     } finally {
       if (child.exitCode === null && !spawnError) {
         const stopped = once(child, "exit");

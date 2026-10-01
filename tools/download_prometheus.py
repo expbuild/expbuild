@@ -16,6 +16,7 @@ SHA256 = '2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0'
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('destination', type=Path)
+    parser.add_argument('--tool', choices=['prometheus', 'promtool'], default='prometheus')
     args = parser.parse_args()
     if platform.system() != 'Linux' or platform.machine() != 'x86_64':
         parser.error('fixture currently supports Linux amd64 only')
@@ -32,9 +33,9 @@ def main():
         if digest.hexdigest() != SHA256:
             raise RuntimeError('Prometheus release checksum mismatch')
         # Extract only the named regular binary, never archive paths or links.
-        binary = Path(directory) / 'prometheus'
+        binary = Path(directory) / args.tool
         with tarfile.open(archive) as release:
-            member = release.getmember(name + '/prometheus')
+            member = release.getmember(name + '/' + args.tool)
             if not member.isfile(): raise RuntimeError('Unexpected binary member')
             with release.extractfile(member) as source, binary.open('wb') as output:
                 shutil.copyfileobj(source, output)

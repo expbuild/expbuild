@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { transaction } from "./db.js";
 import { unseal } from "./secrets.js";
 import { OperationError } from "./errors.js";
+import type { Telemetry } from './telemetry.js';
 import type { CacheObject } from "./instance-contract.js";
 import {
   statusCode,
@@ -21,6 +22,7 @@ type Operation = {
   worker_id: string;
   target_generation: string | null;
   deadline_at: Date;
+  created_at: Date;
   secret_payload: Buffer | null;
   request: {
     namespace?: string;
@@ -41,6 +43,7 @@ export class OperationWorker {
     private kube: KubernetesPort,
     private key: Buffer,
     private quotaGate?: (projectId: string) => Promise<boolean>,
+    private telemetry?: Telemetry,
   ) {}
 
   async tick(): Promise<boolean> {
@@ -92,10 +95,10 @@ export class OperationWorker {
     code: string | null = null,
     apply?: (client: pg.PoolClient) => Promise<void>,
   ) {
-    await transaction(this.pool, async (client) => {
+    const committed = await transaction(this.pool, async (client) => {
       // Admission takes project then operation locks; use the same order.
       await client.query('SELECT id FROM projects WHERE id=$1 FOR UPDATE', [operation.project_id]);
-      if (!(await this.held(client, operation))) return;
+      if (!(await this.held(client, operation))) return false;
       if (apply) await apply(client);
       if (state === 'succeeded' && operation.instance_id && operation.request.desired &&
           ['instance.create', 'instance.reclaim', 'instance.update'].includes(operation.kind))
@@ -124,7 +127,13 @@ export class OperationWorker {
           JSON.stringify({ code }),
         ],
       );
+      return true;
     });
+    if(committed && this.telemetry) {
+      const labels={kind:operation.kind,outcome:state};
+      this.telemetry.completedOperations.inc(labels);
+      this.telemetry.operationDuration.observe(labels,Math.max(0,(Date.now()-new Date(operation.created_at).getTime())/1000));
+    }
   }
   private async defer(operation: Operation, code: string | null = null) {
     await this.pool.query(
