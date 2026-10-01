@@ -1,0 +1,14 @@
+expbuild control plane: {{ .Values.appOrigin }}
+
+The project controller requires the control-plane namespace label:
+  kubectl label namespace {{ .Release.Namespace }} cache.expbuild.io/control-plane=true --overwrite
+
+Database and encryption Secrets must already exist. Helm does not create them.
+{{ if not .Values.bootstrap.enabled }}
+No administrator was bootstrapped. Run the API bootstrap command once with
+ADMIN_EMAIL and ADMIN_PASSWORD from your secret management system.
+{{ end }}
+
+Uninstalling this chart does NOT delete project namespaces, CacheInstances,
+retained volumes, external Secrets, the database or CRDs. Delete instances through
+the API while the operator is still running before removing the control plane.

@@ -1,0 +1,41 @@
+{{- $api := required "images.api is required" .Values.images.api -}}
+{{- $web := required "images.web is required" .Values.images.web -}}
+{{- $operator := required "images.operator is required" .Values.images.operator -}}
+{{- $engine := required "images.bazelRemote is required" .Values.images.bazelRemote -}}
+{{- if not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" $engine) -}}
+{{- fail "images.bazelRemote must be pinned to a SHA256 digest" -}}
+{{- end -}}
+{{- $storage := required "storageClass is required" .Values.storageClass -}}
+{{- if and .Values.images.webdav (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.webdav)) -}}
+{{- fail "images.webdav must be pinned to a SHA256 digest" -}}
+{{- end -}}
+{{- if and .Values.images.gradle (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.gradle)) -}}
+{{- fail "images.gradle must be pinned to a SHA256 digest" -}}
+{{- end -}}
+{{- $database := required "secrets.database is required" .Values.secrets.database -}}
+{{- $key := required "secrets.operationEncryption is required" .Values.secrets.operationEncryption -}}
+{{- $origin := required "appOrigin is required" .Values.appOrigin -}}
+{{- if .Values.ingress.enabled -}}
+{{- $host := required "ingress.host is required" .Values.ingress.host -}}
+{{- $tls := required "ingress.tlsSecret is required" .Values.ingress.tlsSecret -}}
+{{- if ne $origin (printf "https://%s" $host) -}}
+{{- fail "appOrigin must equal https://ingress.host" -}}
+{{- end -}}
+{{- end -}}
+
+{{- if .Values.gateway.enabled -}}
+{{- range $key := list "name" "namespace" "sectionName" "baseDomain" "controllerName" "dataPlaneNamespace" -}}
+{{- $value := required (printf "gateway.%s is required when enabled" $key) (index $.Values.gateway $key) -}}
+{{- end -}}
+{{- end -}}
+
+{{- if .Values.monitoring.serviceMonitor.enabled -}}
+{{- $monitoring := required "monitoring.serviceMonitor.namespace is required when enabled" .Values.monitoring.serviceMonitor.namespace -}}
+{{- end -}}
+
+{{- with .Values.monitoring.queryBearerTokenSecret -}}
+{{- $url := required "monitoring.prometheusURL is required for query authentication" $.Values.monitoring.prometheusURL -}}
+{{- if or (gt (len .) 253) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" .)) -}}
+{{- fail "monitoring.queryBearerTokenSecret must be a valid Secret name" -}}
+{{- end -}}
+{{- end -}}

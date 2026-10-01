@@ -1,0 +1,56 @@
+name: Kubernetes platform
+on:
+  push:
+    paths: ['tests/contracts/**', 'operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
+  pull_request:
+    paths: ['tests/contracts/**', 'operator/**', 'deploy/charts/**', 'tools/download_bazel_remote.py', 'tools/download_bazel_client.py', '.github/workflows/platform.yml']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: operator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+      - run: helm lint ../deploy/charts/expbuild -f ../deploy/charts/expbuild/ci-values.yaml --strict
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: operator/go.sum
+      - run: make check test
+      - run: go test -race ./...
+      - run: go build ./cmd/render
+      - run: make build
+      - name: Verify actual cache engine protocol contract
+        run: |
+          python3 ../tools/download_bazel_remote.py "$RUNNER_TEMP/bazel-remote"
+          python3 ../tools/download_bazel_client.py "$RUNNER_TEMP/bazel"
+          BAZEL_BIN="$RUNNER_TEMP/bazel" BAZEL_LRU_TEST=1 BAZEL_REMOTE_BIN="$RUNNER_TEMP/bazel-remote" go test ./internal/controller -run TestRealBazelRemoteContract -count=1
+      - name: Verify actual Apache WebDAV contract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apache2-bin
+          APACHE_BIN=/usr/sbin/apache2 APACHE_MODULES=/usr/lib/apache2/modules go test ./internal/webdav -run TestApacheWebDAVContract -count=1
+      - name: Verify native Gradle remote cache build
+        run: |
+          curl -fsSL --retry 3 https://services.gradle.org/distributions/gradle-8.14.3-bin.zip -o "$RUNNER_TEMP/gradle-8.14.3-bin.zip"
+          echo "bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531  $RUNNER_TEMP/gradle-8.14.3-bin.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/gradle-8.14.3-bin.zip" -d "$RUNNER_TEMP"
+          GRADLE_BIN="$RUNNER_TEMP/gradle-8.14.3/bin/gradle" go test ./internal/gradlecache -run TestNativeGradleRemoteCache -count=1
+      - name: Install API server test assets
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20250517180713-32e5e9e948a5
+          echo "KUBEBUILDER_ASSETS=$(setup-envtest use 1.32.0 -p path)" >> "$GITHUB_ENV"
+      - run: HELM_BIN="$(command -v helm)" go test ./internal/controller -run TestAPIServerContract -count=1
+      - run: GATEWAY_API_CRDS="$(go env GOMODCACHE)/sigs.k8s.io/gateway-api@v1.2.1/config/crd/standard" go test ./internal/controller -run TestGatewayAPIServerContract -count=1
+      - name: Verify ServiceMonitor CRD contract
+        run: |
+          mkdir -p "$RUNNER_TEMP/monitoring-crds"
+          curl -fsSL https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.94.1/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml -o "$RUNNER_TEMP/monitoring-crds/servicemonitors.yaml"
+          echo "31bdff398b54ac2bc993a33f5dcb0472792a77104a6a609d264c8f1f17829769  $RUNNER_TEMP/monitoring-crds/servicemonitors.yaml" | sha256sum --check
+          MONITORING_CRDS="$RUNNER_TEMP/monitoring-crds" go test ./internal/controller -run TestMonitoringAPIServerContract -count=1

@@ -1,0 +1,29 @@
+name: Platform container builds
+on:
+  push:
+    paths: ['apps/**', 'operator/**', 'images/**', 'tools/container_smoke.py', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
+  pull_request:
+    paths: ['apps/**', 'operator/**', 'images/**', 'tools/container_smoke.py', 'package*.json', '.dockerignore', '.github/workflows/images.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [admin-api, admin-web, operator, webdav, gradle-cache]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: images/${{ matrix.component }}/Dockerfile
+          push: false
+          load: true
+          tags: expbuild/${{ matrix.component }}:test
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+      - name: Run built container smoke checks
+        run: python3 tools/container_smoke.py "${{ matrix.component }}"

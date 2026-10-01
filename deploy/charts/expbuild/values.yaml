@@ -1,0 +1,61 @@
+# All platform images must be built and pushed before installation.
+images:
+  api: ''
+  web: ''
+  operator: ''
+  bazelRemote: '' # Required repository@sha256:digest; no mutable engine tags.
+  webdav: '' # Optional Apache WebDAV image; digest required when enabled.
+  gradle: '' # Optional Gradle HTTP cache image; digest required when enabled.
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+appOrigin: '' # e.g. https://expbuild.example.com; must match ingress.host
+storageClass: ''
+secrets:
+  database: '' # Existing Secret key: DATABASE_URL
+  operationEncryption: '' # Existing Secret key: OPERATION_ENCRYPTION_KEY
+  migrationDatabase: '' # Optional separate DDL-capable DATABASE_URL Secret
+  bootstrap: '' # Existing ADMIN_EMAIL and ADMIN_PASSWORD Secret; needed only when bootstrap.enabled
+api:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: '1', memory: 512Mi}
+web:
+  replicas: 1
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 128Mi}
+operator:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: '1', memory: 512Mi}
+migrations:
+  enabled: true
+bootstrap:
+  enabled: false
+ingress:
+  enabled: true
+  className: ''
+  host: ''
+  tlsSecret: ''
+  annotations: {}
+
+# Requires administrator-installed Gateway API CRDs/controller and an existing
+# HTTPS listener with wildcard certificate and DNS. Disable only after routes drain.
+gateway:
+  enabled: false
+  name: ''
+  namespace: ''
+  sectionName: ''
+  baseDomain: ''
+  controllerName: ''
+  dataPlaneNamespace: '' # Gateway Pods must have cache.expbuild.io/gateway=true
+
+# Optional external Prometheus; collectors must label samples with project/CR UID.
+monitoring:
+  prometheusURL: ''
+  queryBearerTokenSecret: '' # Existing control-plane namespace Secret, key: bearer-token
+  serviceMonitor:
+    enabled: false
+    namespace: '' # Namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true

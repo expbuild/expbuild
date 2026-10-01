@@ -1,0 +1,30 @@
+{
+  "name": "@expbuild/admin-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "tsx --test src/*.test.ts",
+    "migrate": "tsx src/migrate.ts",
+    "bootstrap": "tsx src/bootstrap.ts",
+    "openapi": "tsx src/export-openapi.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@kubernetes/client-node": "^2.0.0",
+    "bcryptjs": "^3.0.3",
+    "fastify": "^5.6.0",
+    "pg": "^8.16.3",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

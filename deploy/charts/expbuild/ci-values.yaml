@@ -1,0 +1,15 @@
+# Nonexistent images and Secret names for render/validation only.
+images:
+  api: example.invalid/expbuild-api:ci
+  web: example.invalid/expbuild-web:ci
+  operator: example.invalid/expbuild-operator:ci
+  bazelRemote: example.invalid/bazel-remote@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+appOrigin: https://expbuild.example.test
+storageClass: standard
+secrets:
+  database: expbuild-db
+  operationEncryption: expbuild-key
+  bootstrap: expbuild-bootstrap
+ingress:
+  host: expbuild.example.test
+  tlsSecret: expbuild-tls

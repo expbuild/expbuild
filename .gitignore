@@ -1,1 +1,11 @@
-target/
+node_modules/
+apps/*/dist/
+.env
+.env.*
+!.env.example
+operator/bin/
+coverage/
+*.tsbuildinfo
+__pycache__/
+test-results/
+playwright-report/

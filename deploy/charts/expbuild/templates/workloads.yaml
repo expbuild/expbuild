@@ -1,0 +1,110 @@
+{{- $root := . -}}
+{{- range $component := list "api" "web" "operator" }}
+{{- $settings := index $root.Values $component }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $component }}
+  labels:
+    {{- include "expbuild.labels" $root | nindent 4 }}
+spec:
+  replicas: {{ $settings.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "expbuild.labels" $root | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    spec:
+      serviceAccountName: {{ include "expbuild.name" $root }}-{{ $component }}
+      automountServiceAccountToken: {{ ne $component "web" }}
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "expbuild.podSecurity" $root | nindent 8 }}
+        runAsUser: {{ if eq $component "api" }}1000{{ else if eq $component "web" }}101{{ else }}65532{{ end }}
+        runAsGroup: {{ if eq $component "api" }}1000{{ else if eq $component "web" }}101{{ else }}65532{{ end }}
+      containers:
+        - name: {{ $component }}
+          image: {{ index $root.Values.images $component | quote }}
+          imagePullPolicy: {{ $root.Values.imagePullPolicy }}
+          securityContext:
+            {{- include "expbuild.containerSecurity" $root | nindent 12 }}
+          {{- if eq $component "operator" }}
+          args:
+            {{- if $root.Values.monitoring.serviceMonitor.enabled }}
+            - --monitoring-namespace={{ $root.Values.monitoring.serviceMonitor.namespace }}
+            {{- end }}
+            - --bazel-remote-image={{ $root.Values.images.bazelRemote }}
+            - --webdav-stats-image={{ $root.Values.images.operator }}
+            - --leader-election-namespace={{ $root.Release.Namespace }}
+            {{- if $root.Values.gateway.enabled }}
+            - --gateway-name={{ $root.Values.gateway.name }}
+            - --gateway-namespace={{ $root.Values.gateway.namespace }}
+            - --gateway-section={{ $root.Values.gateway.sectionName }}
+            - --gateway-base-domain={{ $root.Values.gateway.baseDomain }}
+            - --gateway-controller-name={{ $root.Values.gateway.controllerName }}
+            - --gateway-data-plane-namespace={{ $root.Values.gateway.dataPlaneNamespace }}
+            {{- end }}
+            {{- with $root.Values.images.webdav }}
+            - --webdav-image={{ . }}
+            {{- end }}
+            {{- with $root.Values.images.gradle }}
+            - --gradle-image={{ . }}
+            {{- end }}
+          {{- end }}
+          {{- if eq $component "api" }}
+          env:
+            - {name: HOST, value: "0.0.0.0"}
+            - {name: PROMETHEUS_URL, value: {{ $root.Values.monitoring.prometheusURL | quote }}}
+            {{- with $root.Values.monitoring.queryBearerTokenSecret }}
+            - name: PROMETHEUS_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ . | quote }}, key: bearer-token}
+            {{- end }}
+            - {name: GATEWAY_ENABLED, value: {{ $root.Values.gateway.enabled | quote }}}
+            - {name: APP_ORIGIN, value: {{ $root.Values.appOrigin | quote }}}
+            - {name: WEBDAV_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.webdav)) | quote }}}
+            - {name: GRADLE_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.gradle)) | quote }}}
+            - {name: STORAGE_CLASS, value: {{ $root.Values.storageClass | quote }}}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: {name: {{ $root.Values.secrets.database | quote }}, key: DATABASE_URL}
+            - name: OPERATION_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ $root.Values.secrets.operationEncryption | quote }}, key: OPERATION_ENCRYPTION_KEY}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ if eq $component "api" }}3001{{ else if eq $component "web" }}8080{{ else }}8081{{ end }}
+          readinessProbe:
+            httpGet: {path: {{ if eq $component "web" }}/healthz{{ else }}/readyz{{ end }}, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 15
+          resources: {{ toYaml $settings.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+{{- end }}
+{{- range $component := list "api" "web" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $component }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+{{- end }}

@@ -1,0 +1,77 @@
+# bazel-remote 引擎验证记录
+
+当前候选引擎：[官方 bazel-remote v2.6.2](https://github.com/buchgr/bazel-remote/releases/tag/v2.6.2)。
+已在 Linux amd64 上运行校验过发布摘要的官方二进制，并完成真实协议测试。
+原生协议测试与下文的隔离 Kubernetes 镜像验证分别记录，不代表生产环境认证。
+
+## 可复现入口
+
+```sh
+python3 tools/download_bazel_remote.py /tmp/expbuild-bazel-remote
+cd operator
+BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote go test ./internal/controller -run TestRealBazelRemoteContract -count=1 -v
+```
+
+下载工具固定版本并检查官方发布资产 SHA256；不会自动采用 latest。
+测试使用 Operator 渲染出来的配置，仅把存储目录、认证文件路径和监听地址改为
+临时目录与本机随机端口。进程在测试结束时停止，不使用现有服务或集群。
+未指定二进制时，该测试明确跳过。本地与[远程 Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36668365993)均已通过该原生引擎测试；容器与 Gateway 链路单独验收。
+
+## 已通过的行为
+
+- 原生配置格式启动，配置的 1 GiB 缓存预算与认证探测匹配。
+- bcryptjs 生成的 htpasswd 可用于 HTTP Basic 和 gRPC Basic 认证。
+- 未认证 HTTP 读写与 REAPI FindMissingBlobs 被拒绝。
+- HTTP CAS 按 SHA256 路径上传/下载，读取内容与原始数据一致。
+- 同一 digest 上传前被 FindMissingBlobs 返回，上传后不再缺失。
+- 使用新的认证文件重启后，旧用户被拒绝，新用户能读取此前存储的数据。
+
+FindMissingBlobs 测试使用官方 [REAPI protobuf 字段定义](https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto)，
+直接构造 wire message；这验证该 RPC 的真实行为，不代表完整 Bazel 客户端验收。
+
+## 已通过的 Kubernetes 与 TLS 链路
+
+[真实 kind/Helm/Gateway CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)已通过固定镜像
+`buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512`。
+
+- 经管理 API 创建实例，Operator 启动非 root UID/GID/fsGroup 1000、只读根文件系统的 StatefulSet，使用真实 PVC 和独立临时卷。
+- 受信任 TLS/SNI 下 GetCapabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载，以及 HTTPS CAS 上传/下载。
+- 匿名访问被拒绝；通过管理 API 轮换凭据并滚动更新后，旧密码被拒绝，新密码通过 gRPC/HTTP 读取原数据。
+- 删除实例后清理 HTTPRoute 与 GRPCRoute。
+
+这是 Linux amd64、kind 默认存储与固定 Envoy Gateway 的验证，不涵盖所有架构、生产 CSI 或真实 Bazel 构建客户端。
+
+## 仍需完成
+
+- 多架构、生产 PVC 权限、磁盘满、故障恢复和单写者边界。
+- 真实 Bazel 经 TLS Gateway 的构建、压缩及 FindMissing 批量负载。
+- 淘汰策略边界、存储容量变化、指标与平台统计的一致性。
+- 公网 DNS、多节点网络隔离、轮换期间并发客户端行为与性能基线。
+
+测试不将已通过的 RPC 扩大为完整性能或生产可用性结论。
+
+## 原生 LRU 预算实测
+
+在同一份渲染配置、默认压缩存储和 1 GiB 预算下，真实 v2.6.2 引擎通过以下测试：顺序上传 A、B 两个各 400 MiB 的不可压缩 CAS 数据块，完整读取 A 更新访问顺序，再上传同等大小的 C。随后 B 返回 404，A、C 可完整读出且 SHA256 匹配；实际缓存容量未超过预算，最终条目数为 2。
+
+数据由可重复的 AES-CTR 流生成，客户端按流上传、下载和校验，不把完整大文件留在内存。测试使用临时目录，需要至少约 2 GiB 可用磁盘空间；不触碰已有缓存。示例：
+
+```sh
+BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote BAZEL_LRU_TEST=1 go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
+```
+
+命令从 operator 目录运行。磁盘较小的临时目录可通过 TMPDIR 指向独立测试目录。CI 已加入此项，本地实际执行通过；它验证该预算和访问序列下的原生 LRU，不替代磁盘满、并发上传、重启排序或吞吐基准。
+
+## 真实 Bazel 构建客户端
+
+本地已通过固定 SHA256 的 Bazel 8.8.1 Linux amd64 客户端测试，分别使用 HTTP 与 REAPI gRPC 连接上述实际引擎。首次构建上传 ActionCache/CAS；第二次构建使用全新的 output_base，正确恢复产物且不重新执行动作。第三次使用另一个新目录并关闭远程缓存，必须触发动作的退出码 42，排除本地缓存或测试规则误判。
+
+测试规则的未声明 guard/marker 是刻意设置的测试探针：首次构建后删除 guard，让重复执行必然失败。它不作为生产构建规则示例。凭据写入权限 0600 的临时配置，不作为进程参数。
+
+```sh
+python3 tools/download_bazel_client.py /tmp/expbuild-bazel
+# 在 operator 目录运行，先按上文下载引擎。
+BAZEL_BIN=/tmp/expbuild-bazel BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
+```
+
+需要为临时目录预留约 2 GiB 磁盘空间。此项使用回环 HTTP/gRPC，尚不证明实际 Bazel 经 TLS Gateway、多版本兼容、压缩协商或远程执行。已加入 CI，新增客户端部分的远程结果待确认。

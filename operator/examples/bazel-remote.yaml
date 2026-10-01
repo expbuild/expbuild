@@ -1,0 +1,19 @@
+# Offline renderer fixture, not a ready-to-deploy CacheInstance.
+# Replace the placeholder digest with a certified engine image before deployment.
+name: cache-demo
+namespace: expbuild-demo
+instanceId: demo-001
+projectId: demo
+image: example.invalid/expbuild/bazel-remote@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+storageClass: standard
+capacity: 10Gi
+maxCacheGiB: 8
+credentialsSecret: cache-demo-auth
+desiredState: Running
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi

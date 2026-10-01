@@ -1,0 +1,113 @@
+# Design input, not a claim of compatibility or a runtime configuration.
+profile_version: 0.1.0-draft
+status: design_only
+updated_at: '2026-09-28'
+product_scope: enterprise_self_hosted_p0_cache
+
+baseline:
+  expbuild_commit: a0458e723818f943107c96cbc7a0895237bd06ca
+  admin_commit: 853a48c521100b89e287f2e98f2f1931f67be495
+  specs:
+    reapi:
+      file: crates/proto/proto/build/bazel/remote/execution/v2/remote_execution.proto
+      sha256: 22ec49e2941ac89425eecc5da1486be8d5739ff74bac459106a8f7cab5762614
+      upstream_commit: null  # Must be traced in EXP-001; do not invent provenance.
+    bytestream:
+      file: crates/proto/proto/google/bytestream/bytestream.proto
+      sha256: 863fdd4cb3b17dac57c881c87813af63d4da138fdd49549e465499f6de39edc1
+
+namespace:
+  ids: immutable_uuid
+  immutable_fields: [tenant_id, project_id, protocol_id, trust_domain]
+  protocols: [reapi, gradle]
+  trust_domains: [trusted-ci, internal-dev, isolated-pr]
+  deduplication_scope: namespace
+  cross_namespace_sharing: false
+
+authorization:
+  reapi_transport: bearer_metadata
+  gradle_transport: basic_over_tls
+  gradle_username: expbuild
+  max_lease_seconds: 300
+  connected_revocation_target_seconds: 60
+  active_stream_check_seconds: 5
+  raw_storage_credentials_to_build_clients: false
+  presigned_direct_transfer: false
+  unknown_token_when_control_plane_unavailable: deny
+
+reapi:
+  digest_functions: [sha256]
+  compressors: [identity]
+  max_batch_total_size_bytes: 4194304
+  api_version_certification: pending_native_client_tests
+  cache_only: true
+  methods:
+    - Capabilities.GetCapabilities
+    - ActionCache.GetActionResult
+    - ActionCache.UpdateActionResult
+    - ContentAddressableStorage.FindMissingBlobs
+    - ContentAddressableStorage.BatchReadBlobs
+    - ContentAddressableStorage.BatchUpdateBlobs
+    - ContentAddressableStorage.GetTree
+    - ByteStream.Read
+    - ByteStream.Write
+    - ByteStream.QueryWriteStatus
+  unadvertised_optional_features: [compression, alternate_digests, SplitBlob, SpliceBlob]
+  unregistered_services: [Execution, WorkerScheduler]
+  instance_template: tenants/{tenant_id}/projects/{project_id}/namespaces/{namespace_id}
+  empty_blob:
+    sha256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    size_bytes: 0
+    available_after_namespace_authorization_without_upload: true
+  write_checkpoint: durable_bytes_only
+  upload_resume_scope: original_node_and_intact_staging_disk
+
+gradle:
+  base_path: /cache/gradle/v1/{tenant_id}/{project_id}/{namespace_id}/
+  methods: [GET, PUT]
+  body: opaque_original_bytes
+  key_is_body_digest: false
+  successful_lookup_status: 200
+  miss_status: 404
+  successful_publish_status: 204
+  payload_too_large_status: 413
+  put_permissions: [blob.write, result.publish]
+  read_only_credential_cannot_put: true
+
+client_certification:
+  bazel:
+    status: not_selected_or_tested
+    release: null
+    binary_sha256: null
+  gradle:
+    status: not_selected_or_tested
+    wrapper_release: null
+    distribution_sha256: null
+    jdk: null
+  release_gate: exact_client_versions_and_all_required_fixtures_pass
+
+required_fixtures:
+  - id: empty-blob
+    expectation: authorized_reapi_read_succeeds_without_upload
+  - id: isolated-identical-digest
+    expectation: other_namespace_cannot_probe_or_read_blob
+  - id: read-without-publish
+    expectation: readonly_and_blob_only_credentials_cannot_publish_results
+  - id: malformed-digest
+    expectation: invalid_argument_without_panic_or_filesystem_escape
+  - id: resumable-write
+    expectation: query_offset_never_exceeds_durable_bytes_or_decreases
+  - id: duplicate-client-uuid
+    expectation: distinct_digests_with_same_client_uuid_have_distinct_sessions
+  - id: writer-fencing
+    expectation: stale_writer_cannot_modify_current_stage_checkpoint_or_commit
+  - id: entry-reference-closure
+    expectation: published_result_references_available_authorized_outputs
+  - id: gc-publish-race
+    expectation: deleting_generation_rejects_references_and_cannot_delete_new_generation
+  - id: quota-retry
+    expectation: publication_settles_reservation_once
+  - id: revoke-during-stream
+    expectation: active_stream_and_commit_obey_epoch_and_lease_deadline
+  - id: native-cold-warm-changed
+    expectation: clean_client_warm_hits_and_input_change_misses_with_equal_valid_outputs
