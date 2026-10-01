@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { t, useLocale, setLocale, type Locale } from "./i18n";
 
 export type Section =
-  "overview" | "instances" | "operations" | "resources" | "members" | "audit";
+  "overview" | "instances" | "operations" | "resources" | "members" | "audit" | "observability" | "alerts";
 export const sections: {
   id: Section;
   label: string;
@@ -19,6 +19,8 @@ export const sections: {
     label: "缓存实例",
     description: "管理团队的缓存服务、资源配置与连接方式。",
   },
+  { id: "observability", label: "可观测", description: "查看缓存效果、资源趋势与诊断信息。" },
+  { id: "alerts", label: "告警中心", description: "跟踪实例告警、恢复记录与维护静默。" },
   {
     id: "operations",
     label: "操作记录",
@@ -50,6 +52,7 @@ export function useRoute() {
       section: (sections.find((s) => s.id === match?.[2])?.id ??
         "instances") as Section,
       users: window.location.hash === "#/users",
+      health: window.location.hash === "#/health",
     };
   };
   const [route, setRoute] = useState(read);
@@ -98,6 +101,8 @@ export function Icon({ name }: { name: string }) {
         <path d="M3 12h4l3-8 4 16 3-8h4" />
       </>
     ),
+    observability: <><path d="M3 3v18h18M7 15l4-6 4 3 5-7"/><circle cx="11" cy="9" r="1"/></>,
+    alerts: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M10 20h4"/></>,
     resources: (
       <>
         <path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 16l9 5 9-5" />

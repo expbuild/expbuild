@@ -80,6 +80,11 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 			},
 		},
 	}
+	gradleMetrics := adapters[cachev1.TemplateRef{Name: "gradle-http", Version: "0.1.0"}]
+	gradleMetrics.capabilities.MetricsPort = 8080
+	gradleMetrics.capabilities.MetricsPortName = "http"
+	gradleMetrics.capabilities.MetricsPath = "/metrics"
+	adapters[cachev1.TemplateRef{Name: "gradle-http", Version: "0.2.0"}] = gradleMetrics
 	adapter, ok := adapters[ref]
 	if !ok {
 		return Adapter{}, fmt.Errorf("unsupported template %s@%s", ref.Name, ref.Version)

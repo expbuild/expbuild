@@ -39,3 +39,23 @@
 {{- fail "monitoring.queryBearerTokenSecret must be a valid Secret name" -}}
 {{- end -}}
 {{- end -}}
+
+{{- if not (regexMatch "^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$" .Values.monitoring.clusterId) -}}
+{{- fail "monitoring.clusterId must be a stable label identifier" -}}
+{{- end -}}
+{{- if .Values.monitoring.platform.enabled -}}
+{{- $_ := required "monitoring.platform.tokenSecret is required when platform metrics are enabled" .Values.monitoring.platform.tokenSecret -}}
+{{- end -}}
+{{- if and (or .Values.monitoring.platform.serviceMonitor .Values.monitoring.platform.rules) (not .Values.monitoring.platform.enabled) -}}
+{{- fail "platform ServiceMonitor and rules require monitoring.platform.enabled" -}}
+{{- end -}}
+{{- range $key, $config := dict "logs" .Values.monitoring.logs "alerts" .Values.monitoring.alerts -}}
+{{- if and $config.tokenSecret (not $config.url) -}}
+{{- fail (printf "monitoring.%s.url is required for query authentication" $key) -}}
+{{- end -}}
+{{- end -}}
+{{- range $secret := list .Values.monitoring.platform.tokenSecret .Values.monitoring.logs.tokenSecret .Values.monitoring.alerts.tokenSecret .Values.monitoring.alerts.webhookTokenSecret -}}
+{{- if and $secret (or (gt (len $secret) 253) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$" $secret))) -}}
+{{- fail "observability credentials must reference valid Secret names" -}}
+{{- end -}}
+{{- end -}}

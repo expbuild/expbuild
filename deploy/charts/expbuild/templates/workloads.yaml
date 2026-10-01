@@ -37,6 +37,10 @@ spec:
             {{- include "expbuild.containerSecurity" $root | nindent 12 }}
           {{- if eq $component "operator" }}
           args:
+            - --observability-cluster-id={{ $root.Values.monitoring.clusterId }}
+            {{- if $root.Values.monitoring.platform.enabled }}
+            - --metrics-bind-address=:9090
+            {{- end }}
             {{- if $root.Values.monitoring.serviceMonitor.enabled }}
             - --monitoring-namespace={{ $root.Values.monitoring.serviceMonitor.namespace }}
             {{- end }}
@@ -58,8 +62,29 @@ spec:
             - --gradle-image={{ . }}
             {{- end }}
           {{- end }}
+          {{- if and (eq $component "operator") $root.Values.monitoring.platform.enabled }}
+          env:
+            - name: METRICS_SCRAPE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ $root.Values.monitoring.platform.tokenSecret | quote }}, key: bearer-token}
+          {{- end }}
           {{- if eq $component "api" }}
           env:
+            - {name: OBSERVABILITY_CLUSTER_ID, value: {{ $root.Values.monitoring.clusterId | quote }}}
+            - {name: LOKI_URL, value: {{ $root.Values.monitoring.logs.url | quote }}}
+            - {name: ALERTMANAGER_URL, value: {{ $root.Values.monitoring.alerts.url | quote }}}
+            {{- if $root.Values.monitoring.platform.enabled }}
+            - name: METRICS_SCRAPE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: {{ $root.Values.monitoring.platform.tokenSecret | quote }}, key: bearer-token}
+            {{- end }}
+            {{- range $env, $secret := dict "LOKI_BEARER_TOKEN" $root.Values.monitoring.logs.tokenSecret "ALERTMANAGER_BEARER_TOKEN" $root.Values.monitoring.alerts.tokenSecret "ALERT_WEBHOOK_TOKEN" $root.Values.monitoring.alerts.webhookTokenSecret }}
+            {{- if $secret }}
+            - name: {{ $env }}
+              valueFrom:
+                secretKeyRef: {name: {{ $secret | quote }}, key: bearer-token}
+            {{- end }}
+            {{- end }}
             - {name: HOST, value: "0.0.0.0"}
             - {name: PROMETHEUS_URL, value: {{ $root.Values.monitoring.prometheusURL | quote }}}
             {{- with $root.Values.monitoring.queryBearerTokenSecret }}
@@ -80,6 +105,9 @@ spec:
                 secretKeyRef: {name: {{ $root.Values.secrets.operationEncryption | quote }}, key: OPERATION_ENCRYPTION_KEY}
           {{- end }}
           ports:
+            {{- if and (eq $component "operator") $root.Values.monitoring.platform.enabled }}
+            - {name: metrics, containerPort: 9090}
+            {{- end }}
             - name: http
               containerPort: {{ if eq $component "api" }}3001{{ else if eq $component "web" }}8080{{ else }}8081{{ end }}
           readinessProbe:

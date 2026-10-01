@@ -28,6 +28,7 @@ type entry struct {
 }
 
 type Server struct {
+	metrics            *cacheMetrics
 	root               string
 	credentials        string
 	maxEntry, maxTotal int64
@@ -54,6 +55,7 @@ func New(root, credentials string, maxEntry, maxTotal int64) (*Server, error) {
 		return nil, fmt.Errorf("cache root must be a directory")
 	}
 	s := &Server{root: root, credentials: credentials, maxEntry: maxEntry, maxTotal: maxTotal, entries: map[string]entry{}}
+	s.metrics = newCacheMetrics(s)
 	items, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -129,6 +131,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !authenticated {
 		return
 	}
+	if r.URL.Path == "/metrics" && r.URL.RawQuery == "" {
+		if user != "health" {
+			http.Error(w, "probe identity required", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		s.metrics.handler.ServeHTTP(w, r)
+		return
+	}
 	if r.URL.Path == "/status" && r.URL.RawQuery == "" {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
@@ -157,9 +172,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := strings.TrimPrefix(r.URL.Path, "/cache/")
 	switch r.Method {
 	case http.MethodGet:
-		s.get(w, r, key)
+		s.measure(w, r, func(out http.ResponseWriter) { s.get(out, r, key) })
 	case http.MethodPut:
-		s.put(w, r, key)
+		s.measure(w, r, func(out http.ResponseWriter) { s.put(out, r, key) })
 	default:
 		w.Header().Set("Allow", "GET, PUT")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -222,6 +237,7 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request, key string) {
 		return
 	}
 	size, err := io.Copy(tmp, io.LimitReader(r.Body, s.maxEntry+1))
+	s.metrics.bytes.WithLabelValues("write").Add(float64(size))
 	if err != nil {
 		http.Error(w, "upload interrupted", http.StatusBadRequest)
 		return
@@ -290,6 +306,8 @@ func (s *Server) evictLocked(protected string) error {
 		if err := os.Remove(filepath.Join(s.root, oldest)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		s.metrics.evictions.Inc()
+		s.metrics.evictedBytes.Add(float64(s.entries[oldest].size))
 		s.used -= s.entries[oldest].size
 		delete(s.entries, oldest)
 	}

@@ -19,9 +19,15 @@ import (
 
 var GVK = schema.GroupVersionKind{Group: "monitoring.coreos.com", Version: "v1", Kind: "ServiceMonitor"}
 
-type Config struct{ Namespace string }
+type Config struct {
+	Namespace string
+	ClusterID string
+}
 
 func (c Config) Validate() error {
+	if c.ClusterID != "" && !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$`).MatchString(c.ClusterID) {
+		return fmt.Errorf("invalid monitoring cluster ID")
+	}
 	if len(validation.IsDNS1123Label(c.Namespace)) != 0 {
 		return fmt.Errorf("monitoring namespace must be a DNS label")
 	}
@@ -54,6 +60,11 @@ func (cfg Config) Render(c *cachev1.CacheInstance) ([]client.Object, error) {
 		map[string]any{"action": "replace", "targetLabel": "expbuild_project_id", "replacement": c.Spec.ProjectID},
 		map[string]any{"action": "replace", "targetLabel": "expbuild_instance_uid", "replacement": string(c.UID)},
 	}
+	clusterID := cfg.ClusterID
+	if clusterID == "" {
+		clusterID = "primary"
+	}
+	identity = append(identity, map[string]any{"action": "replace", "targetLabel": "expbuild_cluster_id", "replacement": clusterID})
 	m := Monitor(c.Name+"-metrics", c.Namespace)
 	m.SetLabels(labels)
 	m.Object["spec"] = map[string]any{

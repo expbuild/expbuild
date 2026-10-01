@@ -11,7 +11,10 @@ import { clientAccessPolicy } from './network-policy.js';
 export type CredentialData = { htpasswd: string; 'probe-username': string; 'probe-password': string };
 export type RetainedVolumeIdentity = { namespace: string; name: string; projectId: string; instanceId: string; instanceUid: string };
 export type RetainedVolume = { name: string; namespace: string; uid: string; capacity: string; allocatedCapacity: string; storageClass: string; phase: string; deleting: boolean };
+export type DiagnosticEvent = { uid:string; resourceUID:string; kind:string; reason:string; type:string; count:number; lastOccurred:string|null };
+export type DiagnosticEvents = {state:'ok'|'truncated';items:DiagnosticEvent[]};
 export interface KubernetesPort {
+  readDiagnosticEvents?(object:CacheObject):Promise<DiagnosticEvents>;
   approveRetainedVolumeReclaim?(desired: CacheObject, uid: string): Promise<void>;
   inspectProjectResources?(namespace: string, projectId: string): Promise<InventoryResources>;
   getRetainedVolume(identity: RetainedVolumeIdentity): Promise<RetainedVolume | null>;
@@ -37,6 +40,44 @@ export class KubernetesClient implements KubernetesPort {
   private core: CoreV1Api;
   private custom: CustomObjectsApi;
   private network: NetworkingV1Api;
+  async readDiagnosticEvents(object:CacheObject):Promise<DiagnosticEvents> {
+    const namespace=object.metadata.namespace,uid=object.metadata.uid;
+    if(!uid)throw new OperationError('observation_identity_missing');
+    const labelSelector=`cache.expbuild.io/instance-uid=${uid},cache.expbuild.io/project-id=${object.spec.projectId},app.kubernetes.io/managed-by=expbuild`;
+    const [pods,volumes]=await Promise.all([
+      this.core.listNamespacedPod({namespace,labelSelector,limit:20}),
+      this.core.listNamespacedPersistentVolumeClaim({namespace,labelSelector,limit:20}),
+    ]);
+    if(pods.metadata?._continue||volumes.metadata?._continue)throw new OperationError('observation_resource_limit');
+    const resources=new Map<string,string>([[uid,'CacheInstance']]);
+    for(const [list,kind] of [[pods.items,'Pod'],[volumes.items,'PersistentVolumeClaim']] as const) {
+      for(const item of list) {
+        const m=item.metadata;
+        if(m?.uid && m.namespace===namespace && m.labels?.['cache.expbuild.io/instance-uid']===uid && m.labels?.['cache.expbuild.io/project-id']===object.spec.projectId && m.labels?.['app.kubernetes.io/managed-by']==='expbuild')resources.set(m.uid,kind);
+      }
+    }
+    // Query a bounded set of immutable resource identities, never a whole
+    // namespace or today's object name. An event body is never persisted.
+    const selected=[...resources].slice(0,8);
+    let truncated=resources.size>selected.length;
+    const items:DiagnosticEvent[]=[];
+    for(let offset=0;offset<selected.length;offset+=4) {
+      const batch=await Promise.all(selected.slice(offset,offset+4).map(async([resourceUID,kind])=>({resourceUID,kind,events:await this.core.listNamespacedEvent({namespace,fieldSelector:`involvedObject.uid=${resourceUID}`,limit:100})})));
+      for(const {resourceUID,kind,events} of batch) {
+        if(events.metadata?._continue)truncated=true;
+        for(const event of events.items) {
+          if(event.involvedObject.uid!==resourceUID||event.involvedObject.namespace!==namespace||event.involvedObject.kind!==kind||!event.metadata?.uid)continue;
+          const date=event.lastTimestamp??event.eventTime??event.metadata.creationTimestamp;
+          const time=date?new Date(date).getTime():null;
+          if(time!==null&&(!Number.isFinite(time)||time<Date.now()-30*86400_000||time>Date.now()+300_000))continue;
+          const safe=(value:string|undefined)=>value&&/^[a-zA-Z0-9_.-]{1,100}$/.test(value)?value:'Unknown';
+          items.push({uid:event.metadata.uid,resourceUID,kind,reason:safe(event.reason),type:safe(event.type),count:Math.max(1,event.count??1),lastOccurred:time===null?null:new Date(time).toISOString()});
+        }
+      }
+    }
+    return {state:truncated||items.length>100?'truncated':'ok',items:items.sort((a,b)=>(b.lastOccurred??'').localeCompare(a.lastOccurred??'')).slice(0,100)};
+  }
+
   async readStatistics(object: CacheObject) {
     const secret=await this.core.readNamespacedSecret({namespace:object.metadata.namespace,name:object.spec.access.credentialsSecretRef});
     if(secret.metadata?.labels?.['cache.expbuild.io/project-id']!==object.spec.projectId || secret.metadata?.labels?.['cache.expbuild.io/instance-id']!==object.spec.instanceId)throw new OperationError('credential_ownership_conflict');
@@ -46,7 +87,7 @@ export class KubernetesClient implements KubernetesPort {
       return readWebDAVStatistics(object.metadata.namespace,object.metadata.name,username,password);
     if (object.spec.templateRef.name === 'bazel-remote' && object.spec.templateRef.version === '0.1.0')
       return readEngineStatistics(object.metadata.namespace,object.metadata.name,username,password);
-    if (object.spec.templateRef.name === 'gradle-http' && object.spec.templateRef.version === '0.1.0')
+    if (object.spec.templateRef.name === 'gradle-http' && ['0.1.0','0.2.0'].includes(object.spec.templateRef.version))
       return readGradleStatistics(object.metadata.namespace,object.metadata.name,username,password);
     throw new OperationError('statistics_template_unsupported');
   }

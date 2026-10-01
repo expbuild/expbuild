@@ -1175,3 +1175,26 @@ progress {
     margin: 0 12px 20px;
   }
 }
+
+.observation-panel { margin-top: 1.25rem; }
+.observation-tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+.observation-tabs [aria-selected="true"] { background: #153c35; border-color: #153c35; color: #fff; }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,300px),1fr)); gap: 1rem; margin: 1rem 0; }
+.metric-chart { border: 1px solid #dce4e0; border-radius: 12px; padding: 1rem; background: #fff; min-width: 0; }
+.metric-chart-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+.metric-chart svg { width: 100%; max-height: 180px; margin-top: .75rem; }
+.chart-axis { fill: none; stroke: #dce4e0; stroke-width: 1; }
+.chart-line { stroke: #267968; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chart-times { display: flex; justify-content: space-between; gap: .5rem; color: #687b76; font-size: .72rem; }
+.observation-scroll { max-height: 20rem; overflow: auto; }
+.observation-timeline { list-style: none; padding: 0; }
+.observation-timeline li { display: flex; flex-direction: column; gap: .35rem; border-left: 2px solid #dce4e0; padding: .75rem 1rem; margin: .5rem 0; }
+.observation-timeline time { color: #687b76; font-size: .8rem; }
+.observation-logs { max-height: 35rem; overflow: auto; border-radius: 8px; background: #152622; color: #e2efe9; padding: 1rem; }
+.observation-logs time { color: #91b0a4; font-size: .75rem; }
+.observation-logs pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: .35rem 0 1rem; font-size: .8rem; }
+.observation-alerts { display: grid; gap: 1rem; }
+.observation-alert { padding: 1rem; border: 1px solid #ead9b7; border-radius: 10px; background: #fffcf5; }
+.observation-alert button { margin-right: .5rem; }
+.observation-detail { margin-top: 1.5rem; border-top: 1px solid #dce4e0; padding-top: 1rem; }
+.instance-observation-details { padding: 1rem 0; }

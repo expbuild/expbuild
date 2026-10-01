@@ -54,8 +54,21 @@ gateway:
 
 # Optional external Prometheus; collectors must label samples with project/CR UID.
 monitoring:
+  clusterId: primary
   prometheusURL: ''
   queryBearerTokenSecret: '' # Existing control-plane namespace Secret, key: bearer-token
   serviceMonitor:
     enabled: false
     namespace: '' # Namespace of Prometheus Pods labeled cache.expbuild.io/monitoring=true
+  platform:
+    enabled: false
+    tokenSecret: '' # Existing control-plane Secret, key bearer-token, minimum 32 chars.
+    serviceMonitor: false
+    rules: false
+  logs:
+    url: '' # Loki query base URL; configure ingestion separately.
+    tokenSecret: '' # Existing Secret, key bearer-token.
+  alerts:
+    url: '' # Alertmanager base URL.
+    tokenSecret: '' # Existing Secret, key bearer-token.
+    webhookTokenSecret: '' # Separate incoming webhook credential, key bearer-token.

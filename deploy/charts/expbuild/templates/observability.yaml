@@ -1,0 +1,105 @@
+{{- $root := . -}}
+{{- if .Values.monitoring.platform.enabled }}
+{{- range $component := list "api" "operator" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $component }}-metrics
+  labels:
+    {{- include "expbuild.labels" $root | nindent 4 }}
+    expbuild-component: {{ $component }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+    app.kubernetes.io/component: {{ $component }}
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: {{ if eq $component "api" }}http{{ else }}metrics{{ end }}
+{{- if $root.Values.monitoring.platform.serviceMonitor }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "expbuild.name" $root }}-{{ $component }}
+  labels:
+    {{- include "expbuild.labels" $root | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name | quote }}
+      expbuild-component: {{ $component }}
+  namespaceSelector:
+    matchNames: [{{ $root.Release.Namespace | quote }}]
+  sampleLimit: 100000
+  endpoints:
+    - port: metrics
+      path: {{ if eq $component "api" }}/internal/metrics{{ else }}/metrics{{ end }}
+      interval: 30s
+      scrapeTimeout: 5s
+      honorLabels: false
+      honorTimestamps: false
+      followRedirects: false
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ $root.Values.monitoring.platform.tokenSecret | quote }}
+          key: bearer-token
+      relabelings:
+        - {action: replace, targetLabel: expbuild_component, replacement: {{ $component | quote }}}
+        - {action: replace, targetLabel: expbuild_cluster_id, replacement: {{ $root.Values.monitoring.clusterId | quote }}}
+      metricRelabelings:
+        - {action: replace, targetLabel: expbuild_cluster_id, replacement: {{ $root.Values.monitoring.clusterId | quote }}}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.monitoring.platform.rules }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "expbuild.name" . }}-observability
+  labels:
+    {{- include "expbuild.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: expbuild.platform
+      rules:
+        - alert: ExpbuildObservationCollectorUnavailable
+          expr: max(expbuild_observation_collector_leader{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) == 0 or absent(expbuild_observation_collector_leader{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}})
+          for: 2m
+          labels: {severity: warning, scope: platform, expbuild_cluster_id: {{ .Values.monitoring.clusterId | quote }}}
+          annotations:
+            summary: No active instance observation collector. Check management API replicas and database connectivity.
+        - alert: ExpbuildOperationStalled
+          expr: max by(expbuild_cluster_id,kind,state)(expbuild_operation_oldest_seconds{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) > 900
+          for: 5m
+          labels: {severity: warning, scope: platform}
+          annotations:
+            summary: An unfinished management operation is older than 15 minutes. Inspect the operation queue.
+        - alert: ExpbuildMonitoringTargetUnavailable
+          expr: up{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }},expbuild_component=~"api|operator"} == 0
+          for: 2m
+          labels: {severity: warning, scope: platform}
+          annotations:
+            summary: Monitoring target unavailable; this does not establish cache service failure.
+        - alert: ExpbuildAPIServiceErrors
+          expr: sum(rate(expbuild_api_requests_total{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }},status_class="5xx"}[5m])) / sum(rate(expbuild_api_requests_total{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}[5m])) > 0.05 and sum(increase(expbuild_api_requests_total{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}[5m])) > 20
+          for: 5m
+          labels: {severity: warning, scope: platform, expbuild_cluster_id: {{ .Values.monitoring.clusterId | quote }}}
+          annotations:
+            summary: Management API error rate exceeds 5 percent with sufficient traffic.
+        - alert: ExpbuildInstanceNotReady
+          expr: max by(expbuild_cluster_id,expbuild_project_id,expbuild_instance_uid)(expbuild_instance_expected_running{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) == 1 and max by(expbuild_cluster_id,expbuild_project_id,expbuild_instance_uid)(expbuild_instance_ready{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) == 0
+          for: 10m
+          labels: {severity: warning, scope: instance}
+          annotations:
+            summary: The running instance has not reached current-generation readiness. Inspect its operation timeline.
+        - alert: ExpbuildInstanceStatisticsUnavailable
+          expr: max by(expbuild_cluster_id,expbuild_project_id,expbuild_instance_uid)(expbuild_instance_statistics_available{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) == 0 and max by(expbuild_cluster_id,expbuild_project_id,expbuild_instance_uid)(expbuild_instance_expected_running{expbuild_cluster_id={{ .Values.monitoring.clusterId | quote }}}) == 1
+          for: 5m
+          labels: {severity: warning, scope: instance}
+          annotations:
+            summary: Instance statistics are unavailable. Check collection separately from cache readiness.
+{{- end }}

@@ -15,6 +15,24 @@ async function endpoint(handler: (request: IncomingMessage, response: ServerResp
   return { config, close: () => new Promise<void>((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }) };
 }
 
+test('diagnostic events follow owned resource UIDs and discard foreign events and raw bodies',async()=>{
+  const object=desiredObject(instanceInput.parse({name:'cache',storageGiB:10,cacheGiB:8}),'project','project-ns','instance','standard','op','hash');object.metadata.uid='instance-uid';
+  let requests=0;
+  const fixture=await endpoint((request,response)=>{
+    const url=new URL(request.url!,'http://test');requests++;
+    response.setHeader('Content-Type','application/json');
+    const labels={'cache.expbuild.io/instance-uid':'instance-uid','cache.expbuild.io/project-id':'project','app.kubernetes.io/managed-by':'expbuild'};
+    if(url.pathname.endsWith('/pods')) {assert.ok(url.searchParams.get('labelSelector')?.includes('instance-uid'));response.end(JSON.stringify({items:[{metadata:{namespace:'project-ns',uid:'pod-uid',labels}},{metadata:{namespace:'project-ns',uid:'foreign-pod',labels:{...labels,'cache.expbuild.io/project-id':'other'}}}]}));return;}
+    if(url.pathname.endsWith('/persistentvolumeclaims')) {response.end(JSON.stringify({items:[]}));return;}
+    assert.equal(url.pathname,'/api/v1/namespaces/project-ns/events');
+    const uid=url.searchParams.get('fieldSelector')!.split('=')[1];assert.ok(['instance-uid','pod-uid'].includes(uid!));
+    const event={metadata:{uid:'event-'+uid},involvedObject:{uid,namespace:'project-ns',kind:uid==='pod-uid'?'Pod':'CacheInstance'},reason:'FailedScheduling',type:'Warning',count:2,message:'password=never-persist-this',lastTimestamp:new Date().toISOString()};
+    response.end(JSON.stringify({items:[event,{...event,metadata:{uid:'foreign'},involvedObject:{...event.involvedObject,uid:'replaced-uid'}}]}));
+  });
+  try {const result=await new KubernetesClient(fixture.config).readDiagnosticEvents(object);assert.equal(result.state,'ok');assert.equal(result.items.length,2);assert.equal(requests,4);assert.ok(!JSON.stringify(result).includes('password'));assert.ok(result.items.every(e=>e.count===2));}
+  finally{await fixture.close();}
+});
+
 test('Kubernetes SDK serializes NetworkPolicy source restrictions to the wire', async () => {
   const bodies: any[] = [];
   const fixture = await endpoint(async (request, response) => {

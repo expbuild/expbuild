@@ -208,7 +208,7 @@ func TestAPIServerContract(t *testing.T) {
 		invalid.Finalizers = nil
 		invalid.Status = cachev1.CacheInstanceStatus{}
 		invalid.Spec.InstanceID = "invalid-gradle-version"
-		invalid.Spec.TemplateRef.Version = "0.2.0"
+		invalid.Spec.TemplateRef.Version = "0.3.0"
 		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
 			t.Fatalf("unsupported Gradle version accepted: %v", err)
 		}

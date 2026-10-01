@@ -18,7 +18,7 @@ test("exported API contract validates as OpenAPI 3.1", async () => {
 
 test("OpenAPI covers every registered route and only resolves local schema references", async () => {
   const implemented = new Set<string>();
-  for (const filename of ["app.ts", "instance-routes.ts"]) {
+  for (const filename of ["app.ts", "instance-routes.ts", "observability.ts", "telemetry.ts"]) {
     const source = await readFile(new URL(filename, import.meta.url), "utf8");
     for (const match of source.matchAll(
       /app\.(get|post|patch|put|delete)\(\s*['"]([^'"]+)['"]/g,

@@ -2,6 +2,8 @@
 
 管理 API 和界面支持可选的 Prometheus 历史查询。当前实现查询适配与权限控制，以及可选的 ServiceMonitor 自动生成与凭据引用同步；不部署 Prometheus 或 Prometheus Operator。部署方需要已有的受信任采集系统。无配置时返回 503，采集无数据时返回空序列，不伪造零值。
 
+平台可观测首版已实施，配置与支持矩阵见[可观测接入说明](observability.md)。本文保留既有 Bazel 查询历史 API 的兼容契约；新增通用观测接口、Gradle 指标、日志、事件与告警使用新入口。
+
 ## 配置与指标契约
 
 Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。可选配置 `monitoring.queryBearerTokenSecret`，引用控制面 namespace 中现有 Secret 的 `bearer-token` 字段。该凭据仅注入管理 API，不注入 Operator、前端或实例，也不作为 Helm values 中的明文。直接运行 API 时使用 `PROMETHEUS_BEARER_TOKEN`。必须同时配置查询 URL；token 必须非空且不含空格/换行，最长 8192 字符。
@@ -81,7 +83,7 @@ expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTT
 
 暂停、删除或关闭集成会清理精确归属的采集对象与网络策略，使用 UID/resourceVersion 删除前置条件；不接管其他 owner 的同名对象。清理标记在资源写入前添加，关闭功能后仍保留清理权限。Operator 只新增 ServiceMonitor get/create/patch/delete 权限，不获得 Prometheus 创建权限，管理 API 无 ServiceMonitor 写权限。
 
-关闭集成后等待清理完成，再卸载 CRD 或撤销清理权限。监控 API 缺失时无法确认清理，实例删除可能保留 finalizer；不要直接移除标记掩盖未完成的资源清理。当前自动采集仅针对 bazel-remote，WebDAV 尚无相应指标适配。
+关闭集成后等待清理完成，再卸载 CRD 或撤销清理权限。监控 API 缺失时无法确认清理，实例删除可能保留 finalizer；不要直接移除标记掩盖未完成的资源清理。当前实例原生指标自动采集支持 bazel-remote 0.1.0 与 gradle-http 0.2.0；WebDAV 的内容快照由后台采集器导出，仍无请求/命中指标适配。
 
 ## 隔离集群采集验收
 

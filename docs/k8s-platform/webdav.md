@@ -4,6 +4,8 @@
 及 [mod_dav_fs](https://httpd.apache.org/docs/2.4/mod/mod_dav_fs.html)。当前已接入
 Operator、CRD、Helm 镜像参数、管理 API、管理界面和真实协议测试。
 
+后续方向见[自研 WebDAV 缓存服务方案](webdav-cache-plan.md)。该方案尚待实现，不改变本文记录的 Apache 模板能力与验证边界。
+
 ## 资源与能力
 
 - 模板名 `webdav-apache`。新建使用 `0.2.0`，旧 `0.1.0` 实例继续按原版本维护；单副本 StatefulSet + 独立 PVC。

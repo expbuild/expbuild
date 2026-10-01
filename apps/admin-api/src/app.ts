@@ -11,19 +11,25 @@ import { openapi } from './openapi.js';
 import { registerInstanceRoutes, type InstanceOptions } from './instance-routes.js';
 import { bindingSQL, fingerprint, type InventoryBinding } from './inventory.js';
 import { reservationFloor } from './reservation-reconcile.js';
+import { Telemetry, requestId, authorizedToken } from './telemetry.js';
+import { registerObservability, type ObservabilityOptions } from './observability.js';
 
 type User = { id: string; email: string; platform_admin: boolean };
 type Role = 'admin' | 'maintainer' | 'viewer';
 const uuid = z.string().uuid();
 const loginBody = z.object({ email: z.string().email().max(254).transform(x => x.toLowerCase()), password: z.string().min(1).max(1024) }).strict();
 
-export async function buildApp(pool: pg.Pool, options: { origin: string; secureCookies: boolean } & InstanceOptions) {
-  const app = Fastify({ bodyLimit: 64 * 1024, logger: false });
+export async function buildApp(pool: pg.Pool, options: { origin: string; secureCookies: boolean; logging?: boolean } & InstanceOptions & ObservabilityOptions) {
+  const app = Fastify({ bodyLimit: 64 * 1024, logger: options.logging ? { level: 'info', base: { component: 'admin-api' }, serializers: { req: () => ({}), res: () => ({}), err: () => ({ type: 'Error', message: 'Internal error', stack: '' }) } } : false, disableRequestLogging: true, genReqId: requestId, requestIdHeader: false });
+  const telemetry = options.telemetry ?? new Telemetry();
+  telemetry.attach(app, options.metricsToken);
+  app.addHook('onClose', async () => { telemetry.registry.clear(); });
   await app.register(cookie);
   const dummyHash = await hashPassword(token());
   // Bounded process-local login throttle; deployment-wide throttling comes at ingress.
   const loginAttempts = new Map<string, { count: number; until: number }>();
   app.addHook('onRequest', async request => {
+    if (request.routeOptions.url === '/internal/alerts' && authorizedToken(request.headers.authorization, options.observability?.webhookToken)) return;
     if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method) && request.headers.origin !== options.origin) {
       throw new HttpError(403, 'Invalid origin');
     }
@@ -335,5 +341,6 @@ export async function buildApp(pool: pg.Pool, options: { origin: string; secureC
     return { items: result.rows };
   });
   await registerInstanceRoutes(app,pool,options,{user,projectAccess});
+  await registerObservability(app,pool,{...options,telemetry},{user,projectAccess});
   return app;
 }

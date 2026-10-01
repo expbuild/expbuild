@@ -154,6 +154,8 @@ Operator 只维护当前实例的路由，不改共享 DNS/证书。EndpointRead
 
 ## 8. 统计、淘汰与维护
 
+可观测能力的分阶段设计见[平台可观测方案](observability-plan.md)，首版已实现基础采集、项目/实例页面、日志与告警接入，支持矩阵及剩余深化项见[可观测接入说明](observability.md)。旧 Prometheus 历史接口见[监控说明](monitoring.md)。
+
 Prometheus 存储时序；API 按项目权限构造有限查询。基础面板包含请求量、错误率、延迟、读写流量、资源与容量；REAPI AC/CAS、HTTP 和 WebDAV 分别定义业务统计，不强制统一命中率。
 
 每个指标映射记录引擎名称、源指标、单位、计数/直方图类型、查询窗口和不可用条件。指标标签绑定 instance UID，历史实例删除后仍可按授权查询保留期内数据。GET 2xx 或 gRPC OK 不能自动代表缓存命中。

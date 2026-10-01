@@ -1,9 +1,9 @@
 name: Management API
 on:
   push:
-    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
   pull_request:
-    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
 permissions:
   contents: read
 jobs:
@@ -33,10 +33,15 @@ jobs:
       - run: npm ci
       - run: npm run build
       - name: Install pinned Prometheus test fixture
-        run: python3 tools/download_prometheus.py "$RUNNER_TEMP/prometheus"
+        run: |
+          python3 tools/download_prometheus.py "$RUNNER_TEMP/prometheus"
+          python3 tools/download_observability_backend.py alertmanager "$RUNNER_TEMP/alertmanager"
+          python3 tools/download_observability_backend.py loki "$RUNNER_TEMP/loki"
       - run: npm test
         env:
           PROMETHEUS_BIN: ${{ runner.temp }}/prometheus
+          ALERTMANAGER_BIN: ${{ runner.temp }}/alertmanager
+          LOKI_BIN: ${{ runner.temp }}/loki
       - name: Install Chromium for browser acceptance
         run: npx playwright install --with-deps chromium --only-shell
       - name: Verify browser, production UI and real API/database
