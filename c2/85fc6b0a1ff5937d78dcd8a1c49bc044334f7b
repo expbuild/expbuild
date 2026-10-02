@@ -1,0 +1,22 @@
+.github/workflows/admin-api.yml
+  h_f97694482282a9 4,6,33-34
+package-lock.json
+  h_f97694482282a9 1271,2319,3788,4197
+package.json
+  h_f97694482282a9 8-9
+tools/check-lockfile-registry.mjs
+  h_f97694482282a9 1-95
+tools/check-lockfile-registry.test.mjs
+  h_f97694482282a9 1-126
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "c285fc6b0a1ff5937d78dcd8a1c49bc044334f7b",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
