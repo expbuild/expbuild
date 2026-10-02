@@ -1,9 +1,9 @@
 name: Management API
 on:
   push:
-    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', '**/package-lock.json', '**/npm-shrinkwrap.json', 'tools/check-lockfile-registry*.mjs', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
   pull_request:
-    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', 'package-lock.json', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
+    paths: ['tests/browser/**', 'tests/contracts/**', 'apps/**', 'package.json', '**/package-lock.json', '**/npm-shrinkwrap.json', 'tools/check-lockfile-registry*.mjs', 'tools/download_prometheus.py', 'tools/download_observability_backend.py', '.github/workflows/admin-api.yml']
 permissions:
   contents: read
 jobs:
@@ -30,6 +30,8 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - name: Check public npm sources before installing dependencies
+        run: npm run check:lockfiles && npm run test:lockfiles
       - run: npm ci
       - run: npm run build
       - name: Install pinned Prometheus test fixture
