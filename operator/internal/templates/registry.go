@@ -94,16 +94,44 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 
 // Resolve binds a compiled adapter to its administrator-approved image.
 func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradleImage string) (Adapter, error) {
+	images := map[string]string{"cache": map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage, "gradle-http": gradleImage}[ref.Name]}
+	if ref.Name == "webdav-apache" && ref.Version == "0.2.0" {
+		images["statistics"] = statsImage
+	}
+	return Bind(ref, images)
+}
+
+// Bind accepts an operator-approved or durably trusted binding. Digest syntax
+// alone is not evidence that a legacy workload's image was approved.
+func Bind(ref cachev1.TemplateRef, images map[string]string) (Adapter, error) {
 	adapter, err := lookup(ref)
 	if err != nil {
 		return Adapter{}, err
 	}
-	adapter.image = map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage, "gradle-http": gradleImage}[ref.Name]
-	adapter.statsImage = statsImage
-	if adapter.image == "" {
-		return Adapter{}, fmt.Errorf("template %s has no approved image", ref.Name)
+	want := 1
+	if ref.Name == "webdav-apache" && ref.Version == "0.2.0" {
+		want = 2
+		adapter.statsImage = images["statistics"]
+		if err := instance.ValidateImage(adapter.statsImage); err != nil {
+			return Adapter{}, fmt.Errorf("statistics: %w", err)
+		}
+	}
+	if len(images) != want {
+		return Adapter{}, fmt.Errorf("image set differs from the exact template's containers")
+	}
+	adapter.image = images["cache"]
+	if err := instance.ValidateImage(adapter.image); err != nil {
+		return Adapter{}, fmt.Errorf("cache: %w", err)
 	}
 	return adapter, nil
+}
+
+func (a Adapter) Images() map[string]string {
+	images := map[string]string{"cache": a.image}
+	if a.statsImage != "" {
+		images["statistics"] = a.statsImage
+	}
+	return images
 }
 
 // Policy reports the exact version's supported engine policy.

@@ -56,7 +56,7 @@ func TestWebDAVResourceContract(t *testing.T) {
 
 func TestWebDAVStatisticsVersionKeepsResourceBudgetAndReadOnlyAccess(t *testing.T) {
 	c := fixture()
-	c.StatsImage = "example.invalid/stats:test"
+	c.StatsImage = "example.invalid/stats@sha256:" + strings.Repeat("a", 64)
 	objects, err := RenderWithStats(c)
 	if err != nil {
 		t.Fatal(err)

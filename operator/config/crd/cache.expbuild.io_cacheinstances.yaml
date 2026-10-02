@@ -44,6 +44,9 @@ spec:
             type: object
           spec:
             properties:
+              imageBindingMode:
+                type: string
+                enum: [PinnedV1]
               access:
                 properties:
                   credentialsSecretRef:
@@ -178,12 +181,14 @@ spec:
               templateRef:
                 properties:
                   name:
+                    maxLength: 32
                     enum:
                     - bazel-remote
                     - webdav-apache
                     - gradle-http
                     type: string
                   version:
+                    maxLength: 16
                     enum:
                     - 0.1.0
                     - 0.2.0
@@ -207,6 +212,8 @@ spec:
               rule: self.instanceId == oldSelf.instanceId
             - message: projectId is immutable
               rule: self.projectId == oldSelf.projectId
+            - message: image binding creation mode is immutable
+              rule: has(self.imageBindingMode) == has(oldSelf.imageBindingMode) && (!has(self.imageBindingMode) || self.imageBindingMode == oldSelf.imageBindingMode)
             - message: template changes require a supported upgrade operation
               rule: self.templateRef == oldSelf.templateRef
             - message: unsupported bazel-remote template version
@@ -227,6 +234,49 @@ spec:
                 == 0)'
           status:
             properties:
+              imageBinding:
+                type: object
+                required:
+                - format
+                - instanceUID
+                - templateRef
+                - images
+                properties:
+                  format:
+                    type: string
+                    enum:
+                    - v1
+                  instanceUID:
+                    type: string
+                    minLength: 1
+                    maxLength: 128
+                  templateRef:
+                    properties:
+                      name:
+                        enum:
+                        - bazel-remote
+                        - webdav-apache
+                        - gradle-http
+                        type: string
+                        maxLength: 32
+                      version:
+                        enum:
+                        - 0.1.0
+                        - 0.2.0
+                        type: string
+                        maxLength: 16
+                    required:
+                    - name
+                    - version
+                    type: object
+                  images:
+                    type: object
+                    minProperties: 1
+                    maxProperties: 2
+                    additionalProperties:
+                      type: string
+                      maxLength: 512
+                      pattern: ^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$
               appliedConfigHash:
                 type: string
               appliedTemplateVersion:
@@ -311,6 +361,9 @@ spec:
         required:
         - spec
         type: object
+        x-kubernetes-validations:
+        - message: image binding is immutable, including removal
+          rule: "!has(oldSelf.status) || !has(oldSelf.status.imageBinding) || (has(self.status) && has(self.status.imageBinding) && self.status.imageBinding == oldSelf.status.imageBinding)"
     served: true
     storage: true
     subresources:

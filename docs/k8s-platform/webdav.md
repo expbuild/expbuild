@@ -23,6 +23,8 @@ Apache 没有原生缓存 LRU 或磁盘配额。本模板的 PVC 容量是请求
 ## 开发部署入口
 
 Operator 需配置 `--webdav-image=仓库@sha256:摘要`；Helm 使用 `images.webdav`。
+0.2.0 的统计容器另外使用独立批准的 `--webdav-stats-image` / `images.webdavStats` digest，
+不随控制器镜像自动变化。升级前遵循[实例镜像迁移步骤](image-upgrade-risk.md)。
 未配置时，WebDAV 实例报告 InvalidConfiguration，不会猜测或拉取任意镜像。
 `images/webdav/Dockerfile` 使用已查询官方 Registry 的 Apache 2.4.68 trixie 镜像及固定摘要。
 原 2.4.66-bookworm 标签在远程 CI 中确认不存在，已替换。下述原生协议测试使用

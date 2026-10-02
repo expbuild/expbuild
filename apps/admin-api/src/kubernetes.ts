@@ -224,6 +224,10 @@ export class KubernetesClient implements KubernetesPort {
     const current = await this.getInstance(desired.metadata.namespace, desired.metadata.name);
     if (!current || current.spec.instanceId !== desired.spec.instanceId || current.spec.projectId !== desired.spec.projectId || current.metadata.deletionTimestamp) throw new OperationError('instance_identity_conflict');
     if (current.metadata.uid !== expectedRevision.split(':')[0]) throw new OperationError('instance_identity_conflict');
+    // Preserve creation-only identity even for operations queued by an older API.
+    desired = structuredClone(desired);
+    if (current.spec.imageBindingMode) desired.spec.imageBindingMode = current.spec.imageBindingMode;
+    else delete desired.spec.imageBindingMode;
     if (current.metadata.annotations?.[opKey] === desired.metadata.annotations?.[opKey]) {
       if (current.metadata.annotations?.['cache.expbuild.io/request-hash'] !== desired.metadata.annotations?.['cache.expbuild.io/request-hash'] || !isDeepStrictEqual(current.spec, desired.spec)) throw new OperationError('instance_configuration_superseded', true);
       return current;

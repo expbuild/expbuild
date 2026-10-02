@@ -19,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 type probeResult struct{ err error }
@@ -124,19 +125,24 @@ func setup(t *testing.T) (*Reconciler, *cachev1.CacheInstance) {
 	_ = appsv1.AddToScheme(s)
 	_ = cachev1.AddToScheme(s)
 	c := &cachev1.CacheInstance{ObjectMeta: metav1.ObjectMeta{Name: "cache-demo", Namespace: "demo", UID: types.UID("uid-1"), Generation: 1}, Spec: cachev1.CacheInstanceSpec{
-		InstanceID: "id-1", ProjectID: "project-1", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote", Version: "0.1.0"}, DesiredState: "Running",
+		ImageBindingMode: ImageBindingMode, InstanceID: "id-1", ProjectID: "project-1", TemplateRef: cachev1.TemplateRef{Name: "bazel-remote", Version: "0.1.0"}, DesiredState: "Running",
 		Storage: cachev1.StorageSpec{ClassName: "standard", Capacity: "10Gi", DeletionPolicy: "Retain"}, Access: cachev1.AccessSpec{Exposure: "ClusterInternal", CredentialsSecretRef: "auth"}, Eviction: cachev1.EvictionSpec{EnginePolicy: "lru", MaxCacheGiB: 8},
 		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m"), corev1.ResourceMemory: resource.MustParse("128Mi")}, Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("512Mi")}},
 	}}
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "auth", Namespace: "demo", Labels: map[string]string{InstanceLabel: "id-1", ProjectLabel: "project-1"}}, Data: map[string][]byte{"htpasswd": []byte("fixture-not-a-real-password")}}
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: c.Namespace, Labels: map[string]string{"app.kubernetes.io/managed-by": "expbuild", ProjectLabel: c.Spec.ProjectID}}}
-	cl := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&cachev1.CacheInstance{}, &appsv1.StatefulSet{}, &corev1.PersistentVolumeClaim{}).WithObjects(c, secret, namespace).Build()
+	cl := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&cachev1.CacheInstance{}, &appsv1.StatefulSet{}, &corev1.PersistentVolumeClaim{}).WithObjects(c, secret, namespace).WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+		if obj.GetUID() == "" {
+			obj.SetUID(types.UID("fake-" + obj.GetName()))
+		}
+		return cl.Create(ctx, obj, opts...)
+	}}).Build()
 	return &Reconciler{Client: cl, Reader: cl, Image: "example.invalid/cache@sha256:" + strings.Repeat("a", 64)}, c
 }
 
 func reconcile(t *testing.T, r *Reconciler, c *cachev1.CacheInstance) {
 	t.Helper()
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 5; i++ {
 		if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(c)}); err != nil {
 			t.Fatal(err)
 		}
@@ -199,7 +205,7 @@ func TestExistingForeignVolumeNotAdopted(t *testing.T) {
 	}
 	reconcile(t, r, c)
 	_ = r.Get(ctx, client.ObjectKeyFromObject(c), c)
-	if meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason != "ApplyFailed" {
+	if meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason != "ImageRecoveryRequired" {
 		t.Fatal("foreign resource accepted")
 	}
 	_ = r.Get(ctx, client.ObjectKeyFromObject(pvc), pvc)
@@ -240,6 +246,7 @@ func TestRetainedVolumeReclaimRequiresExactIdentityAndNoPodReference(t *testing.
 			if err := r.Status().Update(ctx, pvc); err != nil {
 				t.Fatal(err)
 			}
+			seedRetainedImages(t, r, c, pvc)
 			if tc.pod {
 				pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "external-reader", Namespace: c.Namespace}, Spec: corev1.PodSpec{Volumes: []corev1.Volume{{Name: "data", VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: pvc.Name}}}}}}
 				if err := r.Create(ctx, pod); err != nil {
@@ -297,8 +304,12 @@ func TestRetainedVolumeReclaimRequiresExactIdentityAndNoPodReference(t *testing.
 				if err := r.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
 					t.Fatal(err)
 				}
-				if meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason != "VolumeReclaimRejected" {
-					t.Fatal("unsafe volume reclaim was not reported")
+				want := "RetainedImagesRejected"
+				if tc.pod {
+					want = "ImageBindingOwnershipRejected"
+				}
+				if reason := meta.FindStatusCondition(c.Status.Conditions, "Ready").Reason; reason != want {
+					t.Fatalf("unsafe volume reclaim reason=%s want=%s", reason, want)
 				}
 			}
 		})

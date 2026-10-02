@@ -4,6 +4,7 @@ metadata:
   name: cache-demo
   namespace: expbuild-demo
 spec:
+  imageBindingMode: PinnedV1
   instanceId: demo-001
   projectId: demo
   templateRef:

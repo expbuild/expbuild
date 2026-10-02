@@ -62,6 +62,11 @@ Ingress 把 `/v1` 路由到 API，其他请求路由到 Web，从而保留同源
 
 ## 升级与回退
 
+镜像绑定版本需要先应用新 CRD，再更新控制面。存量实例只在现有完整镜像集合
+匹配管理员批准 digest 时接纳，绑定后安装值只影响新实例。WebDAV 必须单独设置
+`images.webdavStats` 的批准 digest；不能复用控制器 tag。旧 Operator 不理解绑定，
+不能直接回退到旧版。详见 [首次迁移与恢复步骤](../../../docs/k8s-platform/image-upgrade-risk.md)。
+
 - `pre-install,pre-upgrade` 迁移 Job 在新工作负载启动前运行。失败会中止 Helm
   操作。Migration 使用事务、锁和 checksum，不在每个 API Pod 启动时自动执行。
 - Helm 不会自动升级 `crds/` 内已有 CRD。升级前审查新 schema，备份现有 CR，

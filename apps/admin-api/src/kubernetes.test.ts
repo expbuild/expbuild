@@ -266,3 +266,26 @@ test('resource inventory reads complete paginated lists and refuses truncation o
     assert.equal(mutations,0);
   }finally{await fixture.close();}
 });
+
+test('creation-only image binding mode survives old queued updates and cannot opt legacy CRs in', async () => {
+  for (const mode of [undefined, 'PinnedV1'] as const) {
+    const desired = desiredObject(instanceInput.parse({name:'cache',storageGiB:10,cacheGiB:8}), 'project','demo','instance','standard','new-op','new-hash');
+    assert.equal(desired.spec.imageBindingMode,'PinnedV1');
+    let current = structuredClone(desired);
+    if (mode) current.spec.imageBindingMode = mode; else delete current.spec.imageBindingMode;
+    current.metadata.uid='uid';current.metadata.generation=1;current.metadata.resourceVersion='7';
+    current.metadata.annotations!['cache.expbuild.io/operation-id']='old-op';
+    // Model both a current API update of a legacy object and an old queued update of a new object.
+    if (mode) delete desired.spec.imageBindingMode;
+    let writes=0;
+    const fixture=await endpoint(async (request,response)=>{
+      response.setHeader('Content-Type','application/json');
+      if(request.method==='GET'){response.end(JSON.stringify(current));return;}
+      assert.equal(request.method,'PUT');let raw='';for await(const chunk of request)raw+=chunk;
+      const body=JSON.parse(raw);assert.equal(body.spec.imageBindingMode,mode);writes++;
+      current=body;response.end(JSON.stringify(body));
+    });
+    try {const kube=new KubernetesClient(fixture.config);await kube.updateInstance(desired,'uid:1');await kube.updateInstance(desired,'uid:1');assert.equal(writes,1);}
+    finally {await fixture.close();}
+  }
+});

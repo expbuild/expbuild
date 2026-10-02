@@ -45,7 +45,7 @@ spec:
             - --monitoring-namespace={{ $root.Values.monitoring.serviceMonitor.namespace }}
             {{- end }}
             - --bazel-remote-image={{ $root.Values.images.bazelRemote }}
-            - --webdav-stats-image={{ $root.Values.images.operator }}
+            - --webdav-stats-image={{ $root.Values.images.webdavStats }}
             - --leader-election-namespace={{ $root.Release.Namespace }}
             {{- if $root.Values.gateway.enabled }}
             - --gateway-name={{ $root.Values.gateway.name }}
