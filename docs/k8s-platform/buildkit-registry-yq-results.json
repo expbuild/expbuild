@@ -1,0 +1,467 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-02",
+  "base_main": "95aa119298619e922242ae35fa7e97e3aae1f276",
+  "workload_revision": "504fc38780cc46be8444ea1b72fb55919fc0bfb0",
+  "platform": "linux/arm64",
+  "host_docker": {
+    "architecture": "aarch64",
+    "cpu": 4,
+    "docker": "27.4.0",
+    "memory_bytes": 6198427648
+  },
+  "pins": {
+    "alpine": "library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6",
+    "buildkit": "moby/buildkit@sha256:3ad6bb9bc8c78c0069d03247adb9a59b3b43d68e55353e876e558b888c6c1768",
+    "buildkit_version": "v0.33.1",
+    "buildx_sha256": {
+      "darwin-arm64": "149e6a006edaa430f297b2bdcf65baaa6d7ee5ccfc7aa67dd50ce1c2b1db47e2",
+      "linux-arm64": "efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29"
+    },
+    "buildx_version": "v0.37.2",
+    "golang": "library/golang@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244",
+    "platform": "linux/arm64",
+    "registry": "library/registry@sha256:3ffcae348822784850e836f23449ff1d0503933524cef57ddcbdbd263eca0c52",
+    "registry_version": "3.1.2",
+    "repository": "https://github.com/mikefarah/yq.git",
+    "revision": "504fc38780cc46be8444ea1b72fb55919fc0bfb0",
+    "tag": "v4.54.1"
+  },
+  "image_transport": "mirror.gcr.io",
+  "docker_hub_direct": "failed: connection reset/EOF",
+  "source_archive_sha256": "sha256:48d42fcbd6fa84b9d92cf65a6b3d2267cc61ec278ebdd6cbd431d98d72307b8a",
+  "one_time_setup_seconds": 54.72,
+  "timing_scope": {
+    "build_command": "Buildx command, including Registry cache import, image push, OCI export and producer cache export",
+    "case_total": "Original run-04 case wall time, including initial oracle with the hd gap; excludes later oracle followup",
+    "verified_oracle_followup_seconds": "Additional independent 175-test oracle with hd adapter and direct NUL-byte check, run on the exact exported binary",
+    "excluded_from_build_command": [
+      "initial tool/image downloads",
+      "one-time dependency preparation",
+      "builder setup",
+      "base-image download/unpack warmup",
+      "artifact verification",
+      "independent oracle",
+      "builder cleanup"
+    ],
+    "docker_load_or_deployment": "not performed",
+    "performance_claim": "single-host observations only; no stable speedup or end-to-end CI claim"
+  },
+  "qualification": {
+    "six_cache_and_build_cases_passed": true,
+    "all_six_corrected_independent_oracles_passed": true,
+    "original_hd_gap": "Upstream testBasicUsageRaw compared two empty command substitutions because hd was absent; independent oracle now supplies od-based comparison and checks raw NUL bytes",
+    "cleanup_passed": true
+  },
+  "fairness": {
+    "input_file_count": 554,
+    "normal_context_equal": true,
+    "mutated_context_equal": true,
+    "mutation_only": [
+      "cmd/version.go"
+    ],
+    "same_base_warmup_dockerfile_sha256": "9f3fbeabf4ba812b8982dfa07b60a73552776d19555613b51f389bc1864a56d1",
+    "runtime_config_equal": true,
+    "rootfs_entry_count": 520,
+    "distinct_fresh_builders_including_preparation": 7,
+    "builder_limits_verified": true,
+    "rootfs_original_sha256": "sha256:eb499b02350fc3c9b53d87412c42af8d74d47ae254217d918e3560a478cd2a47",
+    "rootfs_mutated_sha256": "sha256:c8693190abe94fa332c8a6000b0cbb56f6e84079cf3ff966d8a916f3fe9c6b9e"
+  },
+  "logical_reference_deletion": {
+    "cache_config_digest": "sha256:07a6805b63c287f0173fd46803b26e6ed7633c6ac6e24c282600bc198f0e4f68",
+    "cache_config_file_present_before_gc": true,
+    "delete_status": 202,
+    "manifest_digest": "sha256:a6fd79b85b86fe9e824dcf6c8a9e1ac64bb79ebae5a43d27a11428c5c84653df",
+    "reference_status": 404
+  },
+  "physical_gc": {
+    "after_kib": 367836,
+    "before_kib": 414576,
+    "cache_config_digest": "sha256:07a6805b63c287f0173fd46803b26e6ed7633c6ac6e24c282600bc198f0e4f68",
+    "cache_config_file_removed": true,
+    "cache_missing": true,
+    "deleted_cache_manifest": "sha256:a6fd79b85b86fe9e824dcf6c8a9e1ac64bb79ebae5a43d27a11428c5c84653df",
+    "offline_gc": true,
+    "retained_output_and_seed": true,
+    "retained_output_blobs_verified": true,
+    "retained_output_manifest": "sha256:8c53aa200b71cc741863fcb4aaec16dcb743288f03eade5e6e043639594d0a1a"
+  },
+  "results": [
+    {
+      "case": "disabled",
+      "timings_seconds": {
+        "artifact_verification": 0.105,
+        "base_image_warmup": 8.578,
+        "build_command": 17.265,
+        "builder_cleanup": 0.526,
+        "builder_setup": 0.932,
+        "case_total": 43.773,
+        "independent_oracle": 16.223
+      },
+      "hits": {
+        "acceptance": false,
+        "compile": false
+      },
+      "binary_sha256": "sha256:4c2992984c637b1ae09dc3222665c38cee91a36f7c21114484533a78647afbb8",
+      "rootfs_sha256": "sha256:eb499b02350fc3c9b53d87412c42af8d74d47ae254217d918e3560a478cd2a47",
+      "image_manifest": "sha256:843074eafabf97a5b32d2e9b275ac1204387462bc105be19850c7ea2ee26b027",
+      "verified_oracle_followup_seconds": 16.025,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1"
+      }
+    },
+    {
+      "case": "remote-cold",
+      "timings_seconds": {
+        "artifact_verification": 0.098,
+        "base_image_warmup": 7.798,
+        "build_command": 20.66,
+        "builder_cleanup": 0.584,
+        "builder_setup": 0.843,
+        "case_total": 46.323,
+        "independent_oracle": 16.208
+      },
+      "hits": {
+        "acceptance": false,
+        "compile": false
+      },
+      "binary_sha256": "sha256:4c2992984c637b1ae09dc3222665c38cee91a36f7c21114484533a78647afbb8",
+      "rootfs_sha256": "sha256:eb499b02350fc3c9b53d87412c42af8d74d47ae254217d918e3560a478cd2a47",
+      "image_manifest": "sha256:8c53aa200b71cc741863fcb4aaec16dcb743288f03eade5e6e043639594d0a1a",
+      "verified_oracle_followup_seconds": 16.096,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1"
+      }
+    },
+    {
+      "case": "remote-warm",
+      "timings_seconds": {
+        "artifact_verification": 0.111,
+        "base_image_warmup": 7.792,
+        "build_command": 0.384,
+        "builder_cleanup": 0.556,
+        "builder_setup": 0.837,
+        "case_total": 28.334,
+        "independent_oracle": 18.522
+      },
+      "hits": {
+        "acceptance": true,
+        "compile": true
+      },
+      "binary_sha256": "sha256:4c2992984c637b1ae09dc3222665c38cee91a36f7c21114484533a78647afbb8",
+      "rootfs_sha256": "sha256:eb499b02350fc3c9b53d87412c42af8d74d47ae254217d918e3560a478cd2a47",
+      "image_manifest": "sha256:8c53aa200b71cc741863fcb4aaec16dcb743288f03eade5e6e043639594d0a1a",
+      "verified_oracle_followup_seconds": 16.397,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1"
+      }
+    },
+    {
+      "case": "mutated-disabled",
+      "timings_seconds": {
+        "artifact_verification": 0.108,
+        "base_image_warmup": 7.772,
+        "build_command": 18.036,
+        "builder_cleanup": 0.543,
+        "builder_setup": 0.793,
+        "case_total": 46.573,
+        "independent_oracle": 19.195
+      },
+      "hits": {
+        "acceptance": false,
+        "compile": false
+      },
+      "binary_sha256": "sha256:38ede9fc0baea72fabe7661358421f7fd11ef0648b8dcb5e37d93db6e43709dd",
+      "rootfs_sha256": "sha256:c8693190abe94fa332c8a6000b0cbb56f6e84079cf3ff966d8a916f3fe9c6b9e",
+      "image_manifest": "sha256:dfc8a8ca02ff7f56c1e934f4587826a1c28f330415ad89d1a4211ae629b7b777",
+      "verified_oracle_followup_seconds": 16.14,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1-expbuild-cache-probe"
+      }
+    },
+    {
+      "case": "mutated-import",
+      "timings_seconds": {
+        "artifact_verification": 0.102,
+        "base_image_warmup": 8.926,
+        "build_command": 21.092,
+        "builder_cleanup": 0.596,
+        "builder_setup": 0.829,
+        "case_total": 55.349,
+        "independent_oracle": 23.658
+      },
+      "hits": {
+        "acceptance": false,
+        "compile": false
+      },
+      "binary_sha256": "sha256:38ede9fc0baea72fabe7661358421f7fd11ef0648b8dcb5e37d93db6e43709dd",
+      "rootfs_sha256": "sha256:c8693190abe94fa332c8a6000b0cbb56f6e84079cf3ff966d8a916f3fe9c6b9e",
+      "image_manifest": "sha256:3addd780f0e928ff46b8bf39d34f48fc36872a18a8df919f9dcbddb52f2a5e7c",
+      "verified_oracle_followup_seconds": 16.226,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1-expbuild-cache-probe"
+      }
+    },
+    {
+      "case": "after-gc",
+      "timings_seconds": {
+        "artifact_verification": 0.117,
+        "base_image_warmup": 11.742,
+        "build_command": 23.501,
+        "builder_cleanup": 0.633,
+        "builder_setup": 0.882,
+        "case_total": 60.807,
+        "independent_oracle": 23.796
+      },
+      "hits": {
+        "acceptance": false,
+        "compile": false
+      },
+      "binary_sha256": "sha256:4c2992984c637b1ae09dc3222665c38cee91a36f7c21114484533a78647afbb8",
+      "rootfs_sha256": "sha256:eb499b02350fc3c9b53d87412c42af8d74d47ae254217d918e3560a478cd2a47",
+      "image_manifest": "sha256:29359368bda8610c0e80a31cce7e6ce433f4a8835e1b3eacf021710df992a135",
+      "verified_oracle_followup_seconds": 16.174,
+      "verified_oracle": {
+        "acceptance_scripts": [
+          "bad_args.sh",
+          "basic.sh",
+          "completion.sh",
+          "empty.sh",
+          "flags.sh",
+          "front-matter.sh",
+          "header-processing-off.sh",
+          "inputs-format-auto.sh",
+          "inputs-format.sh",
+          "leading-separator.sh",
+          "load-file.sh",
+          "nul-separator.sh",
+          "output-format.sh",
+          "pipe.sh",
+          "pretty-print.sh",
+          "shebang.sh",
+          "split-printer.sh"
+        ],
+        "acceptance_tests": 175,
+        "hd_adapter": "od -An -v -tx1",
+        "network": "none",
+        "semantic_checks": [
+          "version",
+          "json-arithmetic-array",
+          "multi-document",
+          "raw-nul-bytes"
+        ],
+        "version": "yq (https://github.com/mikefarah/yq/) version v4.54.1"
+      }
+    }
+  ],
+  "input_verification": {
+    "buildx": {
+      "buildx_version": "v0.37.2",
+      "platform": "darwin-arm64",
+      "sha256": "149e6a006edaa430f297b2bdcf65baaa6d7ee5ccfc7aa67dd50ce1c2b1db47e2",
+      "source": "GitHub official docker/buildx release asset digest; checksums.txt omits Darwin assets"
+    },
+    "official_release": "https://github.com/docker/buildx/releases/tag/v0.37.2",
+    "official_assets_url": "https://api.github.com/repos/docker/buildx/releases/tags/v0.37.2",
+    "transport": "mirror.gcr.io",
+    "docker_hub_direct": "failed: connection reset/EOF",
+    "platform": "linux/arm64",
+    "inputs": [
+      {
+        "name": "buildkit",
+        "source": "https://hub.docker.com/v2/repositories/moby/buildkit/tags/v0.33.1",
+        "digest": "sha256:3ad6bb9bc8c78c0069d03247adb9a59b3b43d68e55353e876e558b888c6c1768",
+        "metadata_sha256": "e9c7131eb304284065cd109f2cf5008535d1f53f84c1a5d9d2619a4a4f3cbffd"
+      },
+      {
+        "name": "registry",
+        "source": "https://hub.docker.com/v2/repositories/library/registry/tags/3.1.2",
+        "digest": "sha256:3ffcae348822784850e836f23449ff1d0503933524cef57ddcbdbd263eca0c52",
+        "metadata_sha256": "615e989642c2787bafd76840a3f87b601ba469085d7b60a2db76258a71bee909"
+      }
+    ],
+    "upstream_bases_source": "https://github.com/mikefarah/yq/blob/504fc38780cc46be8444ea1b72fb55919fc0bfb0/Dockerfile",
+    "yq_license_sha256": "697db34dabb21562fe84487a2ccd031fbd45382b89c2cbdec8ef31682c486040",
+    "files": {
+      "buildx-checksums.txt": "7025de9fb8d44aabd1b1f42ecb70f7dc7e33531de356e03e50524e2461b0f9bb",
+      "docker-buildx": "149e6a006edaa430f297b2bdcf65baaa6d7ee5ccfc7aa67dd50ce1c2b1db47e2",
+      "Dockerfile": "fe34390789ad3050dca7c842728c81f635f083c8e6c9e2f5152f3ca8bf791ed5",
+      "go.mod": "70508eedc4ce4e317eda2257d757ed32a50fef364f29424245aea0c9bd831a27",
+      "go.sum": "89b1028c671c02acd401173d1e239f525c1d20393ff7262471154e00790422bd"
+    }
+  },
+  "evidence_sha256": {
+    "mutated-import-isolation.json": "cb81f1c238a6f2051b2f1a1e2af375b771ab14e514651fb1ca1f0502cfb4678d",
+    "disabled-isolation.json": "a51160a14160d743a7902affe7826047e3186a136bce72e74c0458cc241f8102",
+    "mutated-disabled-isolation.json": "9f35009b4e78280248ced44039dae6497d4a725d2302c10c4fbcd8dbc244df47",
+    "prepare-isolation.json": "c35a31c3b7f252469569470bccbbec245a2f949b9c591be25c793cf1056f0ed5",
+    "remote-warm-isolation.json": "f91b0e2d485798a03083ecc9886894bc20df3cd9c24c8f1fed06df15f3486fb6",
+    "after-gc-isolation.json": "50e77278d2287cf7da3653d70fa28593f15f73578f706483205e3af123106b73",
+    "remote-cold-isolation.json": "07342c61d311d0c92de1c731ffbf83f517e4f1f85ef826e2f3d3f24d77332766",
+    "cache-reference-delete.json": "ff1f06c0143c7a52cf6ad3aed5989cf9b78a2a72164dc07f27b0a2fdad2386fc",
+    "gc-result.json": "bec5cc6ec57b0d6a9e636a923a6d68c2dc4ef259b431a888335a25b6fac3b7a3",
+    "cache-manifest.json": "ee43450b104596e209717039f278b4823c5fa848484c5bd60894c1ea312f836f",
+    "fairness-audit.json": "c1e4159a7c521c5e56533bf46838c97395d8bcb38d33b520640535c6d61d86dc",
+    "registry.log": "fe9a4e362052e26457b4b10600f9a6a146b570ab5a1fde46aea5319c7e9d7f3e",
+    "disabled/build.log": "0d4d921cb8bcd88e4ef675f59519f228620d57413dcd0cd4d1cfe7c33f5e0224",
+    "disabled/timings.json": "b1f3df0ca758879972cffa926bc4e7d2cc70695354a3ee9ba0ac217b5df5d0d0",
+    "verified-oracles/disabled/oracle.log": "418de8b316bca7a3f7f5bfa0c4c2c3ed7c9eb5754c18669add29ffa9eaebdd52",
+    "remote-cold/build.log": "fd22afc932d6172a0b1f358594b866052033fec5a4c02c6b95db68bb26edde8e",
+    "remote-cold/timings.json": "2d7decef96a6dd5c23a769dd6d12d02d711fa8cc97284724c7c64e67173c2746",
+    "verified-oracles/remote-cold/oracle.log": "f1f97c6dadc308896642794d76cb6f30e6d24e6648727b492678834b39191330",
+    "remote-warm/build.log": "901a2a10b17b37c7353c08517275d857067a344a5289778e9fae0f01eb64e0d9",
+    "remote-warm/timings.json": "53dbf8358cf7c48b037e6848ed7d9b7ea10fb25b1007d1d39d865a1ed1819d89",
+    "verified-oracles/remote-warm/oracle.log": "58d0c4c92f486a2b15e22b7b653479738fa108dcc606c931089d429821b7d5df",
+    "mutated-disabled/build.log": "0bffc7aedff529236fc9bb8a169deb376c37427a4c881dc0cc712b1d77fe2608",
+    "mutated-disabled/timings.json": "63f39e6f4c3335ec36defba342e17cd42e294e25db2c7368635a7d23a248275d",
+    "verified-oracles/mutated-disabled/oracle.log": "29f9070af80313224f27dc66d821c221b0205c8d6d0c93faa9df2e370c2eff43",
+    "mutated-import/build.log": "26cca72511d2deacf6e3ebc20e38c2e15b78a52d580e8e61c02f20f39056361b",
+    "mutated-import/timings.json": "5fad9b477074433eb88f0d6870dd0ad2162fc4d8cce01c4c26e2d9fb45e5b49e",
+    "verified-oracles/mutated-import/oracle.log": "fc75417b0eb5176a8ad44c5fe413de9557f29b5029416c0e78867c7ef3f61e66",
+    "after-gc/build.log": "ad449e16d25254d2a4065f0b8b408a1cfb15c3c59381993f73682e815ab602df",
+    "after-gc/timings.json": "d5adce48a6758d949bd5333cd304d2d9338b71841225e671f91e9efc4e24a5db",
+    "verified-oracles/after-gc/oracle.log": "27312199dce3970867be03d68d7e5eb262e03a4169f3f5d2a6db6d8513f66908"
+  },
+  "runner_sha256": "d3af4ea9abd3786702f6f6cd18c3d59202672c5a42ba36f1377c08e6913c3fcb"
+}
