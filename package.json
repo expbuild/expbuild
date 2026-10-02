@@ -5,6 +5,8 @@
     "apps/*"
   ],
   "scripts": {
+    "check:lockfiles": "node tools/check-lockfile-registry.mjs",
+    "test:lockfiles": "node --test tools/check-lockfile-registry.test.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "test:browser": "playwright test --config tests/browser/playwright.config.ts"
