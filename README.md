@@ -6,7 +6,7 @@
 
 expbuild gives teams a management console and API for creating independent cache services, configuring resources and access, and understanding cache usage and health. It integrates purpose-built cache engines through versioned templates, starting with Bazel/REAPI, Gradle, and WebDAV.
 
-The console supports **English and Simplified Chinese**. Enterprise self-hosting is the primary deployment model.
+Enterprise self-hosting is the primary deployment model.
 
 **Project status:** active development. The current baseline is one Kubernetes cluster with a single replica and a persistent volume per cache instance. Selected lifecycle, protocol, and HTTPS access paths have passed isolated cluster tests; production compatibility, scale, and recovery validation remain in progress. See [implementation status](docs/k8s-platform/progress.md) for the recorded results and remaining work.
 
@@ -23,15 +23,15 @@ The console supports **English and Simplified Chinese**. Enterprise self-hosting
 
 These are the template versions offered for new instances when their engines are enabled:
 
-| Template              | Protocol and use                                     | Storage and eviction                                          | Available observations                                                  |
-| --------------------- | ---------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `bazel-remote@0.1.0`  | REAPI Action Cache/CAS and Bazel HTTP remote caching | Independent PVC, cache budget, LRU                            | Capacity snapshots and AC/CAS lookup history                            |
-| `gradle-http@0.2.0`   | Gradle HTTP build cache                              | Independent PVC, cache budget, LRU                            | Capacity, hits/misses, requests, latency, traffic, and eviction metrics |
-| `webdav-apache@0.2.0` | Authenticated WebDAV file access                     | Independent PVC; no native cache budget or automatic eviction | Approximate content size and file count from a bounded scan             |
+| Template              | Protocol and use                                                                                                                                                                                   | Storage and eviction                                                                                  | Available observations                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `bazel-remote@0.1.0`  | [REAPI](https://github.com/bazelbuild/remote-apis) Action Cache/CAS and [Bazel HTTP remote caching](https://bazel.build/remote/caching) via [bazel-remote](https://github.com/buchgr/bazel-remote) | Independent [PVC](https://kubernetes.io/docs/concepts/storage/persistent-volumes/), cache budget, LRU | Capacity snapshots and AC/CAS lookup history                            |
+| `gradle-http@0.2.0`   | [Gradle HTTP build cache](https://docs.gradle.org/current/userguide/build_cache.html)                                                                                                              | Independent PVC, cache budget, LRU                                                                    | Capacity, hits/misses, requests, latency, traffic, and eviction metrics |
+| `webdav-apache@0.2.0` | Authenticated [WebDAV](https://httpd.apache.org/docs/2.4/mod/mod_dav.html) file access via [Apache HTTP Server](https://httpd.apache.org/)                                                         | Independent PVC; no native cache budget or automatic eviction                                         | Approximate content size and file count from a bounded scan             |
 
 Historical `0.1.0` Gradle and WebDAV instances retain their original capabilities. Templates bind capabilities to exact versions; automatic upgrades and a template-version upgrade workflow are not yet available. The REAPI service provides caching only, with no remote execution.
 
-Time-series views require Prometheus-compatible collection and storage. Logs require Loki and configured ingestion; alerts require Alertmanager and configured rules. Capabilities vary by template, and missing data is shown as unavailable rather than zero. See the [observability guide](docs/k8s-platform/observability.md) for the full matrix.
+Time-series views require [Prometheus](https://prometheus.io/docs/introduction/overview/)-compatible collection and storage. Logs require [Loki](https://grafana.com/docs/loki/latest/) and configured ingestion; alerts require [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) and configured rules. Capabilities vary by template, and missing data is shown as unavailable rather than zero. See the [observability guide](docs/k8s-platform/observability.md) for the full matrix.
 
 ## Architecture
 

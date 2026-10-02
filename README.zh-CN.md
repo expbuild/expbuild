@@ -6,7 +6,7 @@
 
 expbuild 为团队提供管理控制台和 API，用于创建独立缓存服务、配置资源与访问权限，并了解缓存用量和运行状态。平台通过版本化模板接入专用缓存引擎，目前覆盖 Bazel/REAPI、Gradle 和 WebDAV。
 
-管理控制台支持 **English 和简体中文**，优先面向企业自托管部署。
+优先面向企业自托管部署。
 
 **项目状态：** 持续开发中。当前基线为单 Kubernetes 集群，每个缓存实例使用单副本和独立持久卷。指定的生命周期、协议和 HTTPS 访问链路已通过隔离集群测试；生产环境兼容性、规模与故障恢复仍在验证。实际结果和剩余工作见[实施状态](docs/k8s-platform/progress.md)。
 
@@ -23,15 +23,15 @@ expbuild 为团队提供管理控制台和 API，用于创建独立缓存服务�
 
 启用对应引擎后，新建实例可选择以下模板版本：
 
-| 模板                  | 协议与用途                                    | 存储与淘汰                         | 可用观测能力                                 |
-| --------------------- | --------------------------------------------- | ---------------------------------- | -------------------------------------------- |
-| `bazel-remote@0.1.0`  | REAPI Action Cache/CAS 与 Bazel HTTP 远程缓存 | 独立 PVC、缓存预算、LRU            | 容量快照和 AC/CAS 查询历史                   |
-| `gradle-http@0.2.0`   | Gradle HTTP 构建缓存                          | 独立 PVC、缓存预算、LRU            | 容量、命中与缺失、请求、延迟、流量和淘汰指标 |
-| `webdav-apache@0.2.0` | 需要认证的 WebDAV 文件访问                    | 独立 PVC；无原生缓存预算和自动淘汰 | 通过有界扫描提供近似内容大小与文件数         |
+| 模板                  | 协议与用途                                                                                                                                                                                        | 存储与淘汰                                                                                 | 可用观测能力                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| `bazel-remote@0.1.0`  | 通过 [bazel-remote](https://github.com/buchgr/bazel-remote) 提供 [REAPI](https://github.com/bazelbuild/remote-apis) Action Cache/CAS 与 [Bazel HTTP 远程缓存](https://bazel.build/remote/caching) | 独立 [PVC](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)、缓存预算、LRU | 容量快照和 AC/CAS 查询历史                   |
+| `gradle-http@0.2.0`   | [Gradle HTTP 构建缓存](https://docs.gradle.org/current/userguide/build_cache.html)                                                                                                                | 独立 PVC、缓存预算、LRU                                                                    | 容量、命中与缺失、请求、延迟、流量和淘汰指标 |
+| `webdav-apache@0.2.0` | 通过 [Apache HTTP Server](https://httpd.apache.org/) 提供需要认证的 [WebDAV](https://httpd.apache.org/docs/2.4/mod/mod_dav.html) 文件访问                                                         | 独立 PVC；无原生缓存预算和自动淘汰                                                         | 通过有界扫描提供近似内容大小与文件数         |
 
 历史 Gradle 和 WebDAV `0.1.0` 实例保留原版本能力。模板能力绑定精确版本，目前没有自动升级和模板版本升级工作流。REAPI 服务只提供缓存，不提供远程执行。
 
-历史趋势依赖兼容 Prometheus 的采集与存储；日志依赖 Loki 和已配置的采集链路；告警依赖 Alertmanager 和已配置的规则。不同模板的观测能力不同，缺失数据会显示为不可用，而非零值。完整能力矩阵见[可观测接入说明](docs/k8s-platform/observability.md)。
+历史趋势依赖兼容 [Prometheus](https://prometheus.io/docs/introduction/overview/) 的采集与存储；日志依赖 [Loki](https://grafana.com/docs/loki/latest/) 和已配置的采集链路；告警依赖 [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/) 和已配置的规则。不同模板的观测能力不同，缺失数据会显示为不可用，而非零值。完整能力矩阵见[可观测接入说明](docs/k8s-platform/observability.md)。
 
 ## 架构
 
