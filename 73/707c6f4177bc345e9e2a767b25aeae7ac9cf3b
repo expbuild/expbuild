@@ -1,0 +1,52 @@
+.github/workflows/benchmarks.yml
+  h_f97694482282a9 1-24
+docs/k8s-platform/open-source-benchmark.md
+  h_f97694482282a9 1-135
+docs/k8s-platform/rxjava-module-output-diagnosis.md
+  h_f97694482282a9 1-81
+tools/benchmarks/common.py
+  h_f97694482282a9 1-54
+tools/benchmarks/fixtures/gradle-module-output/README.md
+  h_f97694482282a9 1-23
+tools/benchmarks/fixtures/gradle-module-output/build.gradle
+  h_f97694482282a9 1-4
+tools/benchmarks/fixtures/gradle-module-output/settings.gradle
+  h_f97694482282a9 1
+tools/benchmarks/fixtures/gradle-module-output/src/main/java/example/Example.java
+  h_f97694482282a9 1
+tools/benchmarks/fixtures/gradle-module-output/src/main/module/module-info.java
+  h_f97694482282a9 1
+tools/benchmarks/gradle-events.init.gradle
+  h_f97694482282a9 1-24
+tools/benchmarks/gradle-reproducible.init.gradle
+  h_f97694482282a9 1-8
+tools/benchmarks/gradle-rxjava-module-output.init.gradle
+  h_f97694482282a9 1-27
+tools/benchmarks/gradle.init.gradle
+  h_f97694482282a9 1-24
+tools/benchmarks/reproduce_module_output.py
+  h_f97694482282a9 1-133
+tools/benchmarks/run_abseil.py
+  h_f97694482282a9 1-252
+tools/benchmarks/run_rxjava.py
+  h_f97694482282a9 1-329
+tools/benchmarks/test_common.py
+  h_f97694482282a9 1-25
+tools/benchmarks/test_run_abseil.py
+  h_f97694482282a9 1-78
+tools/benchmarks/test_run_rxjava.py
+  h_f97694482282a9 1-130
+tools/benchmarks/workloads.json
+  h_f97694482282a9 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "73707c6f4177bc345e9e2a767b25aeae7ac9cf3b",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
