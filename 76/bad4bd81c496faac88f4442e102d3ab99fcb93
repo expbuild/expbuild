@@ -1,0 +1,84 @@
+apps/admin-api/src/instance-contract.ts
+  h_f97694482282a9 10,36
+apps/admin-api/src/instance-routes.ts
+  h_f97694482282a9 457-458
+apps/admin-api/src/kubernetes.test.ts
+  h_f97694482282a9 269-291
+apps/admin-api/src/kubernetes.ts
+  h_f97694482282a9 227-230
+deploy/charts/expbuild/README.md
+  h_f97694482282a9 65-69
+deploy/charts/expbuild/crds/cache.expbuild.io_cacheinstances.yaml
+  h_f97694482282a9 47-49,184,191,215-216,237-279,364-366
+deploy/charts/expbuild/templates/validate.yaml
+  h_f97694482282a9 12-17
+deploy/charts/expbuild/templates/workloads.yaml
+  h_f97694482282a9 48
+deploy/charts/expbuild/values.yaml
+  h_f97694482282a9 7
+docs/k8s-platform/image-upgrade-risk.md
+  h_f97694482282a9 1-92
+docs/k8s-platform/webdav.md
+  h_f97694482282a9 26-27
+operator/README.md
+  h_f97694482282a9 10
+operator/api/v1alpha1/types.go
+  h_f97694482282a9 22,25,63,70-72,93-98,104-120,123
+operator/api/v1alpha1/zz_generated.deepcopy.go
+  h_f97694482282a9 109-111,215-233
+operator/config/crd/cache.expbuild.io_cacheinstances.yaml
+  h_f97694482282a9 47-49,184,191,215-216,237-279,364-366
+operator/examples/cacheinstance.yaml
+  h_f97694482282a9 7
+operator/examples/gradle-http.yaml
+  h_f97694482282a9 9
+operator/examples/webdav.yaml
+  h_f97694482282a9 7
+operator/go.mod
+  h_f97694482282a9 6-7,12,22-24,26-27,32,35,43,48-49,60,62,64-71,74,83,88-89,92
+operator/go.sum
+  h_f97694482282a9 1-6,9-12,15-19,30-31,36,39-40,57-58,71-76,115-117,120-121,123-124,126-128,135-158,170-171,212-213,227,236-237,240-241,248-249
+operator/internal/controller/cacheinstance.go
+  h_f97694482282a9 24,41-42,54-56,79,148,150-165,339,388-396,420-421,502,504-505,507,539-541
+operator/internal/controller/cacheinstance_test.go
+  h_f97694482282a9 22,128,134-139,145,208,249,307-312
+operator/internal/controller/chart_test.go
+  h_f97694482282a9 152-156
+operator/internal/controller/envtest_test.go
+  h_f97694482282a9 102-140,144-145
+operator/internal/controller/image_binding.go
+  h_f97694482282a9 1-249
+operator/internal/controller/image_binding_schema_test.go
+  h_f97694482282a9 1-132
+operator/internal/controller/image_binding_test.go
+  h_f97694482282a9 1-443
+operator/internal/controller/image_upgrade_risk_test.go
+  h_f97694482282a9 1-161
+operator/internal/controller/retained_images.go
+  h_f97694482282a9 1-144
+operator/internal/controller/retained_images_test.go
+  h_f97694482282a9 1-172
+operator/internal/instance/config.go
+  h_f97694482282a9 32-38,52-53
+operator/internal/templates/registry.go
+  h_f97694482282a9 97-106,111-124,129-136
+operator/internal/webdav/render.go
+  h_f97694482282a9 69-70
+operator/internal/webdav/render_test.go
+  h_f97694482282a9 59
+tools/cluster_lifecycle.py
+  h_f97694482282a9 88,94
+tools/helm_lifecycle.py
+  h_f97694482282a9 63,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "76bad4bd81c496faac88f4442e102d3ab99fcb93",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
