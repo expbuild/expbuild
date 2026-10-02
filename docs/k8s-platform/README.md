@@ -6,6 +6,8 @@
 
 平台、缓存实例、日志诊断与告警的完整目标见[平台可观测方案](observability-plan.md)；首版实现、用户入口与部署配置见[可观测接入说明](observability.md)，既有 Bazel 历史接口见[监控说明](monitoring.md)。
 
+Docker/OCI、BuildKit、制品与 CI 缓存、软件包及任务缓存的候选引擎、接入边界和建议顺序见[缓存类型扩展调研与规划](cache-expansion-plan.md)。该文档记录待验证方向，不代表已实现能力。
+
 本文独立于此前 `docs/design`、`docs/strategy` 中的统一缓存引擎方案。旧方案保留为历史研究，不作为本方案的实现前提。
 
 ## 方案摘要
