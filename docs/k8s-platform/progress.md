@@ -9,7 +9,7 @@
 | 优先级 | 工作 | 完成条件与当前边界 |
 |---|---|---|
 | 进行中 | Gradle 探测身份最小权限回归 | `26c4274` 已限制 `health` 身份仅访问 `/status`，Go 并发测试、[平台 CI](https://github.com/expbuild/expbuild/actions/runs/36725337211)和[容器 CI](https://github.com/expbuild/expbuild/actions/runs/36725336885)已通过；[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36725336876)在本次记录时仍运行中。需确认真实 API Secret 的状态读取、缓存读写拒绝及原客户端正常使用。|
-| P1 | 下一类缓存服务 | HTTP 上游代理缓存尚无模板：先锁定引擎和上游信任边界，验证 Cache-Control、重验证、认证响应隔离和淘汰，再接入模板/CRD/API/界面及真实客户端。WebDAV 按用户要求维持现状，替代服务选型确定前不再扩展 Apache 模板。|
+| P1 | 缓存类型扩展 | 已记录[扩展调研与规划](cache-expansion-plan.md)，建议先验证 Docker/OCI、BuildKit、制品与 CI 缓存，再接入软件包及任务缓存；新增引擎尚未做运行与性能验证。HTTP 上游代理仍需锁定引擎和上游信任边界，验证 Cache-Control、重验证、认证响应隔离和淘汰，再接入模板/CRD/API/界面及真实客户端。WebDAV 按用户要求维持现状，替代服务选型确定前不再扩展 Apache 模板。|
 | P1 | 模板扩展与升级 | 现有模板通过编译内注册表按精确版本接入；尚无已发布实例的引擎/模板版本升级工作流、兼容迁移和回滚验收。若需要第三方独立发布，再设计签名模板包与扩展 SDK，不把它误记为已实现。|
 | P1 | 运维恢复与资源对账 | 已有 CR/PVC 只读盘点、保留卷领回/清理和单实例预留上调；还需补充 Pod、Secret、入口路由等差异的盘点与明确修复流程，以及失败操作、API 断连、删除中断的真实集群故障注入。大项目扫描需分片/归档，不能将有界扫描的截断当作健康。|
 | P1 | 可观测深化与生产验收 | 首版已有 API/Worker/Operator 指标、后台容量快照、Gradle 0.2.0 持续指标、资源趋势、事件、Loki 日志、Alertmanager 告警/静默/历史及中英文界面。继续补充项目级阈值、完整依赖趋势、绝对故障时间联动、采集器认证安装包、调用链和规模基线；支持与验证边界见[可观测接入](observability.md)。|
