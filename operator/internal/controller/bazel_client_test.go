@@ -73,8 +73,11 @@ cache_artifact = rule(implementation = _impl)
 		}
 		artifact := filepath.Join(workspace, "bazel-bin", "artifact.txt")
 		actual, err := filepath.EvalSymlinks(artifact)
-		if err != nil || !strings.HasPrefix(actual, outputBase+string(os.PathSeparator)) {
-			t.Fatalf("output is not from fresh build directory: %v", err)
+		// macOS temp paths may use /var while Bazel resolves /private/var.
+		// Canonicalize both sides without weakening the fresh-output boundary.
+		canonicalBase, baseErr := filepath.EvalSymlinks(outputBase)
+		if err != nil || baseErr != nil || !strings.HasPrefix(actual, canonicalBase+string(os.PathSeparator)) {
+			t.Fatalf("output is not from fresh build directory: artifact=%q base=%q artifactErr=%v baseErr=%v", actual, canonicalBase, err, baseErr)
 		}
 		contents, err := os.ReadFile(actual)
 		if err != nil || string(contents) != "remote cache contract\n" {

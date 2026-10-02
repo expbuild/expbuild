@@ -1,0 +1,24 @@
+import org.gradle.caching.http.HttpBuildCache
+
+// Only for disposable loopback benchmark services, never a production endpoint.
+settingsEvaluated { settings ->
+    settings.buildCache {
+        local { enabled = false }
+        def endpoint = System.getenv('EXPBUILD_BENCH_CACHE_URL')
+        if (endpoint) {
+            def parsed = new URI(endpoint)
+            if (parsed.scheme != 'http' || parsed.host != '127.0.0.1' || parsed.userInfo != null || parsed.port <= 0 || parsed.query != null || parsed.fragment != null) {
+                throw new GradleException('Benchmark cache must be a credential-free loopback HTTP URL')
+            }
+            remote(HttpBuildCache) {
+                url = endpoint
+                allowInsecureProtocol = true
+                push = System.getenv('EXPBUILD_BENCH_PUSH') == 'true'
+                credentials {
+                    username = System.getenv('EXPBUILD_BENCH_USER')
+                    password = System.getenv('EXPBUILD_BENCH_PASSWORD')
+                }
+            }
+        }
+    }
+}

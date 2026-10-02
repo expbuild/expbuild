@@ -1,0 +1,25 @@
+{
+  "abseil": {
+    "repository": "https://github.com/abseil/abseil-cpp.git",
+    "revision": "d38452e1ee03523a208362186fd42248ff2609f6",
+    "tag": "20250814.1",
+    "license": "Apache-2.0",
+    "toolchain": "Bazel 8.4.2; record platform and C++ compiler identity",
+    "targets": [
+      "//absl/strings:ascii_test",
+      "//absl/strings:str_cat_test",
+      "//absl/strings:str_split_test"
+    ],
+    "bazel_version": "8.4.2"
+  },
+  "rxjava": {
+    "repository": "https://github.com/ReactiveX/RxJava.git",
+    "revision": "2e066505a104f3326bb31a960047b0c183b3d027",
+    "tag": "v3.1.12",
+    "license": "Apache-2.0",
+    "toolchain": "Gradle wrapper 8.14; Temurin/Adoptium JDK 11; BUILD_WITH_11=true",
+    "test_filter": "io.reactivex.rxjava3.internal.operators.flowable.FlowableMapTest",
+    "gradle_version": "8.14",
+    "java_major": 11
+  }
+}
