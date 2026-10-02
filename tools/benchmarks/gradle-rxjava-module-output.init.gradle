@@ -1,0 +1,27 @@
+// Opt-in diagnostic workaround for pinned RxJava v3.1.12 / org.beryx.jar 2.0.0.
+// This changes only the disposable benchmark build; it is not an upstream fix.
+gradle.projectsEvaluated {
+    def project = rootProject
+    if (!project.plugins.hasPlugin('org.beryx.jar')) {
+        throw new GradleException('Expected the pinned RxJava module plugin')
+    }
+    def moduleTask = project.tasks.named('compileJava')
+    def plainTask = project.tasks.named('compileNonJpms')
+    def nestedOutput = new File(plainTask.get().destinationDirectory.get().asFile, 'META-INF/versions/9')
+    if (moduleTask.get().destinationDirectory.get().asFile != nestedOutput) {
+        throw new GradleException('Module output layout changed; review this workaround before use')
+    }
+    // Avoid a child output inside compileNonJpms's output directory. Keep the
+    // existing javac/module options, task order, and Java 9 JAR entry path.
+    def moduleRoot = project.layout.buildDirectory.dir('classes/java/module-info')
+    moduleTask.configure {
+        destinationDirectory = moduleRoot.map { it.dir('META-INF/versions/9') }
+    }
+    project.tasks.named('jar').configure {
+        // RxJava excludes root-level module-info.class before CopySpec's into
+        // mapping. Preserve that rule by supplying its final relative path.
+        from(project.files(moduleRoot).builtBy(moduleTask)) {
+            include 'META-INF/versions/9/module-info.class'
+        }
+    }
+}

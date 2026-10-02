@@ -1,0 +1,24 @@
+name: Benchmark evidence contracts
+on:
+  push:
+    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', '.github/workflows/benchmarks.yml']
+  pull_request:
+    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', '.github/workflows/benchmarks.yml']
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tools/benchmarks -p 'test_*.py'
+      - run: python -m py_compile tools/benchmarks/*.py
+      - name: Check self-contained entry points
+        run: |
+          python tools/benchmarks/run_abseil.py --help
+          python tools/benchmarks/run_rxjava.py --help
+          python tools/benchmarks/reproduce_module_output.py --help

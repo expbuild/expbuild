@@ -1,0 +1,4 @@
+plugins { id 'java-library'; id 'org.beryx.jar' version '2.0.0' }
+version = '1.0'
+java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+moduleConfig { moduleInfoPath = 'src/main/module/module-info.java'; multiReleaseVersion = 9; version = project.version }

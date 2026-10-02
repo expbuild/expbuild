@@ -1,0 +1,8 @@
+// Explicit benchmark variant: prevent Bnd's wall-clock manifest field at build
+// time, instead of removing manifest content from the artifact comparison.
+// https://bnd.bndtools.org/instructions/reproducible.html
+projectsEvaluated {
+    rootProject.tasks.named('jar') {
+        bnd('-reproducible': 'true')
+    }
+}
