@@ -1,0 +1,16 @@
+tools/gateway_fixture.py
+  h_f97694482282a9 5,28-53,95-104,110-116,120,122,124-127
+tools/test_gateway_fixture.py
+  h_f97694482282a9 12,24,51-54,78-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "d5054e30df1f4dd1b142dc9fdfa7b4601e21616e",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
