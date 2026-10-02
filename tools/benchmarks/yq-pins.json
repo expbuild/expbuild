@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/mikefarah/yq.git",
+  "revision": "504fc38780cc46be8444ea1b72fb55919fc0bfb0",
+  "tag": "v4.54.1",
+  "platform": "linux/arm64",
+  "buildx_version": "v0.37.2",
+  "buildx_sha256": {
+    "darwin-arm64": "149e6a006edaa430f297b2bdcf65baaa6d7ee5ccfc7aa67dd50ce1c2b1db47e2",
+    "linux-arm64": "efa38cb7aa7db2dbb9ad049b00b0a9737f66f033626177b5a4e845184ad7ab29"
+  },
+  "buildkit": "moby/buildkit@sha256:3ad6bb9bc8c78c0069d03247adb9a59b3b43d68e55353e876e558b888c6c1768",
+  "buildkit_version": "v0.33.1",
+  "registry": "library/registry@sha256:3ffcae348822784850e836f23449ff1d0503933524cef57ddcbdbd263eca0c52",
+  "registry_version": "3.1.2",
+  "golang": "library/golang@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244",
+  "alpine": "library/alpine@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+}

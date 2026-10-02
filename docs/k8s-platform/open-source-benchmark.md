@@ -6,6 +6,12 @@ capacity/availability certification. All services bind to a fresh loopback port;
 the scripts use new output directories and never install tools, deploy Kubernetes,
 or modify the supplied source checkout. The source is extracted with `git archive`.
 
+The separate [BuildKit + Distribution + yq prototype](buildkit-registry-yq-poc.md)
+uses native arm64 containers, a real writable registry and fresh builders to
+check `mode=max` cache reuse, source invalidation and offline GC recovery. Its
+environment, dependency preparation and measurement boundaries differ from the
+Bazel/Gradle experiments below.
+
 ## Inputs and scope
 
 | Workload | Source revision | Tools and measured scope |

@@ -1,9 +1,9 @@
 name: Benchmark evidence contracts
 on:
   push:
-    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', '.github/workflows/benchmarks.yml']
+    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', 'docs/k8s-platform/buildkit-registry-yq-*', '.github/workflows/benchmarks.yml']
   pull_request:
-    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', '.github/workflows/benchmarks.yml']
+    paths: ['tools/benchmarks/**', 'docs/k8s-platform/open-source-benchmark.md', 'docs/k8s-platform/rxjava-module-output-diagnosis.md', 'docs/k8s-platform/buildkit-registry-yq-*', '.github/workflows/benchmarks.yml']
 permissions:
   contents: read
 jobs:
@@ -22,3 +22,4 @@ jobs:
           python tools/benchmarks/run_abseil.py --help
           python tools/benchmarks/run_rxjava.py --help
           python tools/benchmarks/reproduce_module_output.py --help
+          python tools/benchmarks/run_yq.py --help
