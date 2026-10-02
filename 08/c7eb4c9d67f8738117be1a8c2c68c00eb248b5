@@ -1,0 +1,14 @@
+operator/internal/controller/bazel_client_test.go
+  h_f97694482282a9 76-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "08c7eb4c9d67f8738117be1a8c2c68c00eb248b5",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
