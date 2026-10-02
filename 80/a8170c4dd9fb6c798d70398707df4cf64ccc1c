@@ -1,0 +1,26 @@
+.github/workflows/benchmarks.yml
+  h_f97694482282a9 4,6,25
+docs/k8s-platform/buildkit-registry-yq-poc.md
+  h_f97694482282a9 1-206
+docs/k8s-platform/buildkit-registry-yq-results.json
+  h_f97694482282a9 1-467
+docs/k8s-platform/open-source-benchmark.md
+  h_f97694482282a9 9-14
+tools/benchmarks/run_yq.py
+  h_f97694482282a9 1-646
+tools/benchmarks/test_run_yq.py
+  h_f97694482282a9 1-195
+tools/benchmarks/yq-pins.json
+  h_f97694482282a9 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24-ep",
+  "base_commit_sha": "80a8170c4dd9fb6c798d70398707df4cf64ccc1c",
+  "prompts": {},
+  "humans": {
+    "h_f97694482282a9": {
+      "author": "randyli <3059282+randyli@users.noreply.github.com>"
+    }
+  }
+}
