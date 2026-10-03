@@ -1,5 +1,6 @@
 // Chinese source messages and their English translations. Keep complete sentences together.
 export const messages: Record<string, string> = {
+  "仅用于新的验证项目：预先配置 Maven 3.9.16、扩展 1.3.0、Python 3，以及 settings.xml 中的 expbuild-maven 凭据引用。已有缓存配置需人工合并。此功能不是依赖镜像仓库。": "For a fresh validation fixture: provision Maven 3.9.16, extension 1.3.0, Python 3 and expbuild-maven credential references in settings.xml first. Merge existing cache configuration manually. This is not a dependency mirror.",
   "实验性配置": "Experimental configuration",
   "这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。": "These configurations have not passed full real-client acceptance. Read-only mode is enforced by the client; instance credentials can still write. Validate using a dedicated instance.",
 

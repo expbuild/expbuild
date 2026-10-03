@@ -1,17 +1,18 @@
 # Experimental client configurations
 
-The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0 and Pants 2.33.1. Real-client cache acceptance is still pending. Existing Bazel, Gradle and WebDAV examples remain available.
+The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0, Pants 2.33.1 and Maven Build Cache Extension 1.3.0. Real-client cache acceptance is still pending. Existing Bazel, Gradle and WebDAV examples remain available.
 
 | Client | Existing template | Transport | Configuration status |
 | --- | --- | --- | --- |
 | sccache 0.18.0, compiled with WebDAV | `webdav-apache@0.1.0` or `@0.2.0` | HTTP(S) WebDAV, Basic authentication | Experimental; unvalidated with real compiler workloads |
 | Pants 2.33.1 | `bazel-remote@0.1.0` | REAPI over `grpc://` or `grpcs://`, Basic authorization metadata | Experimental; unvalidated with real Pants workloads |
+| Maven Build Cache Extension 1.3.0 / Maven 3.9.16 | `webdav-apache@0.1.0` or `@0.2.0` | Native Resolver HTTP/WebDAV, Basic | Experimental; real extension acceptance pending |
 
 No new storage engine or custom client fork is required for these recipes. The API returns `clientProfiles` separately from engine `capabilities`, on both template catalog entries and instance details. Each profile has `id`, `protocol`, pinned `version` and `status: experimental`. Unknown template versions expose no profiles. The UI offers matching recipes only after the current generation is Ready, using validated root endpoints. This metadata does not change the CacheInstance spec, storage layout or approved image binding.
 
 ## Credentials, isolation and TLS
 
-Use a dedicated instance for each acceptance workload. Current instance credentials can read and write. The sample defaults to client-side reads and enables writes only for `CI=true`; a user holding those credentials can change that setting. This is not a server-enforced read-only role. Adding a true read-only role requires separate credentials and engine authorization, with write-denial tests, before advertising it.
+Use a dedicated instance for each acceptance workload. Current instance credentials can read and write. The sccache and Pants samples default to client-side reads and enable writes only for `CI=true`; the Maven example always disables remote uploads; a user holding those credentials can change that setting. This is not a server-enforced read-only role. Adding a true read-only role requires separate credentials and engine authorization, with write-denial tests, before advertising it.
 
 The existing instance, credentials and PVC are the isolation boundary. WebDAV prefixes, Pants `remote_instance_name`, and `process_execution_cache_namespace` are not tenant security boundaries. bazel-remote does not isolate CAS by instance name; action-key instance mangling is not currently enabled. Do not share an instance between untrusted tenants or claim cross-tool cache reuse.
 
@@ -53,3 +54,7 @@ Required evidence before changing the profile status:
 6. Exercise TLS with a trusted test CA, plus rejection of an untrusted certificate, and both supported endpoint exposure paths as separate integration coverage.
 
 No new client downloader or real-client workflow is enabled by this configuration change. Downloading/executing the pinned clients, launcher bootstrap and fixture dependencies remains a separate acceptance step. Full platform Kubernetes lifecycle tests are not required merely to test configuration rendering.
+
+## Maven Build Cache Extension
+
+See the [Maven profile](maven-build-cache.md) for prerequisites, nested WebDAV layout, strict test-parameter reconciliation and the pending acceptance gate. Its upload flag remains false even in CI. This caches build outputs, not dependency downloads.

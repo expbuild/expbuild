@@ -140,3 +140,17 @@ it("shows experimental profiles only from the API and for the current ready endp
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
 });
+
+
+it("shows Maven Build Cache separately on a ready WebDAV endpoint", () => {
+  const value = detail();
+  value.clientProfiles = [{ id: "maven-build-cache", protocol: "webdav", version: "1.3.0", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "webdav", url: "https://cache.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/maven-build-cache 1.3.0/)).toBeTruthy();
+  expect(screen.getByText(/仅用于新的验证项目/)).toBeTruthy();
+  expect(screen.getByText(/aether.connector.http.supportWebDav=true/).textContent).toContain("maven.build.cache.remote.save.enabled=false");
+  value.status!.conditions![0].observedGeneration = 1;
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/aether.connector.http.supportWebDav=true/)).toBeNull();
+});

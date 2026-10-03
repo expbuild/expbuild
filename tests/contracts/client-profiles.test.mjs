@@ -1,3 +1,6 @@
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
@@ -97,4 +100,60 @@ test('version mismatch stops before either build and daemon startup failure cann
   result = run('sccache', '', "sccache() { if [ \"$1\" = --version ]; then printf 'sccache 0.18.0\\n'; else return 7; fi; }");
   assert.equal(result.status, 7);
   assert.ok(!result.stdout.includes('cargo:'));
+});
+
+test('Maven profile validates pinned extension XML, preserves credentials and protects existing config', () => {
+  const endpoint = { protocol: 'webdav', url: 'https://cache&test.example/' };
+  const profile = clientProfiles('webdav-apache', '0.2.0').find(p => p.id === 'maven-build-cache');
+  assert.equal(profile.version, '1.3.0');
+  assert.equal(profile.status, 'experimental');
+  const recipe = clientProfileExample(profile.id, endpoint, profile.version);
+  assert.ok(recipe.includes('https://cache&amp;test.example/maven-build-cache'));
+  assert.equal(clientProfileExample(profile.id, {protocol:'reapi',url:'grpcs://cache.test'}, profile.version),null);
+  assert.equal(clientProfileExample(profile.id,endpoint,'1.2.0'),null);
+  const dir = mkdtempSync(join(tmpdir(), 'expbuild-maven-recipe-'));
+  try {
+    mkdirSync(join(dir,'.mvn'));
+    const extension = version => `<extensions xmlns="http://maven.apache.org/EXTENSIONS/1.1.0"><extension><groupId>org.apache.maven.extensions</groupId><artifactId>maven-build-cache-extension</artifactId><version>${version}</version></extension></extensions>`;
+    writeFileSync(join(dir,'.mvn/extensions.xml'),extension('1.3.0'));
+    const script = `mvn() {
+      case "$*" in *--version*) printf 'Apache Maven 3.9.16\\n'; return;; esac
+      printf '%s\\n' "args:$*" "user:$EXPBUILD_MAVEN_USER" "password:$EXPBUILD_MAVEN_PASSWORD"
+      for arg in "$@"; do case "$arg" in -Dmaven.build.cache.configPath=*) cp "\${arg#*=}" captured.xml; printf '%s' "\${arg#*=}" > temp-path;; esac; done
+      return \${STUB_RESULT:-0}
+    }
+    ${recipe}
+    result=$?
+    test -z "\${EXPBUILD_MAVEN_PASSWORD-}" || exit 99
+    exit "$result"`;
+    for (const code of [0,7]) {
+      const result=spawnSync('bash',['-c',script],{cwd:dir,input:"cache\np@ss<&'$(unexpected)\n",encoding:'utf8',env:{PATH:process.env.PATH,CI:'true',STUB_RESULT:String(code)}});
+      assert.equal(result.status,code,result.stderr);
+      assert.ok(result.stdout.includes("password:p@ss<&'$(unexpected)"));
+      assert.ok(result.stdout.includes('-Dmaven.build.cache.remote.save.enabled=false'));
+      assert.ok(result.stdout.includes('-Daether.connector.http.supportWebDav=true'));
+      assert.ok(result.stdout.includes('clean verify'));
+      assert.equal(existsSync(readFileSync(join(dir,'temp-path'),'utf8')),false);
+      const config=readFileSync(join(dir,'captured.xml'),'utf8');
+      assert.ok(!config.includes('p@ss'));
+      const parsed=spawnSync('python3',['-c',`import xml.etree.ElementTree as E
+r=E.parse('captured.xml').getroot(); n={'c':'http://maven.apache.org/BUILD-CACHE-CONFIG/1.4.0'}
+remote=r.find('c:configuration/c:remote',n)
+assert remote.get('id')=='expbuild-maven' and remote.get('saveToRemote')=='false'
+assert remote.find('c:url',n).text=='https://cache&test.example/maven-build-cache'
+p=r.find("c:executionControl/c:reconcile/c:plugins/c:plugin[@artifactId='maven-surefire-plugin']",n)
+assert p.get('goal')=='test'
+assert {v.get('propertyName') for v in p.findall('c:reconciles/c:reconcile',n)}=={'skip','skipTests','skipExec'}
+assert all(x.get('skipValue') is None for x in r.iter())`],{cwd:dir,encoding:'utf8'});
+      assert.equal(parsed.status,0,parsed.stderr);
+    }
+    writeFileSync(join(dir,'.mvn/extensions.xml'),extension('1.2.0'));
+    let result=spawnSync('bash',['-c',script],{cwd:dir,encoding:'utf8',env:{PATH:process.env.PATH}});
+    assert.notEqual(result.status,0);assert.ok(!result.stdout.includes('args:'));
+    writeFileSync(join(dir,'.mvn/extensions.xml'),extension('1.3.0'));
+    writeFileSync(join(dir,'.mvn/maven-build-cache-config.xml'),'preserve me');
+    result=spawnSync('bash',['-c',script],{cwd:dir,encoding:'utf8',env:{PATH:process.env.PATH}});
+    assert.notEqual(result.status,0);assert.ok(!result.stdout.includes('args:'));
+    assert.equal(readFileSync(join(dir,'.mvn/maven-build-cache-config.xml'),'utf8'),'preserve me');
+  } finally { rmSync(dir,{recursive:true,force:true}); }
 });

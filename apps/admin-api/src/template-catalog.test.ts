@@ -73,6 +73,6 @@ test('catalog exposes configuration profiles separately from engine capabilities
   assert.deepEqual(catalog.find(t => t.name === 'bazel-remote')!.clientProfiles,
     [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'webdav-apache')!.clientProfiles,
-    [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }]);
+    [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }, { id: 'maven-build-cache', protocol: 'webdav', version: '1.3.0', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'gradle-http')!.clientProfiles, []);
 });

@@ -383,3 +383,5 @@ See the [implementation plan](implementation-plan.md) and [Go module guide](../.
 ## Experimental client recipes
 
 See [sccache and Pants configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+
+The [experimental Maven Build Cache profile](maven-build-cache.md) reuses WebDAV and requires separate real-extension acceptance.

@@ -148,4 +148,51 @@ func TestApacheWebDAVContract(t *testing.T) {
 	if code, body, _ := request("DELETE", "/cache/blob", nil, true, map[string]string{"If": "<http://" + address + "/cache/blob> (" + headers.Get("Lock-Token") + ")"}); code != 204 {
 		t.Fatalf("authorized DELETE: %d %s", code, body)
 	}
+	t.Run("Maven multi-file layout and native WebDAV prerequisites", func(t *testing.T) {
+		const base = "/maven-build-cache/v1.2/org.example/demo/opaque-input-checksum"
+		if code, _, _ := request("PUT", base+"/buildinfo.xml", []byte("not published"), true, nil); code != 409 {
+			t.Fatalf("missing parent PUT: %d", code)
+		}
+		parent := ""
+		for _, segment := range strings.Split(strings.TrimPrefix(base, "/"), "/") {
+			parent += "/" + segment
+			if code, _, _ := request("MKCOL", parent, nil, true, nil); code != 201 {
+				t.Fatalf("MKCOL %s: %d", parent, code)
+			}
+		}
+		if code, _, h := request("OPTIONS", base+"/", nil, true, nil); code != 200 || h.Get("DAV") == "" {
+			t.Fatalf("WebDAV discovery: %d %v", code, h)
+		}
+		archive := []byte{0x50, 0x4b, 0, 255, 1, 2, 3}
+		artifactPath := base + "/demo.jar"
+		if code, _, _ := request("PUT", artifactPath, archive, true, nil); code != 201 {
+			t.Fatalf("artifact PUT: %d", code)
+		}
+		if code, _, _ := request("GET", base+"/buildinfo.xml", nil, true, nil); code != 404 {
+			t.Fatalf("unpublished metadata: %d", code)
+		}
+		metadata := []byte(`<build><artifact><fileName>demo.jar</fileName></artifact></build>`)
+		if code, _, _ := request("PUT", base+"/buildinfo.xml", metadata, true, nil); code != 201 {
+			t.Fatalf("metadata PUT: %d", code)
+		}
+		for path, want := range map[string][]byte{artifactPath: archive, base + "/buildinfo.xml": metadata} {
+			if code, body, _ := request("GET", path, nil, true, nil); code != 200 || !bytes.Equal(body, want) {
+				t.Fatalf("GET %s changed: %d %q", path, code, body)
+			}
+			if code, body, h := request("HEAD", path, nil, true, nil); code != 200 || len(body) != 0 || h.Get("Content-Length") != fmt.Sprint(len(want)) {
+				t.Fatalf("HEAD %s: %d %v", path, code, h)
+			}
+			if code, _, _ := request("GET", path, nil, false, nil); code != 401 {
+				t.Fatalf("unauthenticated GET: %d", code)
+			}
+		}
+		// WebDAV is mutable. Client save.final is not a server immutability policy.
+		if code, _, _ := request("PUT", artifactPath, []byte("replacement"), true, nil); code != 204 {
+			t.Fatalf("overwrite semantics: %d", code)
+		}
+		if code, body, _ := request("GET", artifactPath, nil, true, nil); code != 200 || string(body) != "replacement" {
+			t.Fatal("overwrite not reflected")
+		}
+	})
+
 }

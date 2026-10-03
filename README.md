@@ -34,6 +34,9 @@ These versioned templates are available for new instances when their engines are
 
 Observations vary by engine: Bazel exposes capacity and AC/CAS lookup history; Gradle adds hits/misses, latency, traffic, and eviction metrics; WebDAV reports approximate size and file count from a bounded scan. Time series require Prometheus-compatible storage, logs require Loki with ingestion, and alerts require Alertmanager with rules. Missing data is shown as unavailable. [Full capability matrix →](docs/k8s-platform/observability.md)
 
+
+The [experimental Maven Build Cache Extension profile](docs/k8s-platform/maven-build-cache.md) reuses WebDAV for build outputs; real-client acceptance is pending.
+
 ## How it works
 
 ```mermaid

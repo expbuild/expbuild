@@ -458,7 +458,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
 
     const detail = await app.inject({ url: `${path}/${id}`, headers });
     assert.equal(detail.json().spec.templateRef.name, 'webdav-apache');
-    assert.deepEqual(detail.json().clientProfiles, [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }]);
+    assert.deepEqual(detail.json().clientProfiles, [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }, { id: 'maven-build-cache', protocol: 'webdav', version: '1.3.0', status: 'experimental' }]);
     assert.deepEqual(detail.json().spec.eviction, { enginePolicy: 'none', maxCacheGiB: 0 });
     const davStats=await app.inject({ url: `${path}/${id}/statistics`, headers });
     assert.equal(davStats.statusCode, 200, davStats.body);
