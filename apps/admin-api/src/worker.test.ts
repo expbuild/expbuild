@@ -166,7 +166,7 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const rotatedSecret=[...kube.objects.values()][0]!.spec.access.credentialsSecretRef;
     const detail = await app.inject({ url: `${path}/${instanceId}`, headers });
     assert.equal(detail.json().lifecycle, 'active');
-    assert.deepEqual(detail.json().clientProfiles, [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }]);
+    assert.deepEqual(detail.json().clientProfiles, [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }, { id: 'moonrepo', protocol: 'reapi', version: '2.5.6', status: 'experimental' }]);
     const quota = async () => (await app.inject({url:`/v1/projects/${projectId}/quota`,headers})).json();
     const activeReservation = (await quota()).reserved;
     assert.equal(activeReservation.instances,1);

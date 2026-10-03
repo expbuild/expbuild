@@ -382,4 +382,6 @@ See the [implementation plan](implementation-plan.md) and [Go module guide](../.
 
 ## Experimental client recipes
 
-See [sccache and Pants configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+See [sccache, Pants and moonrepo configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+
+The experimental [moonrepo REAPI recipe](moonrepo.md) requires a dedicated JSON workspace and explicit opt-in for CI writes.

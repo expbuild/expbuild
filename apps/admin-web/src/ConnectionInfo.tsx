@@ -133,6 +133,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
             <details key={`${profile.id}-${index}`}>
               <summary>{profile.id} {profile.version} — {t("实验性配置")}</summary>
               <p>{t("这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。")}</p>
+              {profile.id === "moonrepo" && <p>{t("moonrepo 示例仅用于文档中的独立 JSON 验证工作区。默认只读；写入需显式开启并设置 CI=true。")}</p>}
               <pre style={{ overflowX: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><code>{profile.text}</code></pre>
             </details>
           ))}

@@ -71,7 +71,7 @@ test('API definitions satisfy the shared Operator template fixtures', () => {
 test('catalog exposes configuration profiles separately from engine capabilities', () => {
   const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true });
   assert.deepEqual(catalog.find(t => t.name === 'bazel-remote')!.clientProfiles,
-    [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }]);
+    [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }, { id: 'moonrepo', protocol: 'reapi', version: '2.5.6', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'webdav-apache')!.clientProfiles,
     [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'gradle-http')!.clientProfiles, []);

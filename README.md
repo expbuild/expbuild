@@ -34,6 +34,8 @@ These versioned templates are available for new instances when their engines are
 
 Observations vary by engine: Bazel exposes capacity and AC/CAS lookup history; Gradle adds hits/misses, latency, traffic, and eviction metrics; WebDAV reports approximate size and file count from a bounded scan. Time series require Prometheus-compatible storage, logs require Loki with ingestion, and alerts require Alertmanager with rules. Missing data is shown as unavailable. [Full capability matrix →](docs/k8s-platform/observability.md)
 
+**Experimental client recipes:** sccache, Pants and [moonrepo 2.5.6](docs/k8s-platform/moonrepo.md) reuse existing engines. Real-client acceptance remains pending; recipes are not certified client support.
+
 ## How it works
 
 ```mermaid

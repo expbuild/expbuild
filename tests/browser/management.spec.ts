@@ -133,3 +133,28 @@ test('two browser tabs cannot silently overwrite a stale quota revision', async 
   await expect(second.getByLabel('实例数上限', { exact: true })).toHaveValue('2');
   await second.close();
 });
+
+test('moonrepo profile is discoverable on a ready REAPI instance without storing credentials', async ({ page }) => {
+  await login(page);
+  await createProject(page, 'Browser moonrepo cache');
+  await page.getByRole('button', { name: '＋ 创建实例' }).click();
+  await page.getByLabel('协议模板').selectOption('bazel-remote');
+  await page.getByLabel('实例名称', { exact: true }).fill('Moon browser cache');
+  const creating = page.waitForResponse(r => r.url().endsWith('/instances') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '创建实例', exact: true }).click();
+  expect((await creating).status()).toBe(202);
+  const credential = page.getByRole('heading', { name: '保存连接凭据' }).locator('..');
+  const password = await credential.getByLabel('密码').inputValue();
+  expect(password).not.toBe('');
+  await credential.getByRole('button', { name: '已保存，关闭' }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Moon browser cache' });
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+  await page.getByText('客户端连接指引').click();
+  await page.getByText('moonrepo 2.5.6 — 实验性配置', { exact: true }).click();
+  await expect(page.getByText(/MOON_REMOTE_HOST=/)).toBeVisible();
+  await expect(page.getByText(/独立 JSON 验证工作区/)).toBeVisible();
+  expect(await page.getByRole('dialog').textContent()).not.toContain(password);
+  const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect(storage).not.toContain(password);
+});

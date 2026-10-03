@@ -635,4 +635,5 @@ export const messages: Record<string, string> = {
   "CAS 存在性查询命中": "CAS existence check hits",
   "CAS 存在性查询未命中": "CAS existence check misses",
   "CAS 存在性查询命中率": "CAS existence check hit ratio",
+  "moonrepo 示例仅用于文档中的独立 JSON 验证工作区。默认只读；写入需显式开启并设置 CI=true。": "The moonrepo recipe requires the dedicated JSON acceptance workspace documented in docs/k8s-platform/moonrepo.md. Reads are the default; writes require explicit opt-in and CI=true.",
 };

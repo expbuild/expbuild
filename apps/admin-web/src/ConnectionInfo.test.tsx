@@ -140,3 +140,18 @@ it("shows experimental profiles only from the API and for the current ready endp
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
 });
+
+it("shows moonrepo only for the current ready REAPI generation", () => {
+  const value = detail();
+  value.clientProfiles = [{ id: "moonrepo", protocol: "reapi", version: "2.5.6", status: "experimental" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/moonrepo 2.5.6/)).toBeTruthy();
+  expect(screen.getByText(/MOON_REMOTE_HOST=/)).toBeTruthy();
+  value.clientProfiles[0].version = "2.5.5";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/MOON_REMOTE_HOST=/)).toBeNull();
+  value.clientProfiles[0].version = "2.5.6";
+  value.status!.conditions![0].observedGeneration = 1;
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/MOON_REMOTE_HOST=/)).toBeNull();
+});

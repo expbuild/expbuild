@@ -34,6 +34,8 @@
 
 观测能力因引擎而异：Bazel 提供容量与 AC/CAS 查询历史；Gradle 增加命中与缺失、延迟、流量和淘汰指标；WebDAV 通过有界扫描估算内容大小与文件数量。时序数据需要兼容 Prometheus 的存储，日志需要 Loki 与采集链路，告警需要 Alertmanager 与规则。缺失数据会显示为不可用。[完整能力矩阵 →](docs/k8s-platform/observability.md)
 
+**实验性客户端配置：** sccache、Pants 和 [moonrepo 2.5.6](docs/k8s-platform/moonrepo.md) 复用现有引擎。真实客户端验收仍待完成，配置示例不代表已认证支持。
+
 ## 工作原理
 
 ```mermaid
