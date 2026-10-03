@@ -1,5 +1,6 @@
 // Chinese source messages and their English translations. Keep complete sentences together.
 export const messages: Record<string, string> = {
+  "Turborepo HTTP（实验性）": "Turborepo HTTP (experimental)",
   "实验性配置": "Experimental configuration",
   "这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。": "These configurations have not passed full real-client acceptance. Read-only mode is enforced by the client; instance credentials can still write. Validate using a dedicated instance.",
 

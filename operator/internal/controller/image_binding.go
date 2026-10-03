@@ -145,7 +145,7 @@ func (r *Reconciler) resolveImageBinding(ctx context.Context, c *cachev1.CacheIn
 			return templates.Adapter{}, false, err
 		}
 	} else {
-		adapter, err = templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage, r.GradleImage)
+		adapter, err = templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage, r.GradleImage, r.TurborepoImage)
 		if err != nil {
 			return templates.Adapter{}, false, rejectBinding("ImageApprovalRequired", err.Error())
 		}

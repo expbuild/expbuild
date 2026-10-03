@@ -98,3 +98,32 @@ test('version mismatch stops before either build and daemon startup failure cann
   assert.equal(result.status, 7);
   assert.ok(!result.stdout.includes('cargo:'));
 });
+
+test('Turborepo recipe binds the instance ID, preserves Bearer token, and overrides inherited slug', () => {
+  const instance = 'd21dd71b-3710-4b47-b6a6-8b660a0811cb';
+  const endpoint = { protocol: 'turborepo-http', url: 'https://turbo.example.test/' };
+  const profile = clientProfiles('turborepo-http', '0.1.0')[0];
+  assert.equal(profile.version, '2.11.7');
+  assert.equal(profile.status, 'experimental');
+  const text = clientProfileExample('turborepo', endpoint, profile.version, instance);
+  assert.ok(text);
+  assert.equal(clientProfileExample('turborepo', endpoint, profile.version), null);
+  assert.equal(clientProfileExample('turborepo', endpoint, profile.version, '$(unexpected)'), null);
+  assert.equal(clientProfileExample('turborepo', { ...endpoint, url: endpoint.url + 'v8' }, profile.version, instance), null);
+  assert.equal(clientProfileExample('turborepo', { ...endpoint, protocol: 'webdav' }, profile.version, instance), null);
+  for (const ci of ['', 'true']) {
+    const result = spawnSync('bash', ['-c', `
+      turbo() {
+        if [ "$1" = --version ]; then printf '2.11.7\\n'; return; fi
+        printf '%s\\n' "api:$TURBO_API" "team:$TURBO_TEAMID" "slug:$TURBO_TEAM" "token:$TURBO_TOKEN" "args:$*"
+      }
+      ${text}
+      test -z "\${TURBO_TOKEN-}"
+    `], { input: "token'$(unexpected)\n", encoding: 'utf8', env: { PATH: process.env.PATH, CI: ci, TURBO_TEAM: 'wrong-stored-slug' } });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes(`team:team_${instance}\nslug:\n`));
+    assert.ok(result.stdout.includes("token:token'$(unexpected)\n"));
+    assert.ok(result.stdout.includes('api:https://turbo.example.test\n'));
+    assert.ok(result.stdout.includes(`args:run build --cache=local:rw,remote:${ci ? 'rw' : 'r'}`));
+  }
+});

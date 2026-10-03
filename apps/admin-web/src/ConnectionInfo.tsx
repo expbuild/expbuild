@@ -105,7 +105,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
         if (profile.status !== "experimental") return [];
         return (detail.status?.endpoints ?? []).flatMap((endpoint) => {
           if (endpoint.protocol !== profile.protocol) return [];
-          const text = clientProfileExample(profile.id, endpoint, profile.version);
+          const text = clientProfileExample(profile.id, endpoint, profile.version, detail.id);
           return text ? [{ ...profile, text }] : [];
         });
       })
@@ -115,7 +115,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
       <summary>{t("客户端连接指引")}</summary>
       {!available ? (
         <p>{t("当前配置尚未确认就绪，恢复运行并就绪后显示连接示例。")}</p>
-      ) : !examples.length ? (
+      ) : !examples.length && !profiles.length ? (
         <p>{t("当前端点尚无匹配的客户端示例。")}</p>
       ) : (
         <>

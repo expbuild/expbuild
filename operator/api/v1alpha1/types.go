@@ -18,7 +18,7 @@ func AddToScheme(s *runtime.Scheme) error {
 }
 
 type TemplateRef struct {
-	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache;gradle-http
+	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache;gradle-http;turborepo-http
 	// +kubebuilder:validation:MaxLength=32
 	Name string `json:"name"`
 	// +kubebuilder:validation:Enum="0.1.0";"0.2.0"
@@ -62,10 +62,11 @@ type EvictionSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.templateRef == oldSelf.templateRef",message="template changes require a supported upgrade operation"
 // +kubebuilder:validation:XValidation:rule="has(self.imageBindingMode) == has(oldSelf.imageBindingMode) && (!has(self.imageBindingMode) || self.imageBindingMode == oldSelf.imageBindingMode)",message="image binding creation mode is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'bazel-remote' || self.templateRef.version == '0.1.0'",message="unsupported bazel-remote template version"
+// +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'turborepo-http' || self.templateRef.version == '0.1.0'",message="unsupported turborepo-http template version"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'gradle-http' || self.templateRef.version in ['0.1.0','0.2.0']",message="unsupported gradle-http template version"
 // +kubebuilder:validation:XValidation:rule="self.storage.className == oldSelf.storage.className",message="storage class is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim) || self.storage.reclaim == oldSelf.storage.reclaim)",message="retained volume identity is immutable"
-// +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' || self.templateRef.name == 'gradle-http' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
+// +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' || self.templateRef.name == 'gradle-http' || self.templateRef.name == 'turborepo-http' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
 type CacheInstanceSpec struct {
 	// No default: absence identifies pre-binding instances. Creation-only opt-in.
 	// +kubebuilder:validation:Enum=PinnedV1

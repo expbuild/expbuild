@@ -140,3 +140,19 @@ it("shows experimental profiles only from the API and for the current ready endp
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
 });
+
+it("renders Turborepo as an experimental profile with an instance-bound token recipe", () => {
+  const value = detail();
+  value.id = "d21dd71b-3710-4b47-b6a6-8b660a0811cb";
+  value.spec!.templateRef = { name: "turborepo-http", version: "0.1.0" };
+  value.clientProfiles = [{ id: "turborepo", protocol: "turborepo-http", version: "2.11.7", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "turborepo-http", url: "https://turbo.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/turborepo 2.11.7/)).toBeTruthy();
+  expect(screen.getByText(/TURBO_TEAMID=/).textContent).toContain("team_" + value.id);
+  expect(screen.getByText(/TURBO_TEAMID=/).textContent).toContain("export TURBO_API='https://turbo.example.test'");
+  expect(screen.queryByText(/当前端点尚无/)).toBeNull();
+  value.spec!.desiredState = "Suspended";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/TURBO_TEAMID=/)).toBeNull();
+});

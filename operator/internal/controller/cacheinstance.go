@@ -41,13 +41,14 @@ type Reconciler struct {
 	Reader   client.Reader
 	Recorder record.EventRecorder
 	// Image is an administrator-supplied digest, not an instance spec field.
-	Image       string
-	WebDAVImage string
-	GradleImage string
-	StatsImage  string
-	Probe       Probe
-	Gateway     *gateway.Config
-	Monitoring  *monitoring.Config
+	Image          string
+	WebDAVImage    string
+	GradleImage    string
+	TurborepoImage string
+	StatsImage     string
+	Probe          Probe
+	Gateway        *gateway.Config
+	Monitoring     *monitoring.Config
 }
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {

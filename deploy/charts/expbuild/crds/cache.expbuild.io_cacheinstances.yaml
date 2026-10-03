@@ -186,6 +186,7 @@ spec:
                     - bazel-remote
                     - webdav-apache
                     - gradle-http
+                    - turborepo-http
                     type: string
                   version:
                     maxLength: 16
@@ -219,6 +220,8 @@ spec:
             - message: unsupported bazel-remote template version
               rule: self.templateRef.name != 'bazel-remote' || self.templateRef.version
                 == '0.1.0'
+            - message: unsupported turborepo-http template version
+              rule: self.templateRef.name != 'turborepo-http' || self.templateRef.version == '0.1.0'
             - message: unsupported gradle-http template version
               rule: self.templateRef.name != 'gradle-http' || self.templateRef.version
                 in ['0.1.0','0.2.0']
@@ -229,7 +232,7 @@ spec:
                 || self.storage.reclaim == oldSelf.storage.reclaim)
             - message: eviction policy must match engine capabilities
               rule: 'self.templateRef.name == ''bazel-remote'' || self.templateRef.name
-                == ''gradle-http'' ? (self.eviction.enginePolicy == ''lru'' && self.eviction.maxCacheGiB
+                == ''gradle-http'' || self.templateRef.name == ''turborepo-http'' ? (self.eviction.enginePolicy == ''lru'' && self.eviction.maxCacheGiB
                 > 0) : (self.eviction.enginePolicy == ''none'' && self.eviction.maxCacheGiB
                 == 0)'
           status:
@@ -257,6 +260,7 @@ spec:
                         - bazel-remote
                         - webdav-apache
                         - gradle-http
+                        - turborepo-http
                         type: string
                         maxLength: 32
                       version:

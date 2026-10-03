@@ -77,7 +77,9 @@ export const templateLabel = (name: string) =>
       ? "REAPI / Bazel HTTP"
       : name === "gradle-http"
         ? "Gradle HTTP"
-        : name;
+        : name === "turborepo-http"
+          ? t("Turborepo HTTP（实验性）")
+          : name;
 export type Instance = {
   template_name: string;
   id: string;

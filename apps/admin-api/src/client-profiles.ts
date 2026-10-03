@@ -6,5 +6,8 @@ export function clientProfiles(name: string, version: string | null | undefined)
   if (name === 'webdav-apache' && ['0.1.0', '0.2.0'].includes(version ?? '')) {
     return [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' as const }];
   }
+  if (name === 'turborepo-http' && version === '0.1.0') {
+    return [{ id: 'turborepo', protocol: 'turborepo-http', version: '2.11.7', status: 'experimental' as const }];
+  }
   return [];
 }
