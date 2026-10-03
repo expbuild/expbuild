@@ -32,6 +32,8 @@ jobs:
           cache: npm
       - name: Check public npm sources before installing dependencies
         run: npm run check:lockfiles && npm run test:lockfiles
+      - name: Verify client configuration recipes without external clients
+        run: npm run test:client-profiles
       - run: npm ci
       - run: npm run build
       - name: Install pinned Prometheus test fixture

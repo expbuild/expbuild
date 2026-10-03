@@ -1,3 +1,4 @@
+import { clientProfiles } from './client-profiles.js';
 import { z } from 'zod';
 
 const commonInput = z.object({
@@ -76,6 +77,7 @@ export function templateCatalog(options: TemplateOptions) {
   return templates.filter(t => t.enabled(options)).map(t => ({
     name: t.name, version: t.version,
     exposures: options.gatewayEnabled ? ['ClusterInternal', 'Gateway'] : ['ClusterInternal'],
+    clientProfiles: clientProfiles(t.name, t.version),
     protocols: [...t.protocols], capabilities: { ...t.capabilities },
     inputSchema: z.toJSONSchema(t.input, { io: 'input' }),
   }));

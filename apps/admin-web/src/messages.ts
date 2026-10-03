@@ -1,5 +1,8 @@
 // Chinese source messages and their English translations. Keep complete sentences together.
 export const messages: Record<string, string> = {
+  "实验性配置": "Experimental configuration",
+  "这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。": "These configurations have not passed full real-client acceptance. Read-only mode is enforced by the client; instance credentials can still write. Validate using a dedicated instance.",
+
   指标历史: "Metrics history",
   实例操作处理: "Instance operations",
   项目配额同步: "Project quota synchronization",

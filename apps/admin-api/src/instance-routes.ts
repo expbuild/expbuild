@@ -1,3 +1,4 @@
+import { clientProfiles } from './client-profiles.js';
 import { templateCatalog, templateEnabled, instanceCapabilities } from './template-catalog.js';
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type pg from "pg";
@@ -203,6 +204,7 @@ export async function registerInstanceRoutes(
         template: b.template_name,
         templateVersion: c?.spec.templateRef.version ?? b.template_version,
         capabilities: c ? instanceCapabilities(c.spec.templateRef.name, c.spec.templateRef.version) : instanceCapabilities(b.template_name, b.template_version),
+        clientProfiles: c ? clientProfiles(c.spec.templateRef.name, c.spec.templateRef.version) : clientProfiles(b.template_name, b.template_version),
         lifecycle: b.lifecycle,
         revision: c ? revision(c) : null,
         spec: c?.spec ?? null,

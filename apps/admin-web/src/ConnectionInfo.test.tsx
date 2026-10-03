@@ -124,3 +124,19 @@ it("Bash examples preserve literal addresses and encode interactive credentials 
   expect(gradleValid).toContain('System.getenv("CI") == "true"');
   expect(gradleValid).not.toContain("isAllowUntrustedServer");
 });
+
+it("shows experimental profiles only from the API and for the current ready endpoint", () => {
+  const value = detail();
+  value.clientProfiles = [{ id: "pants", protocol: "reapi", version: "2.33.1", status: "experimental" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/pants 2.33.1/)).toBeTruthy();
+  expect(screen.getByText(/实例凭据仍具备写入权限/)).toBeTruthy();
+  expect(screen.getByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeTruthy();
+  value.clientProfiles[0].version = "unknown";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
+  value.clientProfiles[0].version = "2.33.1";
+  value.status!.conditions![0].observedGeneration = 1;
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
+});

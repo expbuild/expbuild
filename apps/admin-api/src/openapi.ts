@@ -136,7 +136,12 @@ const schemas: Record<string, Schema> = {
     policyApplyMode: { type: "string", enum: ["restart", "unsupported"] },
     policyCondition: string,
   }),
+  ClientProfile: object({
+    id: string, protocol: string, version: string,
+    status: { type: "string", enum: ["experimental"] },
+  }),
   InstanceDetail: object({
+    clientProfiles: { type: "array", items: ref("ClientProfile") },
     templateVersion: nullable(string),
     capabilities: nullable(ref("InstanceCapabilities")),
     template: {type: "string", enum: ["bazel-remote", "webdav-apache", "gradle-http"]},
@@ -497,6 +502,7 @@ route(
         name: string,
         version: string,
         protocols: { type: "array", items: string },
+        clientProfiles: { type: "array", items: ref("ClientProfile") },
         exposures: { type: "array", items: { type: "string", enum: ["ClusterInternal", "Gateway"] } },
         capabilities: { type: "object" },
         inputSchema: { type: "object" },

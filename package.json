@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "check:lockfiles": "node tools/check-lockfile-registry.mjs",
+    "test:client-profiles": "node --test tests/contracts/client-profiles.test.mjs",
     "test:lockfiles": "node --test tools/check-lockfile-registry.test.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
