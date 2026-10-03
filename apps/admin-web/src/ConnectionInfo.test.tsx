@@ -140,3 +140,18 @@ it("shows experimental profiles only from the API and for the current ready endp
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/PANTS_REMOTE_PROVIDER=reapi/)).toBeNull();
 });
+
+it("renders Nx as an experimental profile with an instance-bound token recipe", () => {
+  const value = detail();
+  value.id = "d21dd71b-3710-4b47-b6a6-8b660a0811cb";
+  value.spec!.templateRef = { name: "nx-http", version: "0.1.0" };
+  value.clientProfiles = [{ id: "nx", protocol: "nx-http", version: "22.7.12", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "nx-http", url: "https://nx.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/nx 22.7.12/)).toBeTruthy();
+  expect(screen.getByText(/NX_SELF_HOSTED_REMOTE_CACHE_SERVER=/).textContent).toContain("export NX_SELF_HOSTED_REMOTE_CACHE_SERVER='https://nx.example.test'");
+  expect(screen.queryByText(/当前端点尚无/)).toBeNull();
+  value.spec!.desiredState = "Suspended";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/NX_SELF_HOSTED_REMOTE_CACHE_SERVER=/)).toBeNull();
+});

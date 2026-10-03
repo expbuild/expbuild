@@ -44,6 +44,7 @@ type Reconciler struct {
 	Image       string
 	WebDAVImage string
 	GradleImage string
+	NxImage     string
 	StatsImage  string
 	Probe       Probe
 	Gateway     *gateway.Config

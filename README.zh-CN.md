@@ -129,3 +129,7 @@ npm run build
 ## 许可证
 
 [MIT](LICENSE)
+
+## 实验性客户端接入
+
+[Nx HTTP 缓存](docs/k8s-platform/nx-http.md)使用独立适配器与固定版本配置，默认关闭；真实客户端验收尚未完成。

@@ -28,7 +28,9 @@ export class BrowserCluster implements KubernetesPort {
       credentialRevision: object.spec.access.credentialsSecretRef,
       endpoints: object.spec.desiredState === 'Running' ? [object.spec.templateRef.name === 'gradle-http'
         ? { protocol: 'gradle-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080/cache/` }
-        : { protocol: 'bazel-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }] : [],
+        : object.spec.templateRef.name === 'nx-http'
+          ? { protocol: 'nx-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }
+          : { protocol: 'bazel-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }] : [],
       conditions: [{ type: 'Ready', status: object.spec.desiredState === 'Running' ? 'True' : 'False', reason: object.spec.desiredState === 'Running' ? 'Ready' : 'Suspended', observedGeneration: generation }],
     };
     return object;

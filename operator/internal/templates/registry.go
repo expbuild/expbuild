@@ -10,6 +10,7 @@ import (
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
 	"github.com/expbuild/expbuild/operator/internal/gradlecache"
 	"github.com/expbuild/expbuild/operator/internal/instance"
+	"github.com/expbuild/expbuild/operator/internal/nxcache"
 	"github.com/expbuild/expbuild/operator/internal/webdav"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -69,6 +70,16 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 				return []cachev1.Endpoint{{Protocol: "webdav", URL: fmt.Sprintf("http://%s.%s.svc:8080/", name, namespace)}}
 			},
 		},
+		{Name: "nx-http", Version: "0.1.0"}: {
+			policy: "lru", render: nxcache.Render,
+			capabilities: Capabilities{HTTPProtocol: "nx-http", HTTPPort: 8080},
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				return nxcache.CheckProtocol(ctx, c, s, fmt.Sprintf("http://%s.%s.svc:8080", c.Name, c.Namespace))
+			},
+			endpoints: func(name, namespace string) []cachev1.Endpoint {
+				return []cachev1.Endpoint{{Protocol: "nx-http", URL: fmt.Sprintf("http://%s.%s.svc:8080", name, namespace)}}
+			},
+		},
 		{Name: "gradle-http", Version: "0.1.0"}: {
 			policy: "lru", render: gradlecache.Render,
 			capabilities: Capabilities{HTTPProtocol: "gradle-http", HTTPBasePath: "/cache/", HTTPPort: 8080},
@@ -93,8 +104,11 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 }
 
 // Resolve binds a compiled adapter to its administrator-approved image.
-func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradleImage string) (Adapter, error) {
+func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradleImage string, nxImages ...string) (Adapter, error) {
 	images := map[string]string{"cache": map[string]string{"bazel-remote": bazelImage, "webdav-apache": webdavImage, "gradle-http": gradleImage}[ref.Name]}
+	if ref.Name == "nx-http" && len(nxImages) == 1 {
+		images["cache"] = nxImages[0]
+	}
 	if ref.Name == "webdav-apache" && ref.Version == "0.2.0" {
 		images["statistics"] = statsImage
 	}

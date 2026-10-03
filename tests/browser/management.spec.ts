@@ -133,3 +133,31 @@ test('two browser tabs cannot silently overwrite a stale quota revision', async 
   await expect(second.getByLabel('实例数上限', { exact: true })).toHaveValue('2');
   await second.close();
 });
+
+test('experimental Nx template keeps the token one-time and uses the instance endpoint', async ({ page }) => {
+  await login(page);
+  await createProject(page, 'Browser Nx cache');
+  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
+  await page.getByRole('button', { name: '＋ 创建实例' }).click();
+  await page.getByLabel('协议模板').selectOption('nx-http');
+  await page.getByLabel('实例名称', { exact: true }).fill('Nx browser cache');
+  const creating = page.waitForResponse(r => r.url().endsWith('/instances') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '创建实例', exact: true }).click();
+  const response = await creating;
+  expect(response.status()).toBe(202);
+  const created = await response.json();
+  const token = created.credentials.password;
+  await page.getByRole('button', { name: '已保存，关闭' }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Nx browser cache' });
+  await expect(row).toContainText('Nx HTTP');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+  await page.getByText('客户端连接指引').click();
+  await page.getByText(/nx 22.7.12/).click();
+  const recipe = page.getByText(/export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=/);
+  await expect(recipe).toBeVisible();
+  await expect(recipe).toContainText("NX_NO_CLOUD=true");
+  await expect(recipe).not.toContainText(token);
+  const persisted = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect(persisted).not.toContain(token);
+});

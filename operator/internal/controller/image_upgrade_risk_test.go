@@ -52,6 +52,7 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 	}{
 		{name: "bazel-remote", version: "0.1.0", container: "cache"},
 		{name: "gradle-http", version: "0.1.0", container: "cache"},
+		{name: "nx-http", version: "0.1.0", container: "cache"},
 		{name: "gradle-http", version: "0.2.0", container: "cache"},
 		{name: "webdav-apache", version: "0.1.0", container: "cache"},
 		{name: "webdav-apache", version: "0.2.0", container: "cache"},
@@ -69,7 +70,7 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 			}
 			oldImage := "example.invalid/cache@sha256:" + strings.Repeat("a", 64)
 			newImage := "example.invalid/cache@sha256:" + strings.Repeat("b", 64)
-			r.Image, r.WebDAVImage, r.GradleImage, r.StatsImage = oldImage, oldImage, oldImage, oldImage
+			r.Image, r.WebDAVImage, r.GradleImage, r.StatsImage, r.NxImage = oldImage, oldImage, oldImage, oldImage, oldImage
 			reconcile(t, r, c)
 			var before appsv1.StatefulSet
 			key := client.ObjectKeyFromObject(c)
@@ -106,6 +107,8 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 					r.Image = newImage
 				case "gradle-http":
 					r.GradleImage = newImage
+				case "nx-http":
+					r.NxImage = newImage
 				case "webdav-apache":
 					r.WebDAVImage = newImage
 				}
@@ -157,5 +160,32 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestHelmNxImageRequiresExplicitApproval(t *testing.T) {
+	helm := os.Getenv("HELM_BIN")
+	if helm == "" {
+		t.Skip("set HELM_BIN for chart approval checks")
+	}
+	chart := filepath.Join("..", "..", "..", "deploy", "charts", "expbuild")
+	args := []string{"template", "nx-test", chart, "--kube-version", "1.32.0", "-f", filepath.Join(chart, "ci-values.yaml")}
+	for _, tc := range []struct {
+		image          string
+		valid, enabled bool
+	}{
+		{"", true, false}, {"example.invalid/nx:latest", false, false}, {"example.invalid/nx@sha256:" + strings.Repeat("a", 64), true, true},
+	} {
+		out, err := exec.Command(helm, append(append([]string{}, args...), "--set-string", "images.nx="+tc.image)...).CombinedOutput()
+		if (err == nil) != tc.valid {
+			t.Fatalf("approval validation %q: %v %s", tc.image, err, out)
+		}
+		expectedFlag := `NX_ENABLED, value: "false"`
+		if tc.enabled {
+			expectedFlag = `NX_ENABLED, value: "true"`
+		}
+		if tc.valid && (bytes.Contains(out, []byte("--nx-image=")) != tc.enabled || !bytes.Contains(out, []byte(expectedFlag))) {
+			t.Fatal("image approval and feature availability disagree")
+		}
 	}
 }

@@ -140,3 +140,7 @@ Instance details allow a new instance of the same template to be created using t
 ## Per-instance domains
 
 The optional `gateway.enabled` setting connects instance routes to an existing Gateway API HTTPS listener supplied by the deployer. It requires complete gateway configuration, DNS, certificates, and data-plane Pods with authorization labels; it is disabled by default. The Operator can manage instance HTTPRoutes/GRPCRoutes/ingress NetworkPolicies and has read-only access to Gateways; it cannot modify Gateways or certificates. Cleanup permissions remain when the feature is disabled so existing instance routes can still be revoked. See [ingress configuration and outstanding qualification](../../../docs/k8s-platform/gateway.md).
+
+### Experimental Nx image
+
+`images.nx` defaults to empty. Set an administrator-approved image digest to enable `nx-http@0.1.0` creation. Existing cache engines and defaults remain separate. See [Nx HTTP](../../../docs/k8s-platform/nx-http.md) for Bearer token scope, capacity limits and pending real-client acceptance.

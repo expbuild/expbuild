@@ -53,3 +53,7 @@ Required evidence before changing the profile status:
 6. Exercise TLS with a trusted test CA, plus rejection of an untrusted certificate, and both supported endpoint exposure paths as separate integration coverage.
 
 No new client downloader or real-client workflow is enabled by this configuration change. Downloading/executing the pinned clients, launcher bootstrap and fixture dependencies remains a separate acceptance step. Full platform Kubernetes lifecycle tests are not required merely to test configuration rendering.
+
+## Nx artifact engine
+
+[Nx 22.7.12](nx-http.md) now has a separate experimental engine and configuration profile. It does not reuse the WebDAV or REAPI wire protocol. Real-client acceptance remains pending.

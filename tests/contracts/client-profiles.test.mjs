@@ -98,3 +98,33 @@ test('version mismatch stops before either build and daemon startup failure cann
   assert.equal(result.status, 7);
   assert.ok(!result.stdout.includes('cargo:'));
 });
+
+test('Nx recipe keeps the instance token opaque, uses a root URL, and disables inherited Cloud', () => {
+  const endpoint = { protocol: 'nx-http', url: 'https://nx.example.test/' };
+  const profile = clientProfiles('nx-http', '0.1.0')[0];
+  assert.equal(profile.version, '22.7.12');
+  assert.equal(profile.status, 'experimental');
+  const text = clientProfileExample('nx', endpoint, profile.version);
+  assert.ok(text);
+  assert.equal(clientProfileExample('nx', { ...endpoint, url: endpoint.url + 'v1' }, profile.version), null);
+  assert.equal(clientProfileExample('nx', { ...endpoint, protocol: 'webdav' }, profile.version), null);
+  assert.equal(clientProfileExample('nx', endpoint, '0.0.0'), null);
+  for (const version of ['22.7.12', 'wrong']) {
+    // Stub executable path and version lookup; no Nx installation or execution.
+    const recipe = text.replaceAll('./node_modules/.bin/nx', 'stub_nx');
+    const result = spawnSync('bash', ['-c', `
+      node() { printf '%s\\n' '${version}'; }
+      stub_nx() { printf '%s\\n' "server:$NX_SELF_HOSTED_REMOTE_CACHE_SERVER" "token:$NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN" "daemon:$NX_DAEMON" "cloud:$NX_NO_CLOUD" "args:$*"; }
+      ${recipe}
+      result=$?
+      test -z "\${NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN-}" || exit 99
+      exit "$result"
+    `], { input: "token'$(unexpected)\n", encoding: 'utf8', env: { PATH: process.env.PATH, NX_NO_CLOUD: 'false' } });
+    if (version === 'wrong') { assert.notEqual(result.status, 0); assert.ok(!result.stdout.includes('args:')); continue; }
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes("token:token'$(unexpected)\n"));
+    assert.ok(result.stdout.includes('server:https://nx.example.test\n'));
+    assert.ok(result.stdout.includes('daemon:false\ncloud:true\n'));
+    assert.ok(result.stdout.includes('args:run-many -t build'));
+  }
+});

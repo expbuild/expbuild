@@ -58,6 +58,9 @@ spec:
             {{- with $root.Values.images.webdav }}
             - --webdav-image={{ . }}
             {{- end }}
+            {{- with $root.Values.images.nx }}
+            - --nx-image={{ . }}
+            {{- end }}
             {{- with $root.Values.images.gradle }}
             - --gradle-image={{ . }}
             {{- end }}
@@ -95,6 +98,7 @@ spec:
             - {name: GATEWAY_ENABLED, value: {{ $root.Values.gateway.enabled | quote }}}
             - {name: APP_ORIGIN, value: {{ $root.Values.appOrigin | quote }}}
             - {name: WEBDAV_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.webdav)) | quote }}}
+            - {name: NX_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.nx)) | quote }}}
             - {name: GRADLE_ENABLED, value: {{ ternary "true" "false" (not (empty $root.Values.images.gradle)) | quote }}}
             - {name: STORAGE_CLASS, value: {{ $root.Values.storageClass | quote }}}
             - name: DATABASE_URL

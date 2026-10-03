@@ -3,14 +3,32 @@
 type Endpoint = { protocol: string; url: string };
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 export function clientProfileExample(id: string, endpoint: Endpoint, version?: string): string | null {
-  if (version !== undefined && version !== ({ pants: "2.33.1", sccache: "0.18.0" } as Record<string, string>)[id]) return null;
+  if (version !== undefined && version !== ({ pants: "2.33.1", sccache: "0.18.0", nx: "22.7.12" } as Record<string, string>)[id]) return null;
   let url: URL;
   try { url = new URL(endpoint.url); } catch { return null; }
   if (!url.hostname || url.username || url.password || url.search || url.hash ||
       /\s/.test(endpoint.url) || (url.pathname && url.pathname !== "/")) return null;
   const sccache = id === "sccache" && endpoint.protocol === "webdav" && ["http:", "https:"].includes(url.protocol);
   const pants = id === "pants" && endpoint.protocol === "reapi" && ["grpc:", "grpcs:"].includes(url.protocol);
-  if (!sccache && !pants) return null;
+  const nx = id === "nx" && endpoint.protocol === "nx-http" && ["http:", "https:"].includes(url.protocol);
+  if (!sccache && !pants && !nx) return null;
+  if (nx) {
+    return [
+      "(",
+      "set -euo pipefail",
+      "# Experimental; requires Nx 22.7.12 already installed in this workspace.",
+      "# Only use the read/write instance token in trusted build environments.",
+      "read -r -s -p 'Instance cache token: ' NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN",
+      "printf '\\n'",
+      "export NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN",
+      `export NX_SELF_HOSTED_REMOTE_CACHE_SERVER=${quote(url.origin)}`,
+      "export NX_DAEMON=false NX_NO_CLOUD=true",
+      "# Ensure nx.json has no other remote-cache provider configured.",
+      "test \"$(node -p \"require('./node_modules/nx/package.json').version\")\" = '22.7.12'",
+      "./node_modules/.bin/nx run-many -t build",
+      ")",
+    ].join("\n");
+  }
   const credentials = [
     "read -r -p 'Cache username: ' CACHE_USER",
     "read -r -s -p 'Cache password: ' CACHE_PASSWORD",

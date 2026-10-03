@@ -383,3 +383,5 @@ See the [implementation plan](implementation-plan.md) and [Go module guide](../.
 ## Experimental client recipes
 
 See [sccache and Pants configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+
+See the [experimental Nx HTTP engine](nx-http.md) for its separate artifact protocol, scoped token configuration and pending real-client gate.

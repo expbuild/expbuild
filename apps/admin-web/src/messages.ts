@@ -1,5 +1,7 @@
 // Chinese source messages and their English translations. Keep complete sentences together.
 export const messages: Record<string, string> = {
+  "此配置尚未通过真实 Nx 客户端验收。实例令牌具有读写权限，仅限可信构建环境；不要提供给不受信任的任务。": "This profile has not passed real Nx client acceptance. The instance token grants read/write access; use it only in trusted build environments and never give it to untrusted jobs.",
+  "Nx HTTP（实验性）": "Nx HTTP (experimental)",
   "实验性配置": "Experimental configuration",
   "这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。": "These configurations have not passed full real-client acceptance. Read-only mode is enforced by the client; instance credentials can still write. Validate using a dedicated instance.",
 

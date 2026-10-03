@@ -26,7 +26,7 @@ test('catalog keeps deployment availability separate from existing template main
 });
 
 test('published configuration contracts and generated instances match each registered template', () => {
-  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true, gatewayEnabled: true });
+  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true, nxEnabled: true, gatewayEnabled: true });
   for (const template of catalog) {
     const input = instanceInput.parse({ name: 'CI', template: template.name, storageGiB: 3, cacheGiB: template.capabilities.capacity ? 1 : 0 });
     const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
@@ -48,8 +48,8 @@ test('published configuration contracts and generated instances match each regis
 
 test('API definitions satisfy the shared Operator template fixtures', () => {
   const fixtures = JSON.parse(readFileSync(new URL('../../../tests/contracts/templates.json', import.meta.url), 'utf8')) as Array<{name:string;version:string;enginePolicy:string;storageGiB:number;cacheGiB:number;protocols:string[];statistics:boolean}>;
-  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true });
-  assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.filter(f => f.name === 'bazel-remote' || f.version === '0.2.0').map(t => t.name).sort());
+  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true, nxEnabled: true });
+  assert.deepEqual(catalog.map(t => t.name).sort(), fixtures.filter(f => f.name === 'bazel-remote' || f.name === 'nx-http' || f.version === '0.2.0').map(t => t.name).sort());
   for (const fixture of fixtures) {
     if (fixture.name === 'gradle-http' && fixture.version === '0.1.0') {
       assert.equal(templateDefinition(fixture.name, fixture.version).capabilities.lookupHistory, false);
@@ -69,10 +69,24 @@ test('API definitions satisfy the shared Operator template fixtures', () => {
 });
 
 test('catalog exposes configuration profiles separately from engine capabilities', () => {
-  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true });
+  const catalog = templateCatalog({ webdavEnabled: true, gradleEnabled: true, nxEnabled: true });
   assert.deepEqual(catalog.find(t => t.name === 'bazel-remote')!.clientProfiles,
     [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'webdav-apache')!.clientProfiles,
     [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }]);
   assert.deepEqual(catalog.find(t => t.name === 'gradle-http')!.clientProfiles, []);
+});
+
+test('experimental Nx is explicitly enabled and retains the normal budget and credential contract', () => {
+  assert.equal(templateEnabled('nx-http', {}), false);
+  assert.equal(templateEnabled('nx-http', { nxEnabled: true }), true);
+  const input = instanceInput.parse({ name: 'Nx', template: 'nx-http', storageGiB: 3, cacheGiB: 1 });
+  const desired = desiredObject(input, 'project', 'namespace', 'instance', 'standard', 'operation', 'hash');
+  assert.deepEqual(desired.spec.templateRef, { name: 'nx-http', version: '0.1.0' });
+  assert.equal(desired.spec.access.credentialsSecretRef, 'c-instance-auth');
+  assert.equal(instanceInput.safeParse({ ...input, cacheGiB: 0 }).success, false);
+  assert.equal(instanceInput.safeParse({ ...input, cacheGiB: 3 }).success, false);
+  assert.equal(instanceInput.safeParse({ ...input, token: 'secret' }).success, false);
+  const [profile] = templateCatalog({ nxEnabled: true }).find(t => t.name === 'nx-http')!.clientProfiles;
+  assert.deepEqual(profile, { id: 'nx', protocol: 'nx-http', version: '22.7.12', status: 'experimental' });
 });
