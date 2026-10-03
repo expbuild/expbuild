@@ -1,93 +1,93 @@
-# ExpBuild P0 开发技术方案
+# ExpBuild P0 Technical Development Plan
 
-日期：2026-09-28。版本：设计草案 0.1。用户确认本轮继续深化规划，因此本目录只提供后续开发输入，不修改业务实现，也不代表功能已通过验证。
+Date: 2026-09-28. Version: design draft 0.1. The user confirmed that this round should continue refining the plan, so this directory provides inputs for subsequent development only. It does not modify the business implementation or indicate that functionality has been validated.
 
-本方案承接 [平台研究规划](../strategy/README.md)，将首版收敛为：**企业自托管、REAPI cache-only + Gradle HTTP、单数据面实例、PostgreSQL、文件存储与一个经过验证的 S3 兼容后端、统一权限和可运营的管理闭环。**
+This plan builds on the [platform research plan](../strategy/README.md), narrowing the first release to: **enterprise self-hosting, REAPI cache-only + Gradle HTTP, a single data-plane instance, PostgreSQL, file storage and one validated S3-compatible backend, unified permissions, and an operationally complete management workflow.**
 
-## 1. 直接开发需要读的契约
+## 1. Contracts to Read Before Starting Development
 
-| 文档 | 可以据此开始的工作 |
+| Document | Work that can begin from it |
 |---|---|
-| [缓存内核](cache-core.md) | Rust 领域类型、协议路由、流式会话、原子发布、AC引用与GC事务 |
-| [元数据模型](metadata-model.md) | 主键/外键、读保护、额度、锁顺序、恢复、不变量与数据库角色 |
-| [PostgreSQL DDL 草案](metadata-schema.sql) | 独立空库原型；不能直接作为现有生产库的迁移 |
-| [控制面接口](control-plane.md) | TypeScript管理API、会话/服务账号、凭据与策略同步、来源失效 |
-| [协议验证档案](protocol-profile.yaml) | 固定首版协议意图、规范快照和必测用例；后续CI可引用 |
-| [FindMissing 性能专项](findmissing-performance.md) | 批量元数据查询、GC保留快慢路径、容量口径与压测门槛 |
-| [开发拆分与首个迭代](development-plan.md) | 前8个PR边界、12个工作包、依赖图、两周安排及发布证据 |
+| [Cache core](cache-core.md) | Rust domain types, protocol routing, streaming sessions, atomic publication, AC references, and GC transactions |
+| [Metadata model](metadata-model.md) | Primary/foreign keys, read protection, quotas, lock ordering, recovery, invariants, and database roles |
+| [PostgreSQL DDL draft](metadata-schema.sql) | Prototyping in a separate empty database; not a migration that can be applied directly to an existing production database |
+| [Control-plane interfaces](control-plane.md) | TypeScript management APIs, sessions/service accounts, credential and policy synchronization, and source-based invalidation |
+| [Protocol validation profile](protocol-profile.yaml) | Pinning first-release protocol intent, specification snapshots, and required test cases; future CI can reference it |
+| [FindMissing performance study](findmissing-performance.md) | Batch metadata queries, fast and slow GC-retention paths, capacity definitions, and load-test gates |
+| [Development breakdown and first iteration](development-plan.md) | Boundaries of the first 8 PRs, 12 work packages, dependency graph, two-week schedule, and release evidence |
 
-文档发生冲突时以本页明确的 P0 决策为范围基线，领域及事务细节以对应契约为准；发现冲突必须修订双方，不允许实现各自选择一种含义。接口/DDL 是待实施草案，不是长期稳定 SDK。
+When documents conflict, the explicit P0 decisions on this page define the scope baseline; the corresponding contracts govern domain and transaction details. Any conflict must be resolved in both documents; implementations must not independently choose different interpretations. Interfaces and DDL are drafts awaiting implementation, not a stable long-term SDK.
 
-## 2. 核心决策记录
+## 2. Core Decision Record
 
-| 编号 | 当前选择 | 代价 / 重新考虑条件 |
+| ID | Current choice | Cost / conditions for reconsideration |
 |---|---|---|
-| ADR-001 | 首版两协议，缓存与远程执行独立 | 暂不利用worker作为核心卖点；待缓存正确性与试点价值过关再立执行项目 |
-| ADR-002 | Rust数据面 + 现有TS/React控制面；先内部模块 | 两种语言需要版本化契约；团队后续合并语言须证明收益 |
-| ADR-003 | P0 namespace 是物理隔离/去重与逻辑配额单位 | 不同项目相同字节可重复存；需要共享时专门设计授权、计量和迁移，不改前缀就开放 |
-| ADR-004 | namespace唯一绑定协议和信任级别；不可原位改 | 改协议/可信等级须新建并预热；防止一键把旧PR结果提升为可信 |
-| ADR-005 | 不透明工具key、BlobIdentity、物理generation分离 | 需要索引/引用表；保证协议键和内容摘要不混淆、GC不误删新版本 |
-| ADR-006 | 发布先内容耐久，再同事务提交可见性/entry/额度/outbox | 崩溃可留下孤儿对象；靠恢复与GC清理，不能先返回成功 |
-| ADR-007 | P0本地持久暂存，断点只在原节点完好磁盘续传 | 增加磁盘IO和临时容量；P1跨节点续传另做checkpoint/路由设计 |
-| ADR-008 | 控制面首见凭据验证，数据面使用≤300秒签名授权lease | 首见请求依赖控制面；避免把pepper/verifier复制到节点，旧授权不能无限离线延长 |
-| ADR-009 | 逻辑存储硬额度 + 上传预留；下载先软预算 | 计量与准入分离；严格下载总额按客户需求追加，不以异步统计冒充硬限 |
-| ADR-010 | P0可接受namespace内粗粒度元数据写协调 | 吞吐上限待测；先确保发布/GC/配额正确，网络IO不得在锁内 |
-| ADR-011 | CAS内容写与结果发布分权，保存发布来源 | 权限配置稍复杂；凭据泄漏后才能有范围地隔离结果，而非盲删所有blob |
-| ADR-012 | 企业GA允许保持首版两生态；插件SDK与跨域共享后置 | 协议总数增长较慢；避免新适配器拖住HA、恢复和运营能力 |
+| ADR-001 | Two protocols in the first release; caching and remote execution are separate | Workers are not a core selling point for now; start an execution project only after cache correctness and pilot value meet their gates |
+| ADR-002 | Rust data plane + existing TS/React control plane; internal modules first | Two languages require versioned contracts; any later language consolidation must demonstrate benefits |
+| ADR-003 | A P0 namespace is the unit of physical isolation/deduplication and logical quotas | Identical bytes may be stored separately across projects; sharing requires dedicated authorization, metering, and migration design, not simply a prefix change |
+| ADR-004 | Each namespace is bound to exactly one protocol and trust level, neither changeable in place | Changing protocol/trust level requires a new namespace and warm-up; prevents promoting old PR results to trusted status with one click |
+| ADR-005 | Opaque tool keys, BlobIdentity, and physical generations are separate | Requires index/reference tables; prevents confusion between protocol keys and content digests and prevents GC from deleting new versions |
+| ADR-006 | Publication makes content durable first, then commits visibility/entry/quota/outbox in one transaction | A crash may leave orphan objects, cleaned up by recovery and GC; success cannot be returned first |
+| ADR-007 | P0 uses local durable staging; resumable uploads require the intact disk on the original node | Adds disk IO and temporary capacity; cross-node resumption in P1 requires separate checkpoint/routing design |
+| ADR-008 | The control plane validates credentials on first use; the data plane uses signed authorization leases of ≤300 seconds | First-use requests depend on the control plane; avoids copying pepper/verifiers to nodes and prevents indefinite offline extension of old authorization |
+| ADR-009 | Hard logical-storage quotas + upload reservations; initially a soft download budget | Metering and admission are separate; add strict total-download limits when customers require them, without presenting asynchronous statistics as hard limits |
+| ADR-010 | Coarse-grained coordination of metadata writes within a namespace is acceptable in P0 | Throughput ceiling remains to be measured; ensure publication/GC/quota correctness first, with no network IO while holding locks |
+| ADR-011 | Separate permissions for CAS content writes and result publication; retain publication provenance | Slightly more complex permissions; enables scoped isolation of results after a credential leak instead of blindly deleting all blobs |
+| ADR-012 | Enterprise GA may retain the initial two ecosystems; defer the plugin SDK and cross-domain sharing | Slower growth in protocol count; avoids letting new adapters delay HA, recovery, and operational capabilities |
 
-长期研究中的 tenant 内物理去重、Edge、多数据面、开放插件和执行后端仍保留，以上是首版刻意缩小的范围。后续改变边界需要 ADR 更新和对应兼容/迁移验证。
+Long-term research still includes physical deduplication within a tenant, Edge, multiple data planes, open plugins, and execution backends. The above deliberately narrows the first-release scope. Later boundary changes require ADR updates and corresponding compatibility/migration validation.
 
-## 3. 两仓库的职责与数据归属
+## 3. Responsibilities and Data Ownership Across the Two Repositories
 
-| 所属 | 权威数据/职责 | 边界 |
+| Owner | Authoritative data / responsibilities | Boundary |
 |---|---|---|
-| expbuild-admin | 用户、成员、角色、凭据verifier、策略版本、管理任务与控制台 | 不传大对象，不给前端返回可重用的历史secret，不靠页面隐藏做授权 |
-| expbuild | 协议处理、上传、blob/entry/visibility、配额账本、引用/GC、数据面事件 | 不接受客户端自报tenant授权，不直接依赖React/Prisma类型 |
-| PostgreSQL | 分schema与不同角色的共同事务基础 | 同库不等于所有服务有全部表的写权限；完整IAM迁移另由控制面实现 |
-| BlobStore | 不可变generation对应的对象字节 | 不能仅凭对象存在决定可见性；对象生命周期由元数据协调 |
+| expbuild-admin | Users, memberships, roles, credential verifiers, policy versions, management tasks, and console | Does not transfer large objects, return reusable historical secrets to the frontend, or rely on hidden UI elements for authorization |
+| expbuild | Protocol handling, uploads, blob/entry/visibility, quota ledger, references/GC, and data-plane events | Does not accept client-asserted tenant authorization or depend directly on React/Prisma types |
+| PostgreSQL | Shared transactional foundation with separate schemas and roles | Sharing a database does not grant every service write access to all tables; full IAM migrations are implemented separately by the control plane |
+| BlobStore | Object bytes corresponding to immutable generations | Object existence alone does not establish visibility; metadata coordinates object lifecycles |
 
-数据库草案提供跨schema外键所需的最小控制面父表，不包含完整 User/Session/Team/Invitation/Operation 等全部业务表。下一轮实现应依据控制面契约补齐这些表，不能宣称执行本DDL便有完整企业IAM。
+The database draft provides the minimal control-plane parent tables required by cross-schema foreign keys. It does not include all business tables such as User/Session/Team/Invitation/Operation. The next implementation round should add these tables according to the control-plane contract; applying this DDL cannot be claimed to provide complete enterprise IAM.
 
-## 4. 第一条真正可展示的路径
+## 4. The First Genuinely Demonstrable Flow
 
 ```mermaid
 sequenceDiagram
-    participant Admin as 管理员
-    participant CP as 控制面
-    participant A as 可信CI
-    participant DP as 数据面
-    participant DB as 元数据/存储
-    participant B as 开发者
-    Admin->>CP: 建项目、namespace和CI服务账号
-    CP-->>Admin: 一次展示写key与只读key
-    A->>DP: 原生协议上传，带scope与key
-    DP->>CP: 首见key验证，取得短期授权
-    DP->>DB: 预留额度、校验、持久化、发布
-    DP-->>A: 协议成功响应
-    B->>DP: 相同namespace只读查询
-    DP->>DB: 查entry、保护引用、流式读取
-    DP-->>B: 可信缓存结果
-    Admin->>CP: 撤销写key / 按来源预览失效
-    CP-->>DP: 提升授权epoch并发布策略
+    participant Admin as Administrator
+    participant CP as Control plane
+    participant A as Trusted CI
+    participant DP as Data plane
+    participant DB as Metadata/storage
+    participant B as Developer
+    Admin->>CP: Create project, namespace, and CI service account
+    CP-->>Admin: Show write key and read-only key once
+    A->>DP: Upload through native protocol with scope and key
+    DP->>CP: Validate first-use key and obtain short-lived authorization
+    DP->>DB: Reserve quota, validate, persist, and publish
+    DP-->>A: Protocol success response
+    B->>DP: Read-only query in the same namespace
+    DP->>DB: Find entry, protect references, and stream read
+    DP-->>B: Trusted cache result
+    Admin->>CP: Revoke write key / preview source-based invalidation
+    CP-->>DP: Increment authorization epoch and publish policy
 ```
 
-演示必须同时带负例：另一 namespace 相同 digest 不可探测/下载，只读 key 不能发布结果；请求失败时管理台显示真实错误。第一轮只完成有界 CAS 纵向路径，不能把它称作完整 P0。
+The demo must also include negative cases: the same digest in another namespace cannot be probed or downloaded, and a read-only key cannot publish results. When a request fails, the console must show the actual error. The first round completes only a bounded CAS vertical slice and must not be called complete P0.
 
-## 5. 开发前评审的具体输出
+## 5. Concrete Outputs of the Pre-development Review
 
-不是再讨论“是否支持多协议”，而是确认以下可落地项目：
+The review is not another discussion of “whether to support multiple protocols”; it must settle these actionable items:
 
-1. 固定首批 Bazel/Gradle release、wrapper/JDK、规范源commit与测试产物；`protocol-profile.yaml` 中未选版本保持未认证。
-2. 对一段真实构建流量采样，定下 blob/entry/ref/目录/暂存/并发预算；不把设计草案默认值当性能实测结果。
-3. 在一次性 PostgreSQL 空库验证DDL、负向外键、entry替换事务、配额重复结算、GC与读取竞争、不可变字段；语法通过不能代替事务验证。
-4. 评审凭据/角色变更、节点断连、长流续租、上传提交的时间边界；用可控时钟和真实状态驱动验收。
-5. 确定是否有旧用户/缓存需要迁移。默认不给无归属旧数据自动授信；若没有现网，采用新结构冷启动。
+1. Pin the initial Bazel/Gradle releases, wrapper/JDK, specification-source commits, and test artifacts. Unselected versions in `protocol-profile.yaml` remain uncertified.
+2. Sample real build traffic and set blob/entry/ref/directory/staging/concurrency budgets; do not treat design-draft defaults as measured performance results.
+3. In a disposable empty PostgreSQL database, validate DDL, negative foreign-key cases, entry-replacement transactions, repeated quota settlement, GC/read races, and immutable fields. Syntax checks do not replace transaction validation.
+4. Review timing boundaries for credential/role changes, node disconnection, long-stream renewal, and upload commits; drive acceptance with controllable clocks and real state.
+5. Determine whether existing users/caches need migration. Do not automatically trust legacy data with unknown ownership; if there is no live deployment, cold-start with the new structure.
 
-团队和试点项目名单尚未提供，因此不在设计中虚构人员、客户、吞吐规模或已通过的版本。此前4–6人、3–4个月试点估算仍是情景假设，不是本轮执行进度。
+Team and pilot-project rosters have not been provided, so the design does not invent personnel, customers, throughput scale, or validated versions. The earlier estimate of 4–6 people and a 3–4-month pilot remains a scenario assumption, not execution progress in this round.
 
-## 6. 本轮已完成的校验
+## 6. Validation Completed in This Round
 
-- 初始研究与开发方案14个文件的91处本地链接已检查；随后新增FindMissing性能专项，文档链接继续单独校验。Markdown代码围栏闭合。
-- 协议YAML可以解析；两仓库HEAD、两份仓库内proto的SHA-256、规范空摘要一致；12个必测fixture标识唯一。这只验证档案，不表示fixture已执行。
-- DDL的47条SQL语句通过pglast 8.4语法解析；16张表的34个外键通过目标、唯一键及类型静态检查。尚未执行PostgreSQL建库、PL/pgSQL服务器端编译或并发事务测试。
-- 没有修改两仓库业务代码、运行产品测试或创建远程issue/PR。本轮交付的是开发契约和验证计划；客户端版本认证、数据库集成、故障恢复及性能证据由对应工作包产出。
+- The 91 local links in the 14 initial research and development-plan files were checked. The FindMissing performance study was added afterward, and document links continue to be checked separately. Markdown code fences are balanced.
+- The protocol YAML parses; both repository HEADs, the SHA-256 hashes of the two in-repository proto files, and the specification's empty digest match. The 12 required fixture IDs are unique. This validates the profile only, not execution of the fixtures.
+- The DDL's 47 SQL statements passed syntax parsing with pglast 8.4; the 34 foreign keys across 16 tables passed static checks of targets, unique keys, and types. PostgreSQL database creation, server-side PL/pgSQL compilation, and concurrent transaction tests have not been run.
+- No business code in either repository was modified, no product tests were run, and no remote issues/PRs were created. This round delivers development contracts and a validation plan; the corresponding work packages will produce client-version certification, database integration, fault-recovery, and performance evidence.

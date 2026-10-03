@@ -101,7 +101,7 @@ Reproducible experiments check real cache behavior and output correctness, rathe
 
 ## Documentation
 
-The English and Chinese homepages cover the same scope. Detailed engineering guides are currently mostly in Chinese.
+The English and Chinese homepages cover the same scope. Detailed engineering guides are available in English.
 
 | Start here | Guides |
 | --- | --- |

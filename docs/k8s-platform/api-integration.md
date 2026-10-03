@@ -1,98 +1,98 @@
-# 管理 API 接入
+# Management API integration
 
-[OpenAPI 3.1 JSON](openapi.json) 描述当前实现。已登录的客户端也可读取
-`GET /v1/openapi.json`。文档入口需要会话；下载好的静态文档不包含任何实例密码或用户数据。
+The [OpenAPI 3.1 JSON](openapi.json) describes the current implementation. Authenticated clients can also read
+`GET /v1/openapi.json`. The documentation endpoint requires a session; downloaded static documentation contains no instance passwords or user data.
 
-## 会话和请求保护
+## Sessions and request protection
 
-1. POST `/v1/auth/login`，提供邮箱、密码，并携带与部署 `APP_ORIGIN` 完全一致的
-   Origin。保存返回的 `expbuild_session` cookie 和 `csrfToken`。
-2. 后续请求带 cookie；写请求还要带 Origin 与 `x-csrf-token`。不要把密码、cookie
-   或 CSRF token 放到 URL、日志或项目配置文件中。
-3. GET `/v1/auth/me` 检查会话。401 表示需重新登录；修改/重置密码会撤销所有相关会话。
-4. 当前没有机器账号/API Token/OIDC 接入，自动化客户端使用现有会话机制时应由
-   企业凭据系统托管账号。后续独立凭据能力不应由浏览器 cookie 猜测实现。
+1. POST `/v1/auth/login` with an email and password, and an Origin that exactly matches the deployment's
+   `APP_ORIGIN`. Save the returned `expbuild_session` cookie and `csrfToken`.
+2. Include the cookie in subsequent requests; write requests also require Origin and `x-csrf-token`. Do not put passwords, cookies,
+   or CSRF tokens in URLs, logs, or project configuration files.
+3. GET `/v1/auth/me` checks the session. A 401 requires login again; changing/resetting a password revokes all associated sessions.
+4. Machine accounts/API Tokens/OIDC integration are not currently available. When automated clients use the existing session mechanism,
+   accounts should be managed by the enterprise credential system. Future independent credentials must not be improvised from browser cookies.
 
-## 异步实例操作
+## Asynchronous instance operations
 
-- 创建实例前等待项目初始化为 ready；项目初始化失败可由管理员调用项目 retry。
-- 实例创建、更新、删除和缓存凭据轮换返回 202 与 operation.id。
-- 同一次请求的重试使用相同 `Idempotency-Key` 和相同输入；改变输入必须换新键。
-  同一实例同时只接受一个活动操作。
-- 更新实例与轮换凭据先读取实例，保存 ETag，并将其传入 `If-Match`。409 时先读取
-  新状态，重新判断操作，不应自动覆盖。PATCH 当前要求完整配置对象，不是 JSON Patch。
-- 轮询项目 operation 详情直到 succeeded、failed 或 superseded。状态还在 reconciling
-  不代表已经失败。失败可能发生在 Kubernetes 已接受配置之后，不承诺自动回退。
-- 创建项目暂不支持客户端幂等键。创建响应不确定时先查询项目列表，避免盲目重试。
+- Wait for project initialization to reach ready before creating instances; an administrator can call project retry after initialization failure.
+- Instance creation, update, deletion, and cache credential rotation return 202 and operation.id.
+- Retries of the same request use the same `Idempotency-Key` and identical input; changed input requires a new key.
+  Only one active operation is accepted per instance at a time.
+- Before updating an instance or rotating credentials, read the instance, save its ETag, and pass it in `If-Match`. On 409, read
+  the new state and reconsider the operation rather than automatically overwriting it. PATCH currently requires the complete configuration object, not JSON Patch.
+- Poll the project operation details until succeeded, failed, or superseded. An operation still in reconciling
+  has not necessarily failed. Failure may occur after Kubernetes has accepted configuration; automatic rollback is not promised.
+- Project creation does not yet support client idempotency keys. If the create response is uncertain, query the project list before retrying blindly.
 
-连接密码仅在首次成功接受创建/轮换请求时返回，并且只向管理员提供。幂等重放不会
-重新返回密码。丢失密码响应时等待操作结束，再由管理员轮换。凭据不会出现在操作
-查询、审计、统计或接口文档响应中。
+Connection passwords are returned only when a create/rotation request is first successfully accepted, and only to administrators. Idempotent replay does not
+return the password again. If the password response is lost, wait for the operation to finish and have an administrator rotate it. Credentials never appear in operation
+queries, audit records, statistics, or API documentation responses.
 
-## 状态和统计
+## State and statistics
 
-数据库实例 lifecycle 与引擎 Ready 条件不是同一概念。读取详情时应同时考虑
-revision、spec、status 和 observedAt。统计为当前引擎快照；不存在或采集失败时
-返回错误，客户端不能显示为零命中/零用量。历史趋势和命中率尚未提供。
+The database instance lifecycle and the engine's Ready condition are different concepts. When reading details, consider
+revision, spec, status, and observedAt together. Statistics are current engine snapshots; absence or collection failure
+returns an error, which clients must not display as zero hits/usage. Historical trends and hit rates are not yet available.
 
-列表目前有固定上限：用户/项目/实例最多 200 条，操作/审计最多 100 条；不提供分页参数。
-项目成员列表没有固定分页。普通账号只可访问其项目，平台管理员可跨项目访问。
-不可访问的项目统一返回 404，避免枚举其他团队资源。
+Lists currently have fixed limits: at most 200 users/projects/instances and 100 operations/audit records, with no pagination parameters.
+Project membership lists have no fixed pagination. Ordinary accounts can access only their projects; platform administrators can access across projects.
+Inaccessible projects consistently return 404 to prevent enumeration of other teams' resources.
 
-## 维护契约
+## Maintenance contracts
 
-资源对账发现预留不足或未知时，平台管理员可调用单实例 `POST /v1/projects/{projectId}/instances/{instanceId}/reservations/reconcile`。该入口重新读取集群并复核归属与并发变更，成功后只增加资源预留；如果真实资源已超过项目额度，配额查询会显示超额，后续新增与扩容被拒绝。对账中的其他差异仍需分别处理，不能用此入口修复 UID 或配置冲突。
+When resource reconciliation finds insufficient or unknown reservations, a platform administrator can call the single-instance `POST /v1/projects/{projectId}/instances/{instanceId}/reservations/reconcile` endpoint. It rereads the cluster and rechecks ownership and concurrent changes, increasing reservations only on success. If actual resources already exceed project quotas, quota queries show the excess and subsequent creation/expansion is rejected. Other reconciliation discrepancies require separate handling; this endpoint cannot repair UID or configuration conflicts.
 
-保留卷领回使用 `GET .../retained-volume` 的 PVC UID 作为 `If-Match`，向 `POST .../retained-volume/reclaim` 提交完整实例配置及幂等键。新凭据仅首次响应可见；操作完成后旧卷仍是同一个 PVC，实例绑定改为新 CR UID。身份转移、失败恢复和限制见[保留卷领回](retained-volume-reclaim.md)。
+Retained-volume reclaim uses the PVC UID from `GET .../retained-volume` as `If-Match`, submitting a complete instance configuration and idempotency key to `POST .../retained-volume/reclaim`. New credentials are visible only in the first response; after completion, the old volume remains the same PVC and the instance binding points to the new CR UID. See [retained-volume reclaim](retained-volume-reclaim.md) for identity transfer, failure recovery, and limitations.
 
-源文件为 `apps/admin-api/src/openapi.ts`。实例输入 schema 从实际 Zod 校验模型导出；
-跨字段限制仍以描述和服务端校验为准。修改路由后运行测试并重新生成静态 JSON：
+The source is `apps/admin-api/src/openapi.ts`. Instance input schemas are exported from the actual Zod validation models;
+cross-field constraints remain governed by descriptions and server-side validation. After modifying routes, run tests and regenerate the static JSON:
 
 ```sh
 npm run --silent openapi --workspace @expbuild/admin-api > docs/k8s-platform/openapi.json
 npm test --workspace @expbuild/admin-api
 ```
 
-测试检查标准规范、现有路由覆盖、路径参数、引用、输入默认值与访问控制。
-Kubernetes spec/status 仍按开放对象描述，精确字段以受版本控制的 CacheInstance CRD
-为准；因此该文档尚不代表已有自动生成并经过真实集群验收的 SDK。
+Tests check specification compliance, coverage of existing routes, path parameters, references, input defaults, and access control.
+Kubernetes spec/status are still described as open objects; exact fields are defined by the version-controlled CacheInstance CRD.
+This documentation therefore does not imply that an automatically generated SDK has passed real-cluster acceptance.
 
-## 恢复等待就绪超时的实例操作
+## Resuming instance operations that timed out waiting for readiness
 
-项目管理员可以调用 `POST /v1/projects/{projectId}/operations/{operationId}/retry`，
-携带会话、Origin、CSRF 和新的 `Idempotency-Key`。已绑定目标 Kubernetes generation 的失败 create/update/rotate 操作会继续原操作的就绪检查，
-不会重新创建资源、重发配置或重新生成密码，返回 202 和原操作 ID。
+Project administrators can call `POST /v1/projects/{projectId}/operations/{operationId}/retry`
+with a session, Origin, CSRF, and a new `Idempotency-Key`. Failed create/update/rotate operations already bound to a target Kubernetes generation resume readiness checks for the original operation,
+without recreating resources, resending configuration, or regenerating passwords; the response is 202 with the original operation ID.
 
-同一幂等键再次调用只返回当前操作状态，即使该操作又失败，也不会再次启动。
-再次主动重试需要新键。实例存在后续操作、已删除，或更新/轮换缺少 UID 与目标版本时返回 409。
-删除中的实例只允许恢复原删除操作。worker 仍验证原 UID、generation 和操作标识，资源被替换时拒绝继续。
-重试重置 20 分钟等待期限，旧错误保存在 `operation.retry` 审计中。
+Calling again with the same idempotency key returns only the current operation state; it does not restart the operation even if it failed again.
+Another deliberate retry requires a new key. The endpoint returns 409 if the instance has a subsequent operation, is deleted, or an update/rotation lacks a UID and target version.
+An instance being deleted can resume only its original deletion operation. The worker still checks the original UID, generation, and operation identifier, refusing to continue if the resource has been replaced.
+Retry resets the 20-minute waiting deadline; the previous error is retained in the `operation.retry` audit event.
 
-失败的删除操作也可以通过此接口继续清理，不要求 target generation，但要求实例仍处于
-删除中且绑定 UID 与原请求一致。沿用原操作 ID、UID 和已捕获的删除策略；若资源被
-同名替换或存储删除策略变化，worker 拒绝继续。CR 已删除但凭据清理未完成时仍可恢复。
-界面使用“继续删除”和“确认继续删除”，明确说明不会撤销删除。
+Failed deletions can also resume cleanup through this endpoint without a target generation, but the instance must still be
+in deletion and its bound UID must match the original request. The original operation ID, UID, and captured deletion policy are reused; if the resource is
+replaced with one of the same name or its storage deletion policy changes, the worker refuses to continue. Recovery remains possible if the CR is gone but credential cleanup is incomplete.
+The UI uses “Continue deletion” and “Confirm continue deletion” and explicitly states that this does not undo deletion.
 
-创建响应丢失且未绑定 UID 时，可以恢复原创建操作。worker 只读取已有 CR，
-检查原操作标识、请求哈希、项目/实例标签及完整 spec 后才绑定 UID/目标版本。
-资源缺失、正在删除或配置/身份不符时失败，不重新创建资源，不恢复已清除的凭据密文。
+When a create response was lost and no UID was bound, the original create operation can be resumed. The worker only reads the existing CR,
+checks the original operation identifier, request hash, project/instance labels, and complete spec, then binds the UID/target version.
+Missing or deleting resources and configuration/identity mismatches fail; resources are not recreated, and cleared credential ciphertext is not restored.
 
-当前不涵盖资源完全缺失后的重新创建、孤立 Secret 清理或凭据已失效的修复，也不自动回滚配置。
-这些情况仍需后续专门恢复流程。管理界面的最近操作列表为管理员提供“恢复检查”入口，
-对失败创建、已绑定目标版本的失败更新和凭据轮换，以及失败删除显示相应恢复入口；服务器仍会检查后续操作与实例状态。
+This does not currently cover recreation after complete resource loss, orphan Secret cleanup, or repair of invalid credentials, and it does not automatically roll back configuration.
+These cases still require dedicated recovery workflows. The management UI's recent-operations list offers administrators a “Resume checks” action,
+with appropriate recovery entries for failed creates, failed updates/credential rotations bound to target versions, and failed deletions. The server still checks subsequent operations and instance state.
 
-## 保留卷查询和清理
+## Retained-volume queries and cleanup
 
-通过实例列表的 `lifecycle=detached` 找到保留存储记录，再调用 `GET /v1/projects/{projectId}/instances/{instanceId}/retained-volume` 读取实际 PVC。项目成员可读取；不存在返回 404，归属冲突返回 409，Kubernetes 观测失败返回 503。容量是申请容量，不是磁盘实际使用量。
+Find retained-storage records using `lifecycle=detached` in the instance list, then call `GET /v1/projects/{projectId}/instances/{instanceId}/retained-volume` to read the actual PVC. Project members can read it; absence returns 404, ownership conflicts 409, and Kubernetes observation failures 503. Capacity is requested capacity, not actual disk usage.
 
-管理员调用同路径 `DELETE`，附带 `Idempotency-Key` 和 `If-Match`。这里 `If-Match` 使用查询返回的 **PVC UID**，不是实例的 `UID:generation`。202 返回 `volume.delete` 操作，按常规操作接口轮询。幂等重放保留原操作结果；失败后重新检查卷，使用新幂等键再次明确提交。不要对响应丢失更换幂等键。
+Administrators call `DELETE` on the same path with `Idempotency-Key` and `If-Match`. Here, `If-Match` uses the **PVC UID** returned by the query, not the instance's `UID:generation`. The 202 response returns a `volume.delete` operation to poll through the normal operation API. Idempotent replay preserves the original operation result; after failure, recheck the volume and explicitly resubmit with a new key. Do not change idempotency keys merely because a response was lost.
 
-执行器校验实例为 detached、原 CR UID 和项目归属未变；实际删除前检查同名 CR 不存在、没有 Pod 引用卷，并使用 PVC UID/resourceVersion 删除前置条件。完成表示 PVC 已不存在，实例记录转为 deleted，不意味着底层磁盘数据已擦除。无保留卷领回接口。
+The executor verifies that the instance is detached and its original CR UID and project ownership are unchanged. Before actual deletion, it checks that no CR with the same name exists and no Pod references the volume, and uses PVC UID/resourceVersion deletion preconditions. Completion means the PVC no longer exists and the instance record becomes deleted, not that underlying disk data has been erased. There is no retained-volume reclaim endpoint.
 
-## 淘汰策略与生效状态
+## Eviction policies and applied state
 
-模板目录的 `capabilities.policyApplyMode` 为 `restart`（bazel-remote）或 `unsupported`（WebDAV），`policyCondition` 指向实例条件 `PolicyApplied`。bazel-remote 使用固定的原生 LRU，`cacheGiB` 配置缓存预算，调整通过工作负载重启生效；当前不支持 TTL。WebDAV 的 PVC 容量不是自动淘汰阈值，不会因接近容量而自动清理文件。
+The template catalog's `capabilities.policyApplyMode` is `restart` (bazel-remote) or `unsupported` (WebDAV), and `policyCondition` points to the instance's `PolicyApplied` condition. bazel-remote uses fixed native LRU; `cacheGiB` configures the cache budget, and changes take effect through workload restart. TTL is not currently supported. WebDAV PVC capacity is not an automatic eviction threshold, and files are not automatically cleaned up as capacity is approached.
 
-`PolicyApplied=True` 只有在当前工作负载版本、认证协议及引擎返回的实际缓存预算通过核对后发布。客户端必须同时核对条件的 `observedGeneration` 与实例 `revision` 中的 generation，不能把旧版本的 True 当作新配置生效。暂停、未就绪和探测失败时为 Unknown；WebDAV 为 Unknown/NotSupported。Gateway 模式仍需路由就绪才发布 True，因此入口未就绪时可能保守地保持 Unknown。
+`PolicyApplied=True` is published only after the current workload revision, authenticated protocol, and actual cache budget returned by the engine have been verified. Clients must compare the condition's `observedGeneration` with the generation in the instance `revision`; an old True must not be treated as evidence that a new configuration has taken effect. It is Unknown while paused, not ready, or failing probes; WebDAV reports Unknown/NotSupported. Gateway mode also requires route readiness before True is published, so it may conservatively remain Unknown while ingress is not ready.
 
-该状态确认配置已被当前运行实例应用，不是淘汰性能、磁盘满保护或整个 PVC 使用量的保证。
+This condition confirms that the current running instance has applied the configuration; it does not guarantee eviction performance, full-disk protection, or usage of the entire PVC.

@@ -1,151 +1,151 @@
-# 实施路线、验收与迁移计划
+# Implementation Roadmap, Acceptance, and Migration Plan
 
-日期：2026-09-28。本文规划后续工作；本次仅完成代码静态审阅、官方资料研究与设计，没有执行下列 PoC、互操作测试或基准测试。
+Date: 2026-09-28. This document plans future work. The current work completed only static code review, official-source research, and design; none of the following PoCs, interoperability tests, or benchmarks were executed.
 
-## 1. 资源假设与交付节奏
+## 1. Resource Assumptions and Delivery Cadence
 
-假设 4–6 人专职团队：2 名 Rust/存储/协议工程师、1 名控制面工程师、1 名前端工程师、1 名平台/测试工程师，另有产品与安全评审投入。角色可以兼职，但工作量不会因此消失。无现网迁移硬约束，优先 Linux 服务端，客户端 OS 以试点矩阵为准。
+Assume a dedicated team of 4–6: two Rust/storage/protocol engineers, one control-plane engineer, one frontend engineer, and one platform/test engineer, with additional product and security review support. People may cover multiple roles, but the workload does not disappear. Assume no hard production-migration constraints; prioritize Linux servers, with client operating systems determined by the pilot matrix.
 
-首版做 REAPI cache-only + Gradle HTTP 两个生态；sccache 可按客户结构替换 Gradle。首版成功后逐批开放其他协议，每个协议单独标记 experimental/beta/certified/deprecated。阶段按验收推进，以下时长是排期区间，不是性能或交付保证。
+The first release covers two ecosystems: REAPI cache-only + Gradle HTTP; sccache may replace Gradle depending on the customer mix. After the first release succeeds, introduce other protocols in batches, labeling each separately as experimental/beta/certified/deprecated. Phases advance on acceptance. The durations below are scheduling ranges, not performance or delivery guarantees.
 
-| 阶段 | 参考时长 | 交付 | 出口条件 |
+| Phase | Indicative duration | Deliverables | Exit criteria |
 |---|---|---|---|
-| M0 / 决策与 PoC | 2–3 周 | 试点画像、协议/模型 ADR、正确性修补清单、两条原生客户端 PoC、工作负载基线 | 明确核心模型能承载 CAS 图和 opaque entry；与客户预登记接入/收益目标；关键风险有处理方案 |
-| P0 / 企业试点版 | M0 后 8–12 周 | 两协议、FS+一个对象后端、项目权限、服务账号、配额/GC、真实指标、私有部署与基础备份恢复 | 核心门槛通过；两不同生态真实项目达到约定价值目标；客户管理员能接管基本运维 |
-| P1 / 企业正式版 | 再 6–10 周 | 保持首版两生态亦可发布；OIDC、HA、自动化恢复/升级、完整接入与诊断流程 | 选定协议版本验收；恢复与授权故障测试通过；持续试运行及运维文档完整 |
-| P1.x / 新协议发布 | 每批另计 4–8 周，可与后续平台工作交错 | 优先 sccache/Turbo/Bazel HTTP；再按需求 Nx/ccache；BES/BEP 基础 | 每个适配器独立认证，实验性功能不阻断企业 GA |
-| P2 / 扩展与规模 | 再 8–12 周，按需求拆批 | Edge、SDK、OCI registry 集成、按需求 Maven、深度分析 | 第三方 adapter 不改内核；撤销/删除传播正确；实测证明 Edge 有收益 |
-| P3 / 远程执行与更广生态 | 独立 12–20+ 周工作流 | 执行后端集成或持久调度重构、隔离 worker、Nix/GHA 等需求专项、SaaS 准备 | 执行正确性/隔离/失败恢复单独认证；多区域/计费按客户需求立项 |
+| M0 / Decisions and PoC | 2–3 weeks | Pilot profiles, protocol/model ADRs, correctness repair list, two native-client PoCs, workload baseline | Core model demonstrably supports both CAS graphs and opaque entries; onboarding/benefit targets preregistered with customers; key risks have mitigation plans |
+| P0 / Enterprise pilot release | 8–12 weeks after M0 | Two protocols, FS + one object backend, project permissions, service accounts, quotas/GC, real metrics, private deployment, basic backup/recovery | Core gates pass; real projects in two different ecosystems achieve agreed value targets; customer administrators can take over basic operations |
+| P1 / Enterprise general release | Another 6–10 weeks | May ship with the same two ecosystems; OIDC, HA, automated recovery/upgrades, complete onboarding and diagnostic workflows | Selected protocol versions pass acceptance; recovery and authorization-failure tests pass; sustained trial operation and complete operational documentation |
+| P1.x / New protocol releases | Separately estimated at 4–8 weeks per batch; may overlap later platform work | Prioritize sccache/Turbo/Bazel HTTP; then Nx/ccache as needed; basic BES/BEP | Each adapter independently certified; experimental features do not block enterprise GA |
+| P2 / Extensions and scale | Another 8–12 weeks, divided into batches as needed | Edge, SDK, OCI registry integration, Maven as needed, deeper analytics | Third-party adapters require no kernel changes; revocation/deletion propagate correctly; measurements demonstrate Edge benefits |
+| P3 / Remote execution and broader ecosystems | Separate 12–20+ week workstream | Execution-backend integration or persistent-scheduler refactor, isolated workers, dedicated Nix/GHA and other demand-driven work, SaaS readiness | Execution correctness/isolation/failure recovery independently certified; multi-region/billing initiatives commissioned according to customer needs |
 
-按该假设，试点版约 3–4 个月，企业正式版约 4–6 个月；全面平台更适合按 9–15 个月滚动路线管理。若只有 1–2 人，应减少同时支持的协议、优先利用成熟存储与执行引擎，不机械承诺同样的日期。P3 的时长不包含所有列出的可选生态同时完成。
+Under these assumptions, the pilot release takes about 3–4 months and the enterprise general release about 4–6 months; the comprehensive platform is better managed as a rolling 9–15 month roadmap. With only 1–2 people, reduce simultaneous protocol support and prioritize mature storage and execution engines rather than mechanically committing to the same dates. P3's duration does not include completing every listed optional ecosystem at once.
 
-## 2. P0 必做与后置
+## 2. Required P0 Scope and Deferred Work
 
-| P0 必做 | 后续再做 |
+| Required for P0 | Deferred |
 |---|---|
-| 验证过的 REAPI cache 子集和 Gradle HTTP | 完整远程执行、所有 digest/compressor、所有可选 REAPI RPC |
-| 主体→项目→namespace 授权、只读/写入、结果发布分权 | 自定义 ABAC、多层组织、复杂审批 |
-| 流式上传、原子发布、摘要/路径校验、限额、引用安全 GC | 内容分块/CDC、P2P、全球复制 |
-| 企业可用的部署、健康检查、备份恢复脚本、真实指标与审计 | 跨区域容灾、全自动运维、SaaS 账单支付 |
-| 管理向导、项目/凭据/配额/保留/存储/审计闭环 | 插件市场、热更新、所有工具深度 miss diff |
-| 存储硬配额、对象大小/并发/速率限制；下载用量与软预算 | 跨节点严格下载总流量硬额度按企业需求上 P1 |
+| Validated REAPI cache subset and Gradle HTTP | Full remote execution, all digest/compressor types, all optional REAPI RPCs |
+| Principal → project → namespace authorization, read-only/write access, separate result-publication permission | Custom ABAC, multilevel organizations, complex approvals |
+| Streaming uploads, atomic publication, digest/path validation, limits, reference-safe GC | Content chunking/CDC, P2P, global replication |
+| Enterprise-usable deployment, health checks, backup/recovery scripts, real metrics and auditing | Cross-region disaster recovery, fully automated operations, SaaS billing/payments |
+| Complete management workflows for onboarding, projects/credentials/quotas/retention/storage/auditing | Plugin marketplace, hot updates, deep miss diffs for every tool |
+| Hard storage quotas, object-size/concurrency/rate limits; download usage and soft budgets | Strict cross-node hard limits on total download traffic in P1 according to enterprise needs |
 
-OIDC 若是试点客户上线前提，提前到 P0，削减其他功能。P0 至少支持人工备份恢复并完成一次演练；P1 再加入自动化备份、PITR、故障切换和正式 RPO/RTO。不能把正式版必需的授权、完整性或恢复基本能力留成“将来补”。
+If OIDC is a prerequisite for pilot launch, move it into P0 and cut other features. P0 must support at least manual backup/recovery and complete one drill; P1 adds automated backups, PITR, failover, and formal RPO/RTO. Basic authorization, integrity, or recovery capabilities required for a general release must not be left as “future additions.”
 
-## 3. 第一批工作项，可直接转为 issue
+## 3. Initial Work Items, Ready to Become Issues
 
-| ID | 工作项 / 建议负责角色 | 依赖 | 可评审的完成标准 |
+| ID | Work item / suggested owner role | Dependencies | Reviewable definition of done |
 |---|---|---|---|
-| EXP-001 | 明确兼容基线与能力表 / 协议 | 无 | 锁定 remote-apis commit、客户端 release、支持 RPC/压缩/摘要；所有 capability 来自实现 |
-| EXP-002 | 当前输入与能力边界修复 / Rust | 001 | 禁止未实现能力宣告；非法 digest/path 有确定错误；cache-only 模式无法调用执行 |
-| EXP-003 | Namespace 与 RequestContext / Rust+控制面 | 001 | 同 digest/key 跨 tenant/project/协议不能越权；BlobVisibility 覆盖直读和 FindMissing |
-| EXP-004 | BlobStore 与 UploadSession / Rust | 002、003 | 恒定内存流式 IO、offset 验证、commit/abort、取消和恢复、并发同 digest 不破坏文件 |
-| EXP-005 | CacheEntry/引用/GC 状态机 / 存储 | 003、004 | opaque 与 REAPI 两类都可发布；GC 与 commit 共享 fencing；缺失引用不能假命中 |
-| EXP-006 | IAM/项目/服务账号/策略 API / 控制面 | 003 | 令牌仅首次展示、可撤销/轮换；角色端到端强制；策略版本与撤销延迟可测 |
-| EXP-007 | REAPI 原生客户端验证 / 协议+测试 | 004、005、006 | 干净 Bazel 客户端重复构建命中；错误码、空文件、resume、batch/压缩按范围测试 |
-| EXP-008 | Gradle HTTP adapter / 协议 | 004、005、006 | 真 Gradle 项目 GET/PUT/404/413、read-only、冷/热/增量输出一致；不新增第二套 IAM |
-| EXP-009 | 额度与事件账本 / Rust+控制面 | 005、006 | 原子预留/结算/释放；并发不过存储硬限；用量可去重对账，错误不混入命中 |
-| EXP-010 | 管理控制台真实闭环 / 前端 | 006、009 | 接入向导、权限、配额、存储、审计、空/错状态；清除生产 mock fallback |
-| EXP-011 | 私有部署/对象后端/恢复 / 平台 | 004、005、006 | Compose/systemd 文档、TLS、健康、后端故障、备份恢复、恢复后 reconcile 与安全 GC |
-| EXP-012 | 企业试点与性能报告 / 测试+平台 | 007–011 | 两真实生态、固定测试环境、负向隔离测试、负载/故障报告、剩余限制明确 |
+| EXP-001 | Define compatibility baseline and capability matrix / Protocol | None | Pin remote-apis commit, client release, supported RPCs/compression/digests; every capability derives from the implementation |
+| EXP-002 | Repair current input and capability boundaries / Rust | 001 | No unsupported capability declarations; deterministic errors for invalid digest/path; execution cannot be invoked in cache-only mode |
+| EXP-003 | Namespace and RequestContext / Rust + Control plane | 001 | The same digest/key cannot bypass authorization across tenants/projects/protocols; BlobVisibility covers direct reads and FindMissing |
+| EXP-004 | BlobStore and UploadSession / Rust | 002, 003 | Constant-memory streaming IO, offset validation, commit/abort, cancellation and recovery; concurrent writes of the same digest do not corrupt files |
+| EXP-005 | CacheEntry/reference/GC state machine / Storage | 003, 004 | Both opaque and REAPI entries can be published; GC and commit share fencing; missing references cannot produce false hits |
+| EXP-006 | IAM/project/service-account/policy APIs / Control plane | 003 | Tokens shown only on creation, revocable/rotatable; roles enforced end to end; policy versions and revocation latency measurable |
+| EXP-007 | REAPI native-client validation / Protocol + Test | 004, 005, 006 | Repeated builds with a clean Bazel client hit; error codes, empty files, resume, batch/compression tested within scope |
+| EXP-008 | Gradle HTTP adapter / Protocol | 004, 005, 006 | Real Gradle project verifies GET/PUT/404/413, read-only behavior, consistent cold/warm/incremental outputs; no second IAM system |
+| EXP-009 | Quota and event ledgers / Rust + Control plane | 005, 006 | Atomic reservation/settlement/release; concurrency does not exceed hard storage limits; usage can be deduplicated and reconciled; errors are not mixed into hit counts |
+| EXP-010 | Real end-to-end management console / Frontend | 006, 009 | Onboarding wizard, permissions, quotas, storage, auditing, empty/error states; remove production mock fallback |
+| EXP-011 | Private deployment/object backend/recovery / Platform | 004, 005, 006 | Compose/systemd documentation, TLS, health, backend failures, backup/recovery, post-recovery reconciliation and safe GC |
+| EXP-012 | Enterprise pilot and performance report / Test + Platform | 007–011 | Two real ecosystems, fixed test environment, negative isolation tests, load/failure reports, explicit remaining limitations |
 
-先依次完成 ADR（协议边界、身份、blob/entry、GC、策略同步、插件信任、部署），再做迁移。不要先大规模改目录或重写 UI。
+Complete ADRs first in sequence (protocol boundaries, identity, blob/entry, GC, policy synchronization, plugin trust, deployment), then migrate. Do not begin with large-scale directory changes or a UI rewrite.
 
-M0 推荐安排：第一周完成事实基线、客户样本、能力宣告和安全边界方案；第二周打通 REAPI + Gradle 的最小上传/命中路径，测量真实流量；第三周处理 GC/上传竞态与容量实验，确认 P0 范围。若关键正确性实验未过，减少范围并继续修，不增加协议来掩盖问题。
+Recommended M0 schedule: week one establishes the factual baseline, customer samples, capability declarations, and security-boundary design; week two connects minimal REAPI + Gradle upload/hit paths and measures real traffic; week three addresses GC/upload races and capacity experiments and confirms P0 scope. If critical correctness experiments fail, reduce scope and keep fixing them instead of adding protocols to conceal the problem.
 
-## 4. 发布门槛
+## 4. Release Gates
 
-### A. 协议与结果正确性
+### A. Protocol and Result Correctness
 
-- 所有宣告功能有真实客户端与协议级案例；不宣告的可选功能返回规范允许的未实现/不支持状态。
-- 使用独立临时工作区清除本地缓存影响，冷写→另一 runner 热读→改变一个输入再构建；在可确定构建 fixture 中对产物做 byte/hash 一致性验证。
-- REAPI 覆盖 CAS/AC 区别、zero-byte、stdout/stderr、Directory/Tree、输出引用缺失、batch per-item status、大小限制、offset、QueryWriteStatus、压缩摘要语义。
-- Gradle 覆盖 opaque key、Basic/TLS、push 权限、404/413、Expect-Continue、重试和错误；兼容矩阵记录 wrapper/JDK/OS。
-- sccache/Turbo/Nx/ccache 等后续协议单独验收；HTTP 路由可响应不等于客户端兼容认证。
+- Every advertised feature has real-client and protocol-level cases; unadvertised optional features return specification-permitted unimplemented/unsupported statuses.
+- Use independent temporary workspaces to eliminate local-cache effects: cold write → warm read on another runner → change one input and rebuild. Verify byte/hash consistency of artifacts in deterministic build fixtures.
+- REAPI covers the CAS/AC distinction, zero-byte content, stdout/stderr, Directory/Tree, missing output references, batch per-item status, size limits, offsets, QueryWriteStatus, and compressed-digest semantics.
+- Gradle covers opaque keys, Basic/TLS, push permissions, 404/413, Expect-Continue, retries, and errors; record wrapper/JDK/OS in the compatibility matrix.
+- Later protocols such as sccache/Turbo/Nx/ccache require separate acceptance. A responding HTTP route is not client compatibility certification.
 
-### B. 隔离与可信性
+### B. Isolation and Trust
 
-- A 租户不能读/写/探测 B 的对象、条目、指标、构建记录、日志或导出；同租户未共享项目也如此。
-- 客户端伪造 instance_name、teamId、项目过滤参数、headers 均不能越权。
-- 开发者凭据不能发布 trusted result；PR token 不能抢先污染主分支缓存。
-- 撤销覆盖新请求、长流、续传和 commit；授权缓存断联到期必须停止，不能匿名降级。
-- 读写大小、压缩比例、目录深度、RPC batch、并发都受限；路径/符号链接不能逃逸根目录。
+- Tenant A cannot read/write/probe tenant B's objects, entries, metrics, build records, logs, or exports. The same applies to unshared projects within one tenant.
+- Forged client instance_name, teamId, project-filter parameters, or headers cannot bypass authorization.
+- Developer credentials cannot publish trusted results; PR tokens cannot preemptively poison the main-branch cache.
+- Revocation covers new requests, long streams, resumptions, and commits. Cached authorization must stop working when it expires during disconnection; no anonymous fallback.
+- Read/write sizes, compression ratios, directory depth, RPC batches, and concurrency are limited; paths/symlinks cannot escape the root directory.
 
-### C. 持久化与故障恢复
+### C. Persistence and Failure Recovery
 
-- 上传中断、客户端取消、进程崩溃、同 key 并发写、重复 commit、磁盘满、后端超时、数据库断连，都不能产生部分可见条目或永久泄漏额度。
-- GC 与新上传/读取/引用提交并发，验证 tombstone/version/fencing；不可误删新 generation。
-- 恢复测试：空集群恢复策略/索引/凭据与选定对象快照，先暂停 GC 和写入，reconcile 后开放；缺失 blob 安全失效，不能假命中。
-- P1 测多节点、节点滚动更新、策略延迟、数据库切换、控制面离线、重复/乱序用量事件。
+- Interrupted uploads, client cancellation, process crashes, concurrent same-key writes, duplicate commits, full disks, backend timeouts, and database disconnections must not produce partially visible entries or permanently leak quota reservations.
+- Run GC concurrently with new uploads/reads/reference commits and verify tombstone/version/fencing behavior; never accidentally delete a new generation.
+- Recovery test: restore policies/indexes/credentials and a selected object snapshot into an empty cluster; pause GC and writes first, then reopen after reconciliation. Missing blobs are safely invalidated and cannot create false hits.
+- P1 tests multiple nodes, rolling node updates, policy delays, database failover, control-plane outages, and duplicate/out-of-order usage events.
 
-### D. 运维与产品闭环
+### D. Operations and Complete Product Workflows
 
-- 从干净环境部署，创建项目、生成 token、接入工具、看到首次可验证命中，给出全过程用时与失败点。
-- 管理操作有审计；生产失败显示真实错误/数据过期；不会偷偷展示演示数据。
-- 存储额度、速率、GC 状态、后端错误、数据新鲜度有可操作告警；凭据不进入日志或支持包。
-- 协议版本、备份、升级、回滚、已知限制和数据删除流程都有可执行说明。
+- Deploy from a clean environment, create a project, generate a token, connect a tool, and observe the first verifiable hit; report total elapsed time and failure points.
+- Management actions are audited; production failures show real errors/stale data and never silently display demo data.
+- Provide actionable alerts for storage quotas, rates, GC status, backend errors, and data freshness; credentials never enter logs or support bundles.
+- Provide executable instructions for protocol versions, backups, upgrades, rollbacks, known limitations, and data deletion.
 
-试点价值门槛由客户在 M0 预登记：至少选择可比构建墙钟、避免的重复计算、接入耗时、平台运维投入中的明确目标；P0 报告收益与新增下载/存储开销。由未参与开发的客户管理员独立完成部署、token 轮换、清理和一次恢复演练，确认可接管。若没有证据证明收益或运维成本可接受，先调整场景/策略，不靠继续增加协议弥补。
+Customers preregister pilot-value gates in M0: select explicit targets from comparable build wall time, avoided repeated computation, onboarding time, and platform operational effort. P0 reports benefits and added download/storage overhead. A customer administrator who did not participate in development independently performs deployment, token rotation, cleanup, and one recovery drill to confirm operational handover. If evidence does not establish acceptable benefits or operational costs, adjust scenarios/policies first rather than compensating by adding protocols.
 
-## 5. 基准测试与容量计划
+## 5. Benchmarking and Capacity Planning
 
-先测用户价值，再测吞吐；不以单一 GET QPS 代替构建加速。
+Measure user value before throughput; a single GET QPS figure is not a substitute for build acceleration.
 
-工作负载分组：
+Workload groups:
 
-| 组 | 样本 | 观察内容 |
+| Group | Samples | What to observe |
 |---|---|---|
-| 小对象/高请求数 | 1 KiB、64 KiB；真实 Bazel CAS 分布 | 索引与请求成本、batch 效果、CPU、尾延迟 |
-| 中型归档 | 1–16 MiB；Gradle/sccache 真实归档 | 网络/解压成本、并发上传、分层命中 |
-| 大文件 | 256 MiB–1 GiB 可配置边界 | 内存不随对象大小线性增长、背压、中断清理 |
-| 项目真实构建 | 冷构建、热构建、单文件修改、依赖变化、分支切换 | CI 墙钟、任务命中、CPU 时间、传输和存储成本 |
-| 混合租户 | 热点租户与小租户并行 | 公平性、额度、队列等待与 P95/P99 |
-| 故障 | SSD 满、后端慢、节点重启、网络丢包、授权过期 | 错误分类、有限重试、恢复、客户端实际降级 |
+| Small objects/high request counts | 1 KiB, 64 KiB; real Bazel CAS distribution | Index/request costs, batch effectiveness, CPU, tail latency |
+| Medium archives | 1–16 MiB; real Gradle/sccache archives | Network/decompression costs, concurrent uploads, tiered hits |
+| Large files | Configurable boundaries of 256 MiB–1 GiB | Memory does not grow linearly with object size, backpressure, interruption cleanup |
+| Real project builds | Cold build, warm build, single-file edit, dependency change, branch switch | CI wall time, task hits, CPU time, transfer and storage costs |
+| Mixed tenants | Hot tenants and small tenants in parallel | Fairness, quotas, queue wait, P95/P99 |
+| Failures | Full SSD, slow backend, node restart, packet loss, expired authorization | Error classification, bounded retries, recovery, actual client fallback |
 
-每份报告固定：机器 CPU/RAM/磁盘、网络 RTT/带宽、TLS/连接复用、对象后端位置、对象分布、命中比例、并发、预热、持续时间、客户端与服务端版本。重复运行至少 5 次，报告中位数、P95/P99 与样本，不只选最快一轮。
+Every report fixes and records machine CPU/RAM/disk, network RTT/bandwidth, TLS/connection reuse, object-backend location, object distribution, hit ratio, concurrency, warmup, duration, and client/server versions. Repeat at least five times and report median, P95/P99, and samples rather than selecting only the fastest run.
 
-初始工程目标（待 M0 校准）：同机房 RTT ≤1ms、64 并发、已预热连接与 L1、1KiB entry 查询场景，端到端 P95 ≤20ms；大文件传输的进程内存由配置的并发/缓冲预算约束；缓存服务 CPU/网络开销明显低于对应本地重建成本。某项目标若对目标项目无意义，使用实测盈亏平衡点替代。
+Initial engineering targets (to be calibrated in M0): same-datacenter RTT ≤1ms, concurrency of 64, warmed connections and L1, 1KiB entry lookups with end-to-end P95 ≤20ms; process memory during large-file transfers constrained by configured concurrency/buffer budgets; cache-service CPU/network overhead substantially below the corresponding local rebuild cost. If a target is irrelevant to the target projects, replace it with a measured break-even point.
 
-P1 可讨论月度 99.9% 缓存服务可用性目标，但只有实际拓扑、故障演练和运行数据支持后才承诺；缓存 miss 不是服务错误，授权拒绝、额度拒绝、后端错误分开统计。RPO/RTO 针对 IAM/策略/索引与可重建 blob 分别定义。
+P1 may discuss a monthly 99.9% cache-service availability target, but commit only when supported by actual topology, failure drills, and operational data. Cache misses are not service errors; count authorization denials, quota denials, and backend errors separately. Define RPO/RTO separately for IAM/policies/indexes and rebuildable blobs.
 
-容量估算应包括：
+Capacity estimates should include:
 
 ```text
-持久容量 ≈ 每日新增唯一物理字节 × 保留天数 × 安全系数
-           + 临时上传 + 对象版本/备份 + 元数据与日志
-峰值出口带宽 ≈ 峰值同时下载数 × 每流期望速率
-索引规模 ≈ 活跃entry + 唯一blob + 可见性/引用 + upload/lease
+Persistent capacity ≈ Daily new unique physical bytes × Retention days × Safety factor
+                      + Temporary uploads + Object versions/backups + Metadata and logs
+Peak egress bandwidth ≈ Peak concurrent downloads × Expected rate per stream
+Index size ≈ Active entries + Unique blobs + Visibility/references + upload/lease
 ```
 
-例如仅用于容量演算：日新增 200GB、保留 14 天、安全系数 1.3，则 blob 主体约 3.64TB，未含备份/版本/日志；300 个并发下载各需 5MB/s，则出口约 12Gb/s。后者说明“服务器很快”不能抵消窄带宽和跨地域网络。实际去重/压缩系数必须测量，不能拿宣传比率套入预算。
+For capacity arithmetic only: 200GB of new data per day, 14-day retention, and a safety factor of 1.3 imply about 3.64TB for blobs alone, excluding backups/versions/logs. With 300 concurrent downloads each requiring 5MB/s, egress is about 12Gb/s. The latter illustrates why “a fast server” cannot compensate for narrow bandwidth and cross-region networks. Actual deduplication/compression factors must be measured; do not insert advertised ratios into budgets.
 
-## 6. 现有仓库迁移
+## 6. Migrating the Existing Repositories
 
-1. 固定当前基线并保留可回滚版本；此次审计基线见 [现状报告](05-current-state-audit.md)。规划新增文档不修改应用代码。
-2. 保留 proto、客户端 IO、digest 工具和测试 harness 的可用部分；先修 capability 宣告、输入校验、ByteStream、授权，再引入新模型。
-3. 旧 CAS/AC 没有可靠租户来源，默认放入只读隔离 legacy namespace，或直接冷启动重建。只有明确验证归属与内容时才迁移；绝不自动把匿名旧缓存暴露到所有新租户。
-4. 管理端增加 Tenant/Team/Membership/ServiceAccount/Token/Namespace/Policy/Audit/Usage 模型；旧 Project 的 owner 映射为成员角色并人工/程序校验。SQLite→PostgreSQL 要有转换和校验，不能宣称“改连接字符串即无缝迁移”。
-5. 无项目归属的旧 CacheMetric 只能保留为标明来源的历史安装级数据，不能臆造租户分配。BuildAgent 通过新注册流程绑定身份；旧 API key 轮换为哈希保存的 scoped token。
-6. 新旧 endpoint 并行，单个试点项目切换。不同信任模型之间不默认双写；旧缓存只作为经授权的只读回源候选，新写只进新模型。
-7. 观察命中、错误、延迟、权限拒绝、成本和构建输出；可按项目回滚 endpoint。采用 expand/contract schema 迁移；不在回滚时让旧服务读取不兼容新数据。
+1. Pin the current baseline and retain a rollback version; see the [current-state report](05-current-state-audit.md) for this audit's baseline. The new planning documents do not modify application code.
+2. Retain usable parts of proto, client IO, digest utilities, and test harnesses. Repair capability declarations, input validation, ByteStream, and authorization before introducing the new model.
+3. Old CAS/AC lacks reliable tenant provenance. Put it in a read-only isolated legacy namespace by default, or cold-start and rebuild. Migrate only when ownership and content are explicitly verified; never automatically expose old anonymous caches to every new tenant.
+4. Add Tenant/Team/Membership/ServiceAccount/Token/Namespace/Policy/Audit/Usage models to the management application. Map old Project owners to membership roles and validate manually/programmatically. SQLite→PostgreSQL requires conversion and validation; do not claim “a seamless migration by changing the connection string.”
+5. Old CacheMetric data without project attribution can only remain historical installation-level data with its source identified; do not invent tenant allocation. Bind BuildAgent identities through the new registration workflow; rotate old API keys into scoped tokens stored as hashes.
+6. Run old and new endpoints in parallel and switch one pilot project at a time. Do not dual-write across different trust models by default. Old caches are only candidates for authorized read-only upstream fetching; new writes go only into the new model.
+7. Observe hits, errors, latency, permission denials, costs, and build outputs; endpoints can be rolled back per project. Use expand/contract schema migration; rollback must not let old services read incompatible new data.
 
-如果没有活跃用户和需要保存的数据，上述过程简化为冷启动新结构；无需为不存在的现网兼容负担耗费数月。是否有现网用户是待确认信息，不在本研究中假设为零。
+If there are no active users or data to preserve, simplify the process to a cold start with the new structure; do not spend months on nonexistent production-compatibility burdens. Whether production users exist remains unconfirmed and is not assumed to be zero in this research.
 
-## 7. 主要风险与触发条件
+## 7. Major Risks and Triggers
 
-| 风险 | 早期信号 | 对策 / 何时调整 |
+| Risk | Early signal | Response / when to adjust |
 |---|---|---|
-| 范围持续扩大 | 每个客户新增协议都改核心；里程碑没有可运行版本 | 首版固定两生态；新增需求排队或替换范围 |
-| 缓存不安全或不正确 | 可跨项目读、产物不一致、AC命中缺blob | 阻断发布，隔离受影响条目，优先解决模型与信任边界 |
-| 高命中却变慢 | 下载/解包比本地执行更贵 | 用 task/对象大小分布分析；客户端策略、就近节点；不一律强制远程读取 |
-| GC/配额变成单点瓶颈 | 索引事务等待、暂停时间增长、长尾上升 | 批量触摸、分区、预算租约；基准支持后拆索引/事件库 |
-| 协议随上游变动 | current docs 与客户端调用不同 | 锁版本、官方兼容矩阵、release CI；保留受支持版本窗口 |
-| 执行抢走缓存迭代资源 | scheduler/隔离修复主导开发 | 执行单独负责人和预算，优先接成熟后端 |
-| 商业依赖约束 | 选定公开仓库含限制商业用途许可 | 固定依赖清单逐路径核验；优先标准接口，保留替换能力 |
-| 管理数据看起来漂亮但无效 | mock回退、无来源的节省时间、指标无scope | unknown/估算明确标注；统一事件口径与租户归属 |
+| Continually expanding scope | Every new customer protocol changes the core; milestones lack runnable releases | Fix the first release at two ecosystems; queue new requests or replace existing scope |
+| Unsafe or incorrect caching | Cross-project reads, inconsistent artifacts, AC hits with missing blobs | Block release, isolate affected entries, prioritize model and trust-boundary fixes |
+| High hit rate but slower builds | Downloading/unpacking costs more than local execution | Analyze task/object-size distributions; use client policies and nearby nodes; do not universally force remote reads |
+| GC/quotas become a single bottleneck | Index transaction waits, growing pauses, rising tail latency | Batch touches, partitioning, budget leases; separate index/event databases when benchmarks justify it |
+| Protocols change upstream | Current documentation differs from client calls | Pin versions, maintain an official compatibility matrix and release CI; retain a supported-version window |
+| Execution consumes cache-iteration resources | Scheduler/isolation fixes dominate development | Separate execution ownership and budget; prioritize mature backends |
+| Commercial dependency constraints | Selected public repositories have licenses restricting commercial use | Pin dependency inventories and verify each path; prefer standard interfaces and retain replaceability |
+| Management data looks good but is invalid | Mock fallback, unsourced time savings, metrics without scope | Explicitly label unknown/estimated values; unify event definitions and tenant attribution |
 
-## 8. 架构决策记录建议
+## 8. Recommended Architecture Decision Records
 
-建议首批 ADR：001 cache-first 与首版范围；002 租户/namespace/信任域；003 Blob/Entry/Visibility 模型；004 发布与GC一致性；005 策略快照/撤销/长流；006 用量与硬配额；007 插件信任与版本契约；008 企业部署与恢复；009 原生工具兼容矩阵；010 远程执行自建/集成评估。
+Initial ADRs: 001 cache-first and first-release scope; 002 tenants/namespaces/trust domains; 003 Blob/Entry/Visibility model; 004 publication and GC consistency; 005 policy snapshots/revocation/long streams; 006 usage and hard quotas; 007 plugin trust and version contracts; 008 enterprise deployment and recovery; 009 native-tool compatibility matrix; 010 remote-execution build-versus-integrate assessment.
 
-每项记录问题、选项、决定、代价、证据、验收、重新考虑的条件。当前推荐需要因新证据调整时，修改 ADR 和兼容矩阵，而不是不断添加隐含配置开关。
+Each records the problem, options, decision, costs, evidence, acceptance criteria, and conditions for reconsideration. When new evidence requires changing a current recommendation, update the ADR and compatibility matrix rather than continually adding implicit configuration switches.

@@ -1,14 +1,14 @@
-# 查询历史（Prometheus 接入）
+# Query history (Prometheus integration)
 
-管理 API 和界面支持可选的 Prometheus 历史查询。当前实现查询适配与权限控制，以及可选的 ServiceMonitor 自动生成与凭据引用同步；不部署 Prometheus 或 Prometheus Operator。部署方需要已有的受信任采集系统。无配置时返回 503，采集无数据时返回空序列，不伪造零值。
+The management API and UI support optional Prometheus history queries. The current implementation provides query adaptation and access control, plus optional automatic ServiceMonitor generation and credential-reference synchronization; it does not deploy Prometheus or Prometheus Operator. The deployer must supply an existing trusted collection system. Missing configuration returns 503; no collected data returns empty series, without fabricated zeros.
 
-平台可观测首版已实施，配置与支持矩阵见[可观测接入说明](observability.md)。本文保留既有 Bazel 查询历史 API 的兼容契约；新增通用观测接口、Gradle 指标、日志、事件与告警使用新入口。
+The first platform observability release is implemented; see [observability integration](observability.md) for configuration and the support matrix. This document preserves the compatibility contract of the existing Bazel query-history API; new general observation endpoints, Gradle metrics, logs, events, and alerts use the new entry points.
 
-## 配置与指标契约
+## Configuration and metric contracts
 
-Helm 设置 `monitoring.prometheusURL`，例如 `http://prometheus.monitoring.svc:9090`，直接启动 API 时使用 `PROMETHEUS_URL`。允许 HTTP/HTTPS 和路径前缀，不接受 URL 内凭据、查询串或 fragment；不跟随重定向。可选配置 `monitoring.queryBearerTokenSecret`，引用控制面 namespace 中现有 Secret 的 `bearer-token` 字段。该凭据仅注入管理 API，不注入 Operator、前端或实例，也不作为 Helm values 中的明文。直接运行 API 时使用 `PROMETHEUS_BEARER_TOKEN`。必须同时配置查询 URL；token 必须非空且不含空格/换行，最长 8192 字符。
+Set `monitoring.prometheusURL` in Helm, for example `http://prometheus.monitoring.svc:9090`, or `PROMETHEUS_URL` when starting the API directly. HTTP/HTTPS and path prefixes are allowed; credentials, query strings, and fragments in URLs are rejected, and redirects are not followed. Optionally configure `monitoring.queryBearerTokenSecret` to reference the `bearer-token` field of an existing Secret in the control-plane namespace. This credential is injected only into the management API, not the Operator, frontend, or instances, and is not supplied as plaintext in Helm values. For direct API execution, use `PROMETHEUS_BEARER_TOKEN`. A query URL must also be configured; the token must be nonempty, contain no spaces/newlines, and be at most 8192 characters.
 
-查询认证示例（Secret 由部署方预先创建）：
+Example query authentication (the deployer creates the Secret in advance):
 
 ```yaml
 monitoring:
@@ -16,54 +16,54 @@ monitoring:
   queryBearerTokenSecret: expbuild-metrics-query
 ```
 
-此认证用于 API 向监控查询入口发送 Bearer token，与引擎指标采集使用的实例 Basic 凭据分离。API 不跟随重定向，查询失败仅报告统计不可用；不会改变缓存实例状态。Secret 更新后需滚动重启管理 API 才会加载新 token。企业入口使用自定义 CA 时仍需在运行环境配置受信任 CA，不提供跳过 TLS 验证选项。当前支持 Bearer 查询认证，其他查询认证方式尚未适配。
+This authentication sends a Bearer token from the API to the monitoring query endpoint, separate from instance Basic credentials used for engine-metric collection. The API does not follow redirects; query failure reports statistics unavailable without changing instance state. After updating the Secret, roll the management API to load the new token. Enterprise endpoints using a custom CA still require trusted CA configuration in the runtime environment; there is no option to skip TLS verification. Bearer query authentication is currently supported; other query-authentication methods are not yet adapted.
 
-采集对象是 bazel-remote 的 `/metrics`，使用实例当前有效的 Basic 凭据。请求需要满足已有网络策略；启用下文 ServiceMonitor 集成时会生成来源 namespace 与 Pod 标签同时匹配的入口策略；未启用时需由部署方维护访问。
+The collection target is bazel-remote's `/metrics`, using the instance's currently valid Basic credentials. Requests must satisfy existing network policies. Enabling the ServiceMonitor integration below generates an ingress policy requiring both the source namespace and Pod label to match; otherwise, the deployer maintains access.
 
-每条样本必须由采集系统附加可信标签：
+The collection system must attach trusted labels to every sample:
 
-| 指标标签 | 来源 |
+| Metric label | Source |
 | --- | --- |
-| `expbuild_project_id` | CacheInstance 的不可变项目 ID / Pod 的 `cache.expbuild.io/project-id` |
-| `expbuild_instance_uid` | Kubernetes 分配的 CR UID / Pod 的 `cache.expbuild.io/instance-uid` |
+| `expbuild_project_id` | CacheInstance's immutable project ID / Pod's `cache.expbuild.io/project-id` |
+| `expbuild_instance_uid` | Cluster-assigned CR UID / Pod's `cache.expbuild.io/instance-uid` |
 
-不能只使用实例名或 namespace 代替 UID，否则删除重建会混入旧数据。多集群共用监控时也需保证这些 UID 标识的归属可信。避免同一目标被重复采集后相加；配置重标签时不能允许引擎自身标签覆盖上述归属标签。
+Do not substitute instance names or namespaces for UIDs, or data from deleted and recreated instances will mix. Shared monitoring across clusters must also ensure trusted ownership of these UID identities. Avoid summing duplicate scrapes of the same target; relabeling must not allow engine-provided labels to overwrite the ownership labels above.
 
-本次映射锁定 bazel-remote v2.6.2 的 `bazel_remote_incoming_requests_total`，来源见官方 [计数器定义](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/options.go)和[计数行为](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/metrics.go)：
+This mapping is pinned to bazel-remote v2.6.2's `bazel_remote_incoming_requests_total`; see the official [counter definition](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/options.go) and [counting behavior](https://github.com/buchgr/bazel-remote/blob/v2.6.2/cache/disk/metrics.go):
 
-- `kind=ac|cas` 分别表示动作缓存与内容缓存。
-- `method=get` 表示读取；`contains` 表示存在性检查，FindMissing 按 digest 数量计数。
-- `status=hit|miss` 表示引擎实际查询结果。错误不会自动算作未命中。
+- `kind=ac|cas` denotes action cache or content cache respectively.
+- `method=get` denotes reads; `contains` denotes existence checks, with FindMissing counted per digest.
+- `status=hit|miss` denotes the engine's actual lookup result. Errors are not automatically counted as misses.
 
-平台使用五分钟 `rate`，按上述三个标签分别聚合，每秒查询次数与构建命中率不同。暂不合并读取与存在性检查，也不把 HTTP/gRPC 成功状态解释为缓存命中。
+The platform applies a five-minute `rate` and aggregates separately by these three labels. Queries per second differ from build hit rates. Reads and existence checks are not currently combined, and successful HTTP/gRPC status is not interpreted as a cache hit.
 
-## 管理 API
+## Management API
 
 `GET /v1/projects/{projectId}/instances/{instanceId}/statistics/history?window=1h`
 
-支持 `1h`、`6h`、`24h`，对应步长 60、120、300 秒；结束时间对齐步长。服务端从授权后的数据库绑定读取原 CR UID，调用者不能提交 PromQL 或标签选择器。项目成员可读取，历史实例删除后仍按原 UID 查询；当前保留多久取决于外部 Prometheus 的配置。
+Supported windows are `1h`, `6h`, and `24h`, with steps of 60, 120, and 300 seconds; the end time aligns to the step. The server reads the original CR UID from the authorized database binding; callers cannot submit PromQL or label selectors. Project members can read history, and deleted historical instances remain queried by their original UID. Retention currently depends on external Prometheus configuration.
 
-返回 `series`，每条包含 kind、method、outcome 和 `[Unix秒, 每秒次数或null]` 点列。非有限值转为 null，空序列表示无有效数据。上游警告、错误、过大响应、重复序列或异常时间戳被拒绝；请求限时 5 秒，响应最多 1 MiB、8 条序列、每条最多 300 点。接口不返回上游查询文本或地址。
+The response contains `series`, each with kind, method, outcome, and points of `[Unix seconds, rate per second or null]`. Nonfinite values become null; empty series indicate no valid data. Upstream warnings, errors, oversized responses, duplicate series, and abnormal timestamps are rejected. Requests time out after 5 seconds; responses are limited to 1 MiB, 8 series, and at most 300 points per series. The API returns neither upstream query text nor addresses.
 
-界面按需加载，不持续轮询历史查询。可选时间范围、缓存类型和查询类型；监控失败时显示不可用，缺失样本显示空缺。实时容量仍从引擎状态接口采集，与历史查询独立。
+The UI loads history on demand without continuous polling. Users can select time range, cache type, and query type; monitoring failures appear as unavailable and missing samples remain gaps. Live capacity still comes from the engine status endpoint independently of history queries.
 
-## 验证范围与后续工作
+## Validation scope and follow-up work
 
-单元测试覆盖查询范围、标签注入拒绝、时间和响应限制、缺失值；真实 PostgreSQL 测试覆盖绑定 UID、历史记录授权及跨项目拒绝；界面测试覆盖按需加载、筛选与监控不可用。本地已通过固定 Prometheus v3.15.0 的真实认证采集与范围查询测试：受控 exporter 为三个项目/UID 组合提供不同计数速率，确认项目及 UID 分别隔离，缺失实例为空序列、有效零值仍为零。该测试验证真实 PromQL/HTTP 行为，采集源是合约 fixture，尚未覆盖真实缓存引擎自动采集。实例采集自动化和凭据轮换另由本文末尾的真实 kind 测试验收；实际 CNI 隔离与长期负载仍待验证。资源指标、延迟、流量和 WebDAV 指标仍未接入。
+Unit tests cover query ranges, label-injection rejection, time/response limits, and missing values. Real PostgreSQL tests cover bound UIDs, historical-record authorization, and cross-project denial; UI tests cover on-demand loading, filtering, and monitoring unavailability. Real authenticated collection and range-query tests with pinned Prometheus v3.15.0 passed locally: a controlled exporter supplies different counter rates for three project/UID combinations, verifying isolation by both project and UID, empty series for missing instances, and preservation of valid zeros. This validates real PromQL/HTTP behavior; the collection source is a contract fixture and does not yet cover automatic collection from real cache engines. Instance collection automation and credential rotation have separate real-kind acceptance checks at the end of this document; actual CNI isolation and long-term load still require validation. Resource metrics, latency, traffic, and WebDAV metrics are not yet integrated.
 
 
-## 复现真实 Prometheus 测试
+## Reproducing the real Prometheus test
 
 ```sh
 python3 tools/download_prometheus.py /tmp/expbuild-prometheus
 PROMETHEUS_BIN=/tmp/expbuild-prometheus npx tsx --test apps/admin-api/src/history-engine.test.ts
 ```
 
-下载器锁定[官方 v3.15.0 Linux amd64 发布资产](https://github.com/prometheus/prometheus/releases/tag/v3.15.0)及 SHA256；仅提取校验过归档中的指定普通二进制文件。测试创建临时配置/TSDB、随机本地端口和独立进程，退出后清理。需要等待真实采样进入分钟对齐的查询窗口，通常几十秒；缺少 PROMETHEUS_BIN 时明确跳过，CI 下载后强制执行。不连接默认或生产 Prometheus。
+The downloader pins the [official v3.15.0 Linux amd64 release asset](https://github.com/prometheus/prometheus/releases/tag/v3.15.0) and SHA256, extracting only the specified regular binary from the verified archive. Tests create temporary configuration/TSDB, random local ports, and a separate process, then clean up on exit. Real samples must enter a minute-aligned query window, typically taking tens of seconds. Missing PROMETHEUS_BIN explicitly skips the test; CI downloads it and requires execution. No default or production Prometheus is contacted.
 
-## 可选的实例采集自动化
+## Optional automated instance collection
 
-部署方先安装兼容的 Prometheus Operator 与 ServiceMonitor CRD。本平台的 CRD 契约测试固定官方 v0.94.1 CRD 和 SHA256；已通过本文末尾记录的 Prometheus Operator 容器到真实缓存引擎全链路验收。启用示例：
+The deployer first installs a compatible Prometheus Operator and ServiceMonitor CRD. The platform's CRD contract tests pin the official v0.94.1 CRD and SHA256; the full path from the Prometheus Operator container to real cache engines has passed the acceptance recorded below. Example enablement:
 
 ```yaml
 monitoring:
@@ -73,20 +73,20 @@ monitoring:
     namespace: monitoring
 ```
 
-Prometheus 自身需要选择项目 namespace 中带 `app.kubernetes.io/managed-by=expbuild` 的 ServiceMonitor，并给采集 Pod 设置 `cache.expbuild.io/monitoring=true`。Prometheus Operator 需要读取这些 namespace 内的凭据 Secret，Prometheus 需要相应服务发现权限；这些是部署方所维护监控系统的权限，不由 expbuild Chart 自动授予。
+Prometheus itself must select ServiceMonitors labeled `app.kubernetes.io/managed-by=expbuild` in project namespaces, and collection Pods need `cache.expbuild.io/monitoring=true`. Prometheus Operator needs permission to read credential Secrets in those namespaces, and Prometheus needs appropriate service-discovery permissions. These belong to the monitoring system maintained by the deployer and are not automatically granted by the expbuild chart.
 
-expbuild 每十秒调谐一次实例的 ServiceMonitor，限定 `/metrics`、HTTP 端口、30 秒采集间隔与 5 秒超时，不跟随重定向。凭据通过当前 Secret 的 probe-username/probe-password 引用传递，不把明文写入 ServiceMonitor。凭据轮换时更新引用，由 Prometheus Operator 异步重新加载；短暂采集空缺可能发生，不承诺零中断。
+expbuild reconciles instance ServiceMonitors every ten seconds, fixing `/metrics`, the HTTP port, a 30-second scrape interval, and a 5-second timeout, without redirects. Credentials are passed as references to probe-username/probe-password in the current Secret, not plaintext in the ServiceMonitor. Rotation updates references, which Prometheus Operator reloads asynchronously; brief collection gaps may occur, and zero interruption is not promised.
 
-目标按 CR UID、项目和实例标签选择，并通过服务名重标签规则排除 headless Service，避免同一引擎重复采集。项目/UID 标签由固定重标签规则写入，honorLabels=false。配套 NetworkPolicy 同时限制来源 namespace 名称与采集 Pod 标签，只开放 8080；仍需执行网络策略的 CNI 才能证明实际隔离。
+Targets are selected by CR UID, project, and instance labels; service-name relabeling excludes the headless Service to prevent duplicate engine scrapes. Fixed relabeling rules write project/UID labels with honorLabels=false. The associated NetworkPolicy restricts both source namespace name and collection Pod label, opening only 8080; a policy-enforcing CNI is still required to demonstrate actual isolation.
 
-`MonitoringConfigured=True/ResourcesApplied` 只表示采集对象和策略写入成功，不代表已有样本。监控错误单独报告，不将已通过协议探测的缓存判为不可用。可选监控 API 不参与启动时的 informer 注册，以免其不可用阻断缓存控制器启动。
+`MonitoringConfigured=True/ResourcesApplied` means only that collection objects and policies were written successfully, not that samples exist. Monitoring errors are reported separately and do not mark a cache unavailable if it passed protocol probes. Optional monitoring APIs are not registered as informers at startup, so their unavailability does not block cache-controller startup.
 
-暂停、删除或关闭集成会清理精确归属的采集对象与网络策略，使用 UID/resourceVersion 删除前置条件；不接管其他 owner 的同名对象。清理标记在资源写入前添加，关闭功能后仍保留清理权限。Operator 只新增 ServiceMonitor get/create/patch/delete 权限，不获得 Prometheus 创建权限，管理 API 无 ServiceMonitor 写权限。
+Pause, deletion, or disabling integration cleans up precisely owned collection objects and network policies with UID/resourceVersion deletion preconditions; same-name objects owned by others are not adopted. Cleanup markers are added before resource writes, and cleanup permissions remain after the feature is disabled. The Operator gains only ServiceMonitor get/create/patch/delete permissions, not Prometheus creation permissions; the management API has no ServiceMonitor write permissions.
 
-关闭集成后等待清理完成，再卸载 CRD 或撤销清理权限。监控 API 缺失时无法确认清理，实例删除可能保留 finalizer；不要直接移除标记掩盖未完成的资源清理。当前实例原生指标自动采集支持 bazel-remote 0.1.0 与 gradle-http 0.2.0；WebDAV 的内容快照由后台采集器导出，仍无请求/命中指标适配。
+After disabling integration, wait for cleanup before uninstalling CRDs or revoking cleanup permissions. Missing monitoring APIs prevent cleanup confirmation and may leave instance-deletion finalizers; do not remove markers directly to conceal incomplete cleanup. Automatic native instance-metric collection currently supports bazel-remote 0.1.0 and gradle-http 0.2.0. WebDAV content snapshots are exported by the background collector, with no request/hit metric adapter yet.
 
-## 隔离集群采集验收
+## Isolated-cluster collection acceptance
 
-Gateway 集群任务新增固定 Prometheus Operator v0.94.1 部署包 SHA256，以及 Operator、config-reloader 和 Prometheus v3.15.0 镜像摘要。只在脚本创建的临时 kind/context 中安装，使用临时监控数据，不修改现有集群。脚本要求一个实例仅有一个活跃目标，指标端点匿名/旧凭据被拒绝，管理 API 历史包含当前项目/UID 的真实 CAS 读取速率；轮换后必须出现新的成功采样和新的历史时间点，删除后目标移除。该完整链路已在[隔离集群 CI](https://github.com/expbuild/expbuild/actions/runs/36672925904)通过（提交 6966aec）。实际日志分别确认轮换前后真实 CAS 查询历史、唯一健康目标、轮换后新采样时间，以及删除后目标移除。
+The Gateway cluster job adds pinned Prometheus Operator v0.94.1 deployment-package SHA256 and image digests for Operator, config-reloader, and Prometheus v3.15.0. Installation occurs only in the temporary kind/context created by the script, using temporary monitoring data without modifying existing clusters. The script requires exactly one active target per instance, rejection of anonymous/old credentials at the metrics endpoint, and real CAS read rates for the current project/UID in management API history. After rotation, new successful samples and new history timestamps must appear; after deletion, the target must disappear. This full path passed [isolated-cluster CI](https://github.com/expbuild/expbuild/actions/runs/36672925904) at commit 6966aec. Actual logs separately confirm real CAS query history before and after rotation, a unique healthy target, a new post-rotation sample timestamp, and target removal after deletion.
 
-验收边界：本次使用单副本 Prometheus、临时 TSDB 和 kind 默认网络，没有验证实际 NetworkPolicy 拦截、监控持久存储、高可用、长期数据保留或大规模采集。API 查询及界面组件分别通过测试，尚未做真实浏览器端到端验收。WebDAV `0.2.0` 的只读内容扫描仅提供实时容量和条目快照，不生成 Prometheus 请求指标，也不能推导命中率。
+Acceptance boundaries: this used single-replica Prometheus, temporary TSDB, and kind's default network. It did not verify actual NetworkPolicy blocking, persistent monitoring storage, high availability, long-term retention, or collection at scale. API queries and UI components passed separate tests; real-browser end-to-end acceptance has not yet been performed. WebDAV `0.2.0` read-only content scans provide only live capacity and entry snapshots, not Prometheus request metrics or inferred hit rates.

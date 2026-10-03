@@ -1,173 +1,173 @@
-# expbuild 平台可观测方案
+# expbuild Platform Observability Plan
 
-日期：2026-10-01。状态：首版已实现基础采集、原生观测页面、日志与告警接入。本文保留完整目标；具体交付和剩余深化项见[实施与接入说明](observability.md)。
+Date: 2026-10-01. Status: the first release implements basic collection, native observability pages, and log and alert integrations. This document retains the full target scope; see the [Implementation and Integration Guide](observability.md) for specific deliverables and remaining deeper work.
 
-目标是让平台管理员和项目用户能够回答四个问题：平台是否正常、缓存是否有效、资源是否够用、异常发生在哪里。可观测同时覆盖管理平台、缓存实例和采集系统自身，并在管理界面中提供从告警到指标、事件和日志的诊断路径。
+The goal is to help platform administrators and project users answer four questions: Is the platform healthy? Is caching effective? Are resources sufficient? Where is the problem? Observability covers the management platform, cache instances, and the collection system itself, with a diagnostic path from alerts to metrics, events, and logs in the management UI.
 
-## 实施前基线与目标边界
+## Pre-Implementation Baseline and Target Boundaries
 
-| 范围 | 当前实现 | 本方案补充 |
+| Scope | Implementation at baseline | Additions in this plan |
 |---|---|---|
-| Bazel 实例 | 可选 ServiceMonitor、AC/CAS 查询历史、按项目和 CR UID 授权 | 请求性能、资源、容量趋势、淘汰及告警，逐项核查引擎能力 |
-| Gradle 实例 | 实时容量、条目数、当前进程读写计数 | 原生指标端点、持续采集与历史趋势 |
-| Apache WebDAV | 有界扫描得到内容容量与条目快照 | 可选快照历史和 Kubernetes 资源观测；请求命中与可靠淘汰指标留给后续引擎 |
-| 管理平台 | 操作记录、审计、实例条件与健康接口 | 管理 API、后台任务、Operator、数据库依赖的运行观测 |
-| 日志与链路 | Operator 有日志；管理 API 显式关闭 Fastify 日志 | 结构化日志、关联标识、日志查询，后续增加调用链 |
+| Bazel instances | Optional ServiceMonitor, AC/CAS query history, authorization by project and CR UID | Request performance, resources, capacity trends, eviction, and alerts; verify engine capabilities individually |
+| Gradle instances | Live capacity, entry count, read/write counters for the current process | Native metrics endpoint, continuous collection, and historical trends |
+| Apache WebDAV | Content capacity and entry snapshots from bounded scans | Optional snapshot history and Kubernetes resource observation; request hits and reliable eviction metrics deferred to a later engine |
+| Management platform | Operation records, audits, instance conditions, and health endpoints | Runtime observation of the management API, background tasks, Operator, and database dependencies |
+| Logs and traces | Operator logs available; management API explicitly disables Fastify logging | Structured logs, correlation identifiers, log queries; tracing added later |
 
-规划前 Operator 的指标端点关闭、历史查询仅覆盖 Bazel。首版现已增加受保护的 API/Operator 指标、后台快照采集、Gradle 0.2.0 原生指标、资源趋势、事件、Loki 与 Alertmanager 接入；原始基线如上表，实际支持矩阵和验证边界以 [observability.md](observability.md) 为准。
+Before this plan, the Operator metrics endpoint was disabled and history queries covered only Bazel. The first release has since added protected API/Operator metrics, background snapshot collection, native Gradle 0.2.0 metrics, resource trends, events, and Loki and Alertmanager integration. The table above records the original baseline; [observability.md](observability.md) is authoritative for the actual support matrix and validation boundaries.
 
-## 架构与组件选择
+## Architecture and Component Choices
 
-采用共享采集与存储，每个缓存实例只提供必要的指标和运行日志。优先接入企业已有设施；expbuild 提供指标契约、引擎适配、采集配置、规则及受授权的查询界面。
+Use shared collection and storage, with each cache instance exposing only the necessary metrics and runtime logs. Prefer existing enterprise infrastructure; expbuild provides metric contracts, engine adapters, collection configuration, rules, and an authorized query UI.
 
 ```text
-管理 API / Worker / Operator / 缓存引擎 / Kubernetes 指标
-                         ↓ 采集
-                 Prometheus 兼容后端 → 规则评估 → Alertmanager
+Management API / Worker / Operator / cache engines / Kubernetes metrics
+                         ↓ collection
+                 Prometheus-compatible backend → rule evaluation → Alertmanager
 
-容器标准输出 → 节点日志采集器 → 日志后端
-应用调用链   → OpenTelemetry Collector → 链路后端
+Container stdout → node log collector → log backend
+Application traces → OpenTelemetry Collector → tracing backend
 
-操作记录 / 审计 / 状态变更 / 告警历史 → 平台数据库
+Operation records / audits / status changes / alert history → platform database
 
-上述数据源 → 管理 API 的授权查询与适配 → expbuild 管理界面
+These data sources → management API authorization and query adapters → expbuild management UI
 ```
 
-| 能力 | 建议选型 | 部署方式 |
+| Capability | Suggested choice | Deployment approach |
 |---|---|---|
-| 指标 | Prometheus 兼容采集与查询 | 延续现有集成；有 Prometheus Operator 时使用 ServiceMonitor，否则提供标准采集配置 |
-| 告警 | Prometheus 规则与 Alertmanager | 接入现有系统；平台维护内置规则、实例归属与界面 |
-| 资源状态 | kube-state-metrics、kubelet 容器及卷指标 | 复用集群采集设施，避免重复采集 |
-| 日志 | OpenTelemetry Collector，首个查询适配考虑 Loki | 已有采集器时直接复用；新增节点采集使用 DaemonSet |
-| 调用链 | OpenTelemetry，首个查询适配考虑 Tempo | 可选共享 Collector；后续阶段启用 |
-| 业务事件与审计 | PostgreSQL | 延续操作和审计模型，新增有界保留的事件与告警历史 |
+| Metrics | Prometheus-compatible collection and queries | Continue the existing integration; use ServiceMonitor with Prometheus Operator, otherwise provide standard scrape configuration |
+| Alerts | Prometheus rules and Alertmanager | Integrate with existing systems; the platform maintains built-in rules, instance ownership, and UI |
+| Resource state | kube-state-metrics, kubelet container and volume metrics | Reuse cluster collection infrastructure to avoid duplicate collection |
+| Logs | OpenTelemetry Collector; consider Loki for the first query adapter | Reuse existing collectors directly; use a DaemonSet for new node collection |
+| Traces | OpenTelemetry; consider Tempo for the first query adapter | Optional shared Collector; enable in a later phase |
+| Business events and audits | PostgreSQL | Continue the operation and audit model; add events and alert history with bounded retention |
 
-Prometheus 规则负责判断告警，Alertmanager 负责分组、抑制、静默与通知，平台不另写一套规则执行器。[官方职责说明](https://prometheus.io/docs/alerting/latest/overview/)
+Prometheus rules evaluate alerts, while Alertmanager handles grouping, inhibition, silencing, and notifications; the platform does not build another rule execution engine. [Official responsibility overview](https://prometheus.io/docs/alerting/latest/overview/)
 
-节点日志采集可采用 OpenTelemetry Filelog Receiver；集群事件采集使用独立单活动采集器或明确分片，避免每个节点重复采集同一事件。[Kubernetes 采集组件](https://opentelemetry.io/docs/platforms/kubernetes/collector/components/)
+Node log collection can use the OpenTelemetry Filelog Receiver; cluster event collection uses a separate single-active collector or explicit sharding to prevent every node from collecting the same event. [Kubernetes collection components](https://opentelemetry.io/docs/platforms/kubernetes/collector/components/)
 
-Loki 支持接收 OTLP 日志，Tempo 可作为链路后端；首版只认证明确的适配组合，不把 OTLP 写入兼容理解为所有日志、链路后端都能统一查询。[Loki 接入](https://grafana.com/docs/loki/latest/send-data/otel/)、[Tempo 说明](https://grafana.com/docs/tempo/latest/introduction/)
+Loki supports OTLP log ingestion, and Tempo can serve as a tracing backend; the first release certifies only explicit adapter combinations. OTLP ingestion compatibility does not imply a unified query interface across all log and tracing backends. [Loki integration](https://grafana.com/docs/loki/latest/send-data/otel/), [Tempo overview](https://grafana.com/docs/tempo/latest/introduction/)
 
-主平台 Chart 继续负责接入配置，不自动安装完整监控栈。另提供可选的验证环境安装包和企业接入文档；Grafana 可供运维使用，项目用户的主要入口仍是 expbuild 自身界面。
+The main platform Chart continues to configure integrations without automatically installing a full monitoring stack. Provide an optional validation-environment installation package and enterprise integration documentation separately; operators may use Grafana, while expbuild's own UI remains the primary entry point for project users.
 
-## 指标范围与统计口径
+## Metric Coverage and Statistical Definitions
 
-### 平台运行
+### Platform Runtime
 
-| 对象 | 需要回答的问题 | 首批指标 |
+| Object | Question to answer | Initial metrics |
 |---|---|---|
-| 管理 API | 请求是否失败或变慢 | 按路由模板统计请求、服务错误、延迟、在途请求；运行时内存与事件循环延迟 |
-| 后台任务 | 操作是否积压或停滞 | 待执行数、最老任务等待时间、执行时长、重试和失败、最近成功处理时间 |
-| Operator | 期望配置是否持续生效 | 调谐错误与时长、队列深度、活动 leader、实例期望版本与观测版本差异 |
-| 实例生命周期 | 创建或更新卡在哪一步 | API 受理到协议就绪耗时，以及资源创建、卷绑定、Pod 启动、配置生效各阶段时间 |
-| 平台依赖 | 故障是否来自数据库或 Kubernetes | 连接池等待、连接失败、Kubernetes 请求错误与延迟；数据库详细指标接入部署方 exporter |
+| Management API | Are requests failing or slowing down? | Requests, server errors, latency, and in-flight requests by route template; runtime memory and event-loop delay |
+| Background tasks | Are operations backlogged or stalled? | Pending count, oldest task wait time, execution duration, retries and failures, most recent successful processing time |
+| Operator | Is the desired configuration consistently applied? | Reconciliation errors and duration, queue depth, active leader, differences between desired and observed instance versions |
+| Instance lifecycle | Where is creation or update stuck? | Time from API acceptance to protocol readiness, plus time in resource creation, volume binding, Pod startup, and configuration application |
+| Platform dependencies | Does the failure originate in the database or Kubernetes? | Connection-pool wait, connection failures, Kubernetes request errors and latency; detailed database metrics come from deployment-provided exporters |
 
-后台任务按类型区分实例操作、配额协调和资源盘点。统计一次业务操作的最终结果与单次重试尝试，避免把重试次数误作失败操作数。操作 ID 放入日志和事件，不作为指标标签。
+Distinguish background task types: instance operations, quota coordination, and resource inventory. Count the final outcome of a business operation separately from individual retry attempts to avoid mistaking retry counts for failed operation counts. Put operation IDs in logs and events, not metric labels.
 
-### 缓存实例
+### Cache Instances
 
-公共视图提供服务错误、请求量、读写流量、延迟、条目和容量、淘汰与资源；模板只声明经过验证的指标。统一单位和展示方式，不强行统一不同协议的业务语义。
+Shared views provide server errors, request volume, read/write traffic, latency, entries and capacity, eviction, and resources; templates declare only verified metrics. Standardize units and presentation without forcing different protocols into the same business semantics.
 
-| 统计 | 定义与边界 |
+| Statistic | Definition and boundaries |
 |---|---|
-| 条目命中 | 有效查询中的 hit / (hit + miss)，失败另计；零查询时无命中率 |
-| REAPI 查询 | AC 与 CAS、读取与存在性检查分别展示；FindMissing 的 digest 查询量与 RPC 次数分别统计 |
-| HTTP 和 WebDAV | 区分条目读取、HEAD 探测和目录操作；不能把所有 2xx 当作条目命中 |
-| 本地加速命中 | 数据是否由内存或本地副本满足；仅有分层引擎且能测量时展示 |
-| 构建收益 | 任务命中和节省构建时间需要客户端数据，首期不从服务请求推算 |
-| 容量 | 分开展示逻辑条目用量、引擎预算、本地磁盘使用、PVC 请求与实际卷容量；注明扫描值与原生值 |
-| 淘汰 | 按容量、到期、人工删除等原因统计条目与字节；回收耗时、失败和待回收量独立展示 |
-| 延迟 | 按协议操作及有限的对象大小区间统计；区分服务端处理和入口观测，不能宣称是客户端端到端延迟 |
+| Entry hit rate | hit / (hit + miss) across valid queries, with failures counted separately; no hit rate when there are zero queries |
+| REAPI queries | Show AC and CAS, reads and existence checks separately; count FindMissing digest queries separately from RPC calls |
+| HTTP and WebDAV | Distinguish entry reads, HEAD probes, and directory operations; not every 2xx is an entry hit |
+| Local acceleration hits | Whether memory or a local copy served the data; show only for tiered engines where it can be measured |
+| Build benefit | Task hits and build time saved require client data; do not infer them from service requests in the initial release |
+| Capacity | Show logical entry usage, engine budget, local disk usage, PVC request, and actual volume capacity separately; distinguish scanned values from native values |
+| Eviction | Count entries and bytes by reasons such as capacity, expiration, and manual deletion; show reclamation duration, failures, and pending reclamation separately |
+| Latency | Break down by protocol operation and bounded object-size ranges; distinguish server processing from ingress observations, without claiming client end-to-end latency |
 
-计数器先计算速率再聚合，处理进程重启的计数重置。跨实例命中率只聚合同口径的分子、分母，不能平均百分比。延迟采用可聚合直方图，不能平均各实例 P95；桶与协议操作组合在实现前核算时序数量。[Prometheus 直方图说明](https://prometheus.io/docs/practices/histograms/)
+Calculate counter rates before aggregation and handle resets on process restart. Cross-instance hit rates aggregate only numerators and denominators with matching definitions, never average percentages. Use aggregatable histograms for latency, not averages of per-instance P95 values; estimate the time-series count from bucket and protocol-operation combinations before implementation. [Prometheus histogram guidance](https://prometheus.io/docs/practices/histograms/)
 
-资源视图增加 CPU 用量与节流、内存用量与限制、OOM、Pod 重启、调度失败、PVC 绑定和可获取的卷空间指标。对象状态来自 kube-state-metrics，实际用量来自 kubelet 等来源；CSI 不提供的卷指标显示不支持，不以 PVC 申请值替代实际磁盘使用。[Kubernetes 对象状态指标](https://kubernetes.io/docs/concepts/cluster-administration/kube-state-metrics/)
+Resource views add CPU usage and throttling, memory usage and limits, OOM, Pod restarts, scheduling failures, PVC binding, and available volume-space metrics. Object state comes from kube-state-metrics, while actual usage comes from sources such as kubelet; mark volume metrics unsupported when the CSI does not provide them, rather than substituting requested PVC capacity for actual disk usage. [Kubernetes object-state metrics](https://kubernetes.io/docs/concepts/cluster-administration/kube-state-metrics/)
 
-### 身份与数据质量
+### Identity and Data Quality
 
-延续可信的 `expbuild_project_id`、`expbuild_instance_uid`，增加由部署方配置的稳定 `expbuild_cluster_id`。实例重建生成新 UID，历史不能混入同名新实例。Pod、PVC 和指标的关联基于可信归属及 UID，并保留必要的历史映射。
+Continue using trusted `expbuild_project_id` and `expbuild_instance_uid`, and add a stable `expbuild_cluster_id` configured by the deployment owner. Recreated instances receive new UIDs; their history must not mix with a new instance of the same name. Correlate Pods, PVCs, and metrics through trusted ownership and UIDs, retaining necessary historical mappings.
 
-模板版本声明指标来源、计数单位、支持范围、采样频率和语义版本。上游原生指标通过模板适配或版本化 recording rules 映射；自研引擎直接按契约埋点。只有 `/status` 的引擎可先由共享、受限并发的采集组件读取，不依赖用户打开页面，也不默认增加每实例 sidecar。
+Template versions declare metric sources, counting units, support scope, sampling frequency, and semantic versions. Map upstream native metrics through template adapters or versioned recording rules; instrument internally developed engines directly against the contract. Engines offering only `/status` can initially be read by a shared collection component with bounded concurrency, without relying on users opening a page or adding a sidecar to every instance by default.
 
-指标标签使用有界操作名、结果和归属。完整路径、缓存 key、用户邮箱、请求 ID、错误原文不进入指标标签；模板版本等说明可放独立信息指标。[指标基数建议](https://prometheus.io/docs/practices/instrumentation/)
+Metric labels use bounded operation names, outcomes, and ownership. Full paths, cache keys, user email addresses, request IDs, and raw error text must not become metric labels; descriptive details such as template versions may go in separate information metrics. [Metric cardinality guidance](https://prometheus.io/docs/practices/instrumentation/)
 
-查询结果包含来源、单位、采样时间、查询区间及数据状态。至少区分正常、无数据、过期、不支持、未配置和查询失败；图表断点保留为空，不能补零。项目汇总同时显示有数据的实例覆盖率，部分实例失联时不能显示为完整统计。
+Query results include source, unit, sample time, query interval, and data status. Distinguish at least healthy, no data, stale, unsupported, not configured, and query failure; preserve chart gaps as missing values rather than filling with zero. Project summaries also show the proportion of instances with data and must not present partial observations as complete statistics when some instances are unreachable.
 
-## 日志 事件与调用链
+## Logs, Events, and Traces
 
-先启用管理 API 的结构化日志，再统一 Go 与 TypeScript 字段：时间、级别、组件、稳定事件代码、请求 ID、操作 ID，以及可确定的项目、实例 UID、配置版本。错误包括分类与可操作原因，保留受限堆栈。默认不记录请求体、Authorization、Cookie、Secret、完整缓存路径或对象内容。
+Enable structured logging in the management API first, then standardize Go and TypeScript fields: time, level, component, stable event code, request ID, operation ID, and project, instance UID, and configuration version where determinable. Errors include classification and actionable reasons, with bounded stack traces. Do not log request bodies, Authorization, Cookie, Secret, full cache paths, or object contents by default.
 
-第三方引擎日志按模板适配，采集器根据 Pod 归属补齐身份并脱敏，不能信任日志正文自报的项目。普通成功访问日志可采样，错误日志受限流保护；指标不随日志采样。Loki 索引保留少量稳定维度，请求 ID、trace ID、Pod UID 等放结构化元数据，避免索引膨胀。
+Adapt third-party engine logs through templates; collectors enrich identity from Pod ownership and redact content rather than trusting project identity claimed in log bodies. Ordinary successful access logs may be sampled, while error logs are rate-limited; metrics are not affected by log sampling. Keep few stable dimensions in the Loki index, placing request IDs, trace IDs, Pod UIDs, and similar fields in structured metadata to avoid index growth.
 
-实例诊断时间线合并操作结果、CR 条件变化、相关 Pod/PVC/入口事件和告警变化，支持按操作 ID 和实例 UID 关联。Kubernetes 事件按事件 UID、资源 UID 及计数更新去重，记录采集断点；它是诊断证据，不替代审计。事件正文脱敏后再保存，事件数量与保留时间有上限。
+The instance diagnostic timeline merges operation results, CR condition changes, related Pod/PVC/ingress events, and alert changes, with correlation by operation ID and instance UID. Deduplicate Kubernetes events by event UID, resource UID, and count updates, and record collection gaps; events are diagnostic evidence, not a substitute for audit. Redact event bodies before storage and bound event counts and retention periods.
 
-审计继续记录谁在何时对什么执行了何种管理操作，独立保留，不随运行日志采样或监控故障丢弃。平台数据库保存业务记录和必要关联，不存放全量运行日志或高频指标。
+Auditing continues to record who performed which management action on what and when. Retain it independently, without dropping it due to runtime log sampling or monitoring failures. The platform database stores business records and necessary associations, not full runtime logs or high-frequency metrics.
 
-调用链放在后续阶段，先覆盖管理 API 到数据库、Kubernetes 和监控查询，再覆盖自研引擎的索引、存储和回源。后台任务通过操作 ID 及 span link 关联，Operator 的异步调谐不能假装是一次连续 HTTP 调用。第三方引擎未埋点时明确显示边界，不承诺完整构建链路。先采用有界采样，错误尾部采样需额外验证 Collector 缓冲和容量。
+Tracing is deferred to a later phase: first cover management API calls to the database, Kubernetes, and monitoring queries, then indexing, storage, and upstream fetches in internally developed engines. Correlate background tasks through operation IDs and span links; asynchronous Operator reconciliation must not be represented as one continuous HTTP call. Show explicit boundaries for uninstrumented third-party engines without promising complete build traces. Start with bounded sampling; error tail sampling requires additional validation of Collector buffering and capacity.
 
-## 告警与故障定位
+## Alerts and Troubleshooting
 
-告警必须有责任范围、持续时间、影响说明和排查入口。以下时间仅为初始规则建议，按模板启动时间与真实负载校准。
+Every alert must identify its responsibility scope, duration, impact, and troubleshooting entry point. The times below are initial rule suggestions only and must be calibrated against template startup times and real workloads.
 
-| 场景 | 初始判断 | 通知范围 |
+| Scenario | Initial condition | Notification scope |
 |---|---|---|
-| 平台 API 不可用 | 独立探测持续失败约 2 分钟 | 平台管理员 |
-| 操作停滞 | 超过该类操作期限且无阶段进展 | 平台管理员及受影响项目 |
-| 实例不可用 | 期望运行、越过启动宽限后持续协议探测失败 | 该项目 |
-| 容量无法回收 | 实际空间不足，且回收失败或写入持续被拒绝 | 该项目 |
-| 服务错误或高延迟 | 足够请求量下持续超过已配置阈值 | 该项目；共享原因聚合给平台管理员 |
-| 监控数据中断 | 应采集目标持续无新样本，或查询后端不可达 | 平台管理员；项目显示观测降级 |
-| 采集系统过载 | 队列积压、数据丢弃、规则评估失败、存储空间不足 | 平台管理员 |
+| Platform API unavailable | Independent probes fail continuously for about 2 minutes | Platform administrators |
+| Stalled operation | Exceeds the deadline for that operation type with no stage progress | Platform administrators and the affected project |
+| Instance unavailable | Desired state is running, startup grace period has elapsed, and protocol probes keep failing | That project |
+| Capacity cannot be reclaimed | Actual space is insufficient and reclamation fails or writes are continuously rejected | That project |
+| Server errors or high latency | Sustained breach of configured thresholds with sufficient request volume | That project; aggregate shared causes for platform administrators |
+| Monitoring data interrupted | An expected collection target has no new samples for a sustained period, or the query backend is unreachable | Platform administrators; projects show degraded observation |
+| Collection system overloaded | Queue backlog, data drops, rule evaluation failures, insufficient storage | Platform administrators |
 
-`up=0` 只能说明采集失败，不能独自判定缓存服务宕机。实例暂停、删除和维护窗口参与规则判断；低命中率默认是分析提示，容量接近预算也可能是正常缓存行为，不能直接当成严重故障。
+`up=0` means only that scraping failed; alone it cannot establish that a cache service is down. Rule evaluation accounts for instance suspension, deletion, and maintenance windows; a low hit rate is an analytical hint by default, and capacity near the budget may be normal cache behavior, so neither should directly become a critical incident.
 
-主动探测使用专用凭据和确定的协议操作，默认避免向用户缓存写入测试数据。探测是否影响命中统计、访问热度和限额必须逐模板验证；不能排除时明确标注。写入验证使用隔离测试实例或专用空间，不在后台无条件修改用户数据。
+Active probes use dedicated credentials and defined protocol operations, avoiding test-data writes into user caches by default. Verify per template whether probes affect hit statistics, access frequency, or quotas; explicitly label any effects that cannot be ruled out. Write validation uses isolated test instances or dedicated storage areas, without unconditionally modifying user data in the background.
 
-Alertmanager 按集群、项目、实例和原因分组与抑制；平台仅通过受限 API 提供预设阈值配置和有期限静默，修改需要项目管理权限并审计。确认告警、静默告警和故障恢复分开表示。通知先复用部署方渠道，后续支持管理员配置的邮件或 webhook。
+Alertmanager groups and inhibits alerts by cluster, project, instance, and cause; the platform exposes only preset threshold configuration and time-limited silences through restricted APIs, with changes requiring project management permissions and auditing. Represent acknowledgment, silencing, and recovery separately. Initially reuse deployment-provided notification channels; later support administrator-configured email or webhooks.
 
-活跃告警读取 Alertmanager；告警历史另由经过认证的接收端记录状态变化，按实例 UID 和告警指纹幂等处理，并定期核对活跃状态。接收中断时记录历史可能缺失，不能把 Alertmanager 当前列表当作完整历史。监控系统整体失效由部署方独立健康检查或心跳链路发现。
+Read active alerts from Alertmanager; record alert-history state changes separately through an authenticated receiver, processing idempotently by instance UID and alert fingerprint and periodically reconciling active state. If reception is interrupted, record that history may be incomplete; the current Alertmanager list is not a complete history. Deployment-provided independent health checks or heartbeat paths detect total monitoring-system failure.
 
-首期建立可用性、操作完成时间和数据新鲜度基线，再确定 SLO。缓存 miss 是正常业务结果，不计为服务不可用；不能只凭 HTTP/gRPC 状态码评估所有协议。尚未实测前不承诺可用性或延迟数值。
+Initially establish baselines for availability, operation completion time, and data freshness before setting SLOs. Cache misses are normal business outcomes and do not count as service unavailability; HTTP/gRPC status codes alone cannot evaluate every protocol. Do not promise availability or latency figures before measurement.
 
-## 管理界面与查询权限
+## Management UI and Query Permissions
 
-| 入口 | 主要信息 |
+| Entry point | Main information |
 |---|---|
-| 平台健康 | 仅平台管理员可见：API、后台任务、Operator、依赖与采集系统状态 |
-| 项目概览 | 异常实例、活跃告警、资源与容量、按协议分组的流量和命中趋势 |
-| 实例概览 | 服务状态、配置生效、采集状态、容量和最近告警 |
-| 实例指标 | 流量、错误、延迟、命中、容量、淘汰、资源；只展示支持的指标 |
-| 实例诊断 | 可按时间关联的事件、操作和受权限控制的日志；后续关联调用链 |
-| 告警中心 | 影响范围、开始时间、状态、排查建议与静默管理 |
+| Platform health | Platform administrators only: API, background tasks, Operator, dependencies, and collection-system health |
+| Project overview | Abnormal instances, active alerts, resources and capacity, traffic and hit trends grouped by protocol |
+| Instance overview | Service status, configuration application, collection status, capacity, and recent alerts |
+| Instance metrics | Traffic, errors, latency, hits, capacity, eviction, resources; show only supported metrics |
+| Instance diagnostics | Events, operations, and access-controlled logs correlated by time; traces linked later |
+| Alert center | Impact scope, start time, status, troubleshooting guidance, and silence management |
 
-从告警进入实例时保留故障时间窗口，再关联同一时间段的指标、日志和操作。沿用英文与中文国际化，状态使用稳定代码，界面负责翻译；时间以 UTC 传输、按用户时区展示，明确单位和数据更新时间。原始日志不自动翻译。
+Preserve the incident time window when navigating from an alert to an instance, then correlate metrics, logs, and operations from that period. Continue English and Chinese internationalization, with stable status codes translated by the UI; transmit times in UTC and display them in the user's timezone, with explicit units and data update times. Do not automatically translate raw logs.
 
-管理 API 扩展现有 `/statistics` 和 `/statistics/history`，保持已发布接口兼容；新增指标分组、日志、事件和告警的类型化接口。前端提交预设视图、受限时间和筛选条件，服务端构造查询，不向普通用户开放任意 PromQL、LogQL 或数据源地址。
+Extend the management API's existing `/statistics` and `/statistics/history` while preserving compatibility with published interfaces; add typed interfaces for metric groups, logs, events, and alerts. The frontend submits preset views, bounded time ranges, and filters, and the server constructs queries. Ordinary users do not receive arbitrary PromQL, LogQL, or data-source-address access.
 
-建议项目成员可查看汇总指标与脱敏状态事件；详细日志和诊断仅 maintainer/admin 可见，平台内部日志仅平台管理员可见。查询前核对权限和原实例绑定，删除后的历史沿用原 UID 与项目权限。缓存查询结果也必须包含授权范围，撤销成员权限后不能继续读取缓存结果。
+The suggested policy allows project members to view aggregate metrics and redacted status events; detailed logs and diagnostics are visible only to maintainers/admins, and internal platform logs only to platform administrators. Check permissions and the original instance binding before querying; history after deletion retains the original UID and project permissions. Cached query results must also include the authorization scope, and revoked members must not retain access to cached results.
 
-日志、告警、trace ID 查询都要重新授权；跨项目控制面 trace 仅平台管理员查看，项目页面提供限定范围的诊断摘要。身份标签由采集设施覆盖或从可信绑定生成，浏览器不能指定租户。共享 Prometheus 本身不作为项目授权边界。[Prometheus 安全模型](https://prometheus.io/docs/operating/security/)
+Log, alert, and trace ID queries all require fresh authorization; only platform administrators can view cross-project control-plane traces, while project pages provide diagnostics limited to their scope. Collection infrastructure overwrites identity labels or generates them from trusted bindings; the browser cannot specify the tenant. Shared Prometheus itself is not a project authorization boundary. [Prometheus security model](https://prometheus.io/docs/operating/security/)
 
-现有历史查询维持 `1h/6h/24h`，长周期在后端保留能力确认后扩展。日志初始建议每次最多 1,000 条或 1 MiB，并限制时间窗口、查询耗时和并发；达到限制返回截断标记和游标。所有上限均由服务端控制，聚合查询设置项目规模预算与短时缓存，避免概览对每个实例发起独立大查询。
+Existing history queries retain `1h/6h/24h`; expand to longer periods after confirming backend retention capabilities. Initial log-query limits are suggested at 1,000 entries or 1 MiB per request, with bounded time windows, query duration, and concurrency; return a truncation marker and cursor when limits are reached. The server controls every limit; aggregate queries have project-size budgets and short-lived caching to avoid separate large queries per instance on overview pages.
 
-## 保留 成本与故障隔离
+## Retention, Cost, and Failure Isolation
 
-初始部署建议为指标 15 天、运行日志 7 天、诊断事件与告警历史 30 天、调用链 3 天；审计单独按企业策略配置。它们是待验证的部署参数，不是已有保留承诺，数据仍位于企业指定的后端。
+Initial deployment suggestions are 15 days for metrics, 7 days for runtime logs, 30 days for diagnostic events and alert history, and 3 days for traces; configure audit retention separately under enterprise policy. These are deployment parameters awaiting validation, not existing retention commitments; data remains in enterprise-designated backends.
 
-指标沿用约 30 秒采集周期。按实例数、单实例时序数、直方图桶数和保留时长估算成本；日志按日写入量估算。限制单目标样本数、字段长度、日志速率和查询并发。长周期汇总可增加 recording rules，但只有实际配置降采样或删除策略才会减少原始数据成本。
+Metrics retain an approximately 30-second scrape interval. Estimate costs from instance count, time series per instance, histogram bucket count, and retention; estimate log costs from daily ingestion volume. Limit samples per target, field lengths, log rates, and query concurrency. Longer-term aggregation may add recording rules, but raw-data costs decrease only when downsampling or deletion policies are actually configured.
 
-运行日志与调用链采用异步有界队列，后端故障不阻塞缓存读写；超限丢弃必须可计数。关键采集节点可使用持久队列，但仍需监控磁盘和重试期限，不能宣称绝不丢数据。[Collector 故障恢复机制](https://opentelemetry.io/docs/collector/resiliency/)
+Runtime logs and traces use asynchronous bounded queues so backend failures do not block cache reads/writes; drops on overflow must be countable. Critical collection nodes may use persistent queues, but still need disk and retry-deadline monitoring; do not claim data can never be lost. [Collector resiliency mechanisms](https://opentelemetry.io/docs/collector/resiliency/)
 
-监控接入失败仅影响可观测状态，不改变缓存 Ready 或迫使实例重启。记录规则评估、采集成功时间、数据丢弃和查询故障；测试监控系统不可用时缓存数据面仍正常。告警、日志后端与平台组件分开设置资源预算。
+Monitoring integration failures affect only observability status, without changing cache Ready or forcing instance restarts. Record rule evaluations, collection success times, data drops, and query failures; test that the cache data plane remains functional when monitoring is unavailable. Assign separate resource budgets to alerting, log backends, and platform components.
 
-## 实施顺序与验收
+## Implementation Sequence and Acceptance
 
-| 阶段 | 交付范围 | 验收条件 |
+| Phase | Delivery scope | Acceptance criteria |
 |---|---|---|
-| 第一阶段 基础观测 | 管理 API 结构化日志、Operator/API/Worker 指标、统一身份与能力契约、资源和容量历史、Gradle 持续采集 | 权限隔离、计数重置、实例重建、无数据与零值、模板能力和采样新鲜度正确 |
-| 第二阶段 诊断与告警 | 平台与实例页面、事件时间线、日志查询、内置告警及历史、企业通知渠道接入 | 告警触发与恢复、静默归属、历史去重、日志脱敏、跨项目拒绝、故障时可定位 |
-| 第三阶段 深化 | 调用链、自研 WebDAV 指标、分层缓存分析、SLO 与大规模优化 | 异步操作关联正确、未知链路不伪造、真实负载下性能与监控成本达到确定的目标 |
+| Phase 1: Basic observation | Structured management API logs, Operator/API/Worker metrics, unified identity and capability contracts, resource and capacity history, continuous Gradle collection | Correct permission isolation, counter resets, instance recreation, missing-data versus zero handling, template capabilities, and sample freshness |
+| Phase 2: Diagnostics and alerts | Platform and instance pages, event timelines, log queries, built-in alerts and history, enterprise notification-channel integration | Correct alert firing and recovery, silence ownership, history deduplication, log redaction, cross-project denial, and fault localization |
+| Phase 3: Deeper capabilities | Traces, internally developed WebDAV metrics, tiered-cache analysis, SLOs, and large-scale optimization | Correct asynchronous operation correlation, no fabricated unknown trace segments, and performance and monitoring costs meeting defined targets under real workloads |
 
-验证沿用单元测试、真实 Prometheus/日志后端合约和隔离 Kubernetes 联调。重点覆盖凭据轮换、Pod 重建、数据源中断、队列满、成员撤权、重复采集、暂停/删除后的告警行为；规则使用可重放样本测试，浏览器验证英文/中文、时区、断点与告警跳转。
+Validation continues through unit tests, contracts against real Prometheus/log backends, and isolated Kubernetes integration testing. Focus on credential rotation, Pod recreation, data-source interruptions, full queues, member revocation, duplicate collection, and alert behavior after suspension/deletion; test rules using replayable samples and verify English/Chinese, timezones, gaps, and alert navigation in the browser.
 
-工程落点为：`apps/admin-api` 增加埋点和受限查询适配，`operator` 开放自身指标并扩展模板采集契约，自研缓存进程补充指标，`apps/admin-web` 增加观测与诊断页面，`deploy/charts` 增加可选接入参数及规则交付。具体库版本、指标名称和阈值在各阶段实现前固定并验收。
+Implementation locations: add instrumentation and restricted query adapters in `apps/admin-api`; expose Operator metrics and extend template collection contracts in `operator`; add metrics to internally developed cache processes; add observability and diagnostic pages in `apps/admin-web`; and add optional integration parameters and rule delivery in `deploy/charts`. Pin and validate specific library versions, metric names, and thresholds before implementing each phase.
