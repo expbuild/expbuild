@@ -2,6 +2,7 @@
 import hashlib
 import http.client
 import json
+from datetime import datetime, timezone
 import pathlib
 import socket
 import ssl
@@ -23,6 +24,32 @@ class GatewayFixture:
         self.process = None
         self.port = None
         self.transport_logs = []
+
+    def forwarder_state(self):
+        try:
+            if self.process is None:
+                return {'pid': None, 'returncode': None}
+            pid, code = self.process.pid, self.process.poll()
+            return {'pid': pid if type(pid) is int else None,
+                    'returncode': code if type(code) is int else None}
+        except Exception:
+            return {'pid': None, 'returncode': None, 'state': 'unavailable'}
+
+    def diagnose_request_failure(self, event, error, started):
+        # Allowlisted transport metadata only: no host, URL, headers, payload,
+        # certificate, or exception text. A diagnostic must not mask the error.
+        try:
+            fields = ('started_at', 'attempt', 'method', 'stage', 'tls_version',
+                      'alpn', 'local_port', 'forwarder_before')
+            print('Gateway client transport failure:', json.dumps({
+                **{key: event[key] for key in fields if key in event},
+                'failed_at': datetime.now(timezone.utc).isoformat(),
+                'elapsed_ms': round((time.monotonic() - started) * 1000),
+                'error_type': type(error).__name__,
+                'forwarder_after': self.forwarder_state(),
+            }), flush=True)
+        except Exception:
+            pass
 
     @property
     def values(self):
@@ -65,19 +92,39 @@ class GatewayFixture:
         context = ssl.create_default_context(cafile=str(self.root / 'ca.crt')) if trusted else ssl.create_default_context()
         class LocalTLSConnection(http.client.HTTPConnection):
             def connect(connection):
-                connection.sock = context.wrap_socket(socket.create_connection(('127.0.0.1', self.port), timeout=30), server_hostname=host)
+                event['stage'] = 'tcp_connect'
+                raw = socket.create_connection(('127.0.0.1', self.port), timeout=30)
+                event['stage'] = 'tls_handshake'
+                connection.sock = context.wrap_socket(raw, server_hostname=host)
+                try:
+                    event['tls_version'] = connection.sock.version()
+                    event['alpn'] = connection.sock.selected_alpn_protocol()
+                except Exception:
+                    pass
+                event['stage'] = 'send_request'
         # Read-only probes may encounter a transport disconnect during rollout.
         # Never retry writes, TLS verification failures, or an HTTP response:
         # callers must still assert the exact authorization/status outcome.
         attempts = 3 if method == 'GET' and trusted else 1
         for attempt in range(attempts):
+            started = time.monotonic()
+            event = {'started_at': datetime.now(timezone.utc).isoformat(),
+                     'attempt': attempt + 1,
+                     'method': method if method in ('GET', 'PUT', 'POST', 'DELETE', 'MKCOL', 'PROPFIND', 'LOCK') else 'OTHER',
+                     'stage': 'send_request', 'tls_version': None, 'alpn': None,
+                     'local_port': self.port,
+                     'forwarder_before': self.forwarder_state()}
             connection = LocalTLSConnection(host, timeout=30)
             try:
                 connection.request(method, path, body=body, headers=headers or {})
+                event['stage'] = 'read_status'
                 response = connection.getresponse()
+                event['stage'] = 'read_body'
                 return response.status, response.read(), dict(response.getheaders())
-            except (http.client.RemoteDisconnected, ConnectionResetError, ConnectionRefusedError):
-                if attempt + 1 == attempts:
+            except Exception as error:
+                self.diagnose_request_failure(event, error, started)
+                retryable = isinstance(error, (http.client.RemoteDisconnected, ConnectionResetError, ConnectionRefusedError))
+                if not retryable or attempt + 1 == attempts:
                     raise
                 print('TLS GET transport disconnected; retrying read-only probe', flush=True)
                 time.sleep(1)
