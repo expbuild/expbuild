@@ -1,6 +1,6 @@
-# 平台容器
+# Platform containers
 
-在仓库根目录构建：
+Build from the repository root:
 
 ```sh
 docker build -f images/admin-api/Dockerfile -t registry.example.com/expbuild/admin-api:0.1.0 .
@@ -10,23 +10,23 @@ docker build -f images/webdav/Dockerfile -t registry.example.com/expbuild/webdav
 docker build -f images/gradle-cache/Dockerfile -t registry.example.com/expbuild/gradle-cache:0.1.0 .
 ```
 
-平台镜像使用多阶段构建。API 镜像包含编译代码、生产依赖及 SQL migrations，
-也用于迁移/初始化 Job；Web 使用非 root Nginx 提供静态文件；Operator 使用静态 Go
-二进制和非 root distroless。Chart 为可写临时文件挂载有限额的 `/tmp`。
+Platform images use multi-stage builds. The API image contains compiled code, production dependencies, and SQL migrations,
+and is also used for migration and bootstrap Jobs. The Web image serves static files with non-root Nginx; the Operator uses a static Go
+binary and a non-root distroless image. The chart mounts a size-limited `/tmp` for writable temporary files.
 
-镜像构建流水线不自动发布。发布到企业容器仓库后，用仓库返回的 digest 更新部署
-values；生产环境建议对三个平台镜像也使用 digest。当前基础镜像使用版本 tag，
-企业可在验证供应链后固定其 digest。缓存引擎镜像独立管理，必须使用 digest。
+The image build pipeline does not publish automatically. After publishing to your enterprise container registry, update deployment
+values with the digests returned by the registry. Digest references are also recommended for all three platform images in production.
+Base images currently use version tags; enterprises can pin their digests after verifying the supply chain. Cache-engine images are managed separately and must use digests.
 
-本地环境没有 Docker/Podman。提交 d90d0a7 的四个镜像已在
-[GitHub Actions](https://github.com/expbuild/expbuild/actions/runs/36662004310) 实际构建通过，未发布。
-WebDAV 基于固定摘要的 Apache 2.4.68 trixie，运行时由 Operator 挂载配置、认证文件和数据卷。
-Gradle HTTP 引擎镜像通过可选 `images.gradle` 固定摘要接入 Operator；实际集群认证进度见[引擎记录](../docs/k8s-platform/gradle-http.md)。
-提交 69a520f 的[容器运行检查](https://github.com/expbuild/expbuild/actions/runs/36662736536)
-也已通过。API 覆盖临时 PostgreSQL 迁移、初始化与登录，Web 覆盖 HTTP 页面与健康检查，
-WebDAV 覆盖临时数据目录中的认证读写，Operator 仅覆盖可执行入口。
-完整集群、PVC 权限、持久化及网络访问仍待验收。
+The local environment has no Docker/Podman. The four images at commit d90d0a7 were successfully built in
+[GitHub Actions](https://github.com/expbuild/expbuild/actions/runs/36662004310) but were not published.
+WebDAV is based on digest-pinned Apache 2.4.68 trixie; the Operator mounts its configuration, authentication file, and data volume at runtime.
+The Gradle HTTP engine image is connected to the Operator through the optional digest-pinned `images.gradle` setting; see the [engine record](../docs/k8s-platform/gradle-http.md) for actual cluster qualification progress.
+The [container runtime checks](https://github.com/expbuild/expbuild/actions/runs/36662736536) at commit 69a520f
+also passed. API checks cover migrations, bootstrap, and login against temporary PostgreSQL; Web checks cover HTTP pages and health endpoints;
+WebDAV checks cover authenticated reads and writes in a temporary data directory; Operator checks cover only the executable entry point.
+Full-cluster behavior, PVC permissions, persistence, and network access still require acceptance testing.
 
-构建本地测试标签后，可在仓库根目录执行 `python3 tools/container_smoke.py <component>`，
-组件名为 admin-api、admin-web、operator、webdav 或 gradle-cache。脚本需要 Docker；API 检查会拉取
-postgres:18 并创建临时数据库容器和网络，退出时自动清理。
+After building local test tags, run `python3 tools/container_smoke.py <component>` from the repository root,
+where the component is admin-api, admin-web, operator, webdav, or gradle-cache. The script requires Docker; API checks pull
+postgres:18 and create a temporary database container and network, which are automatically cleaned up on exit.

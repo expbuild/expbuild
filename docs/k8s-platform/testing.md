@@ -1,31 +1,31 @@
-# 测试层次与复现
+# Test layers and reproduction
 
-各层验证范围不同，最新实际结果见 [实施状态](progress.md)。测试通过不代表全部产品能力已完成。
+Each layer has a different validation scope. See [implementation status](progress.md) for the latest actual results. Passing tests does not mean every product capability is complete.
 
-| 层次 | 验证范围 | 不覆盖 |
+| Layer | Validation scope | Not covered |
 | --- | --- | --- |
-| Go 单元测试、fake client | 配置渲染、归属检查、调谐状态机、失败分支 | 真实 API、调度和容器运行 |
-| envtest | 独立 API Server/etcd、CRD、RBAC、generation/status、资源调谐 | kubelet、PVC 供应和网络 |
-| API/PostgreSQL | 真实数据库事务、授权、幂等、worker 恢复；模拟 Kubernetes | 实际集群权限和工作负载 |
-| React 组件测试 | 权限界面、表单、确认、错误、一次性凭据 | 真实浏览器完整交互 |
-| 原生引擎与容器检查 | 实际协议、认证、镜像入口、非 root/只读根文件系统 | 完整 Kubernetes 生命周期 |
-| 隔离 kind Operator 测试 | StatefulSet/PVC、重建、暂停恢复、凭据、选主、Retain/Delete | 管理 API、Helm、生产 CSI |
-| 隔离 kind Helm/API 测试 | Chart 安装/迁移/bootstrap/升级/卸载，公开 API 到真实实例的链路 | TLS 入口、网络隔离、REAPI 客户端、浏览器 |
+| Go unit tests, fake client | Configuration rendering, ownership checks, reconciliation state machine, failure branches | Real API, scheduling, container execution |
+| envtest | Isolated API server/etcd, CRDs, RBAC, generation/status, resource reconciliation | kubelet, PVC provisioning, networking |
+| API/PostgreSQL | Real database transactions, authorization, idempotency, worker recovery; mocked Kubernetes | Actual cluster permissions and workloads |
+| React component tests | Permission-aware UI, forms, confirmations, errors, one-time credentials | Complete real-browser interaction |
+| Native engine and container checks | Actual protocols, authentication, image entry points, non-root/read-only root filesystem | Complete Kubernetes lifecycle |
+| Isolated kind Operator tests | StatefulSet/PVC, recreation, pause/resume, credentials, leader election, Retain/Delete | Management API, Helm, production CSI |
+| Isolated kind Helm/API tests | Chart installation/migration/bootstrap/upgrade/uninstallation; public API through to real instances | TLS ingress, network isolation, REAPI clients, browsers |
 
-## 隔离集群测试
+## Isolated-cluster tests
 
-对应工作流 `.github/workflows/cluster.yml`，每项测试创建唯一命名的 kind 集群，并始终显式使用临时 kubeconfig/context。正常完成或异常退出时仅删除该测试集群。不会读取默认 kubeconfig，也不会发布镜像。
+The corresponding workflow is `.github/workflows/cluster.yml`. Each test creates a uniquely named kind cluster and always explicitly uses a temporary kubeconfig/context. On normal completion or failure, only that test cluster is deleted. The default kubeconfig is never read, and images are not published.
 
-本机复现需要 Docker、Python 3、kind v0.27.0、kubectl v1.32.2；Helm 测试还需要 Helm v3.17.3。脚本固定 kind 节点镜像摘要，WebDAV 使用固定摘要的 Apache 镜像及 Operator 渲染的实际配置。
+Local reproduction requires Docker, Python 3, kind v0.27.0, and kubectl v1.32.2; Helm tests also require Helm v3.17.3. Scripts pin the kind node image digest; WebDAV uses a digest-pinned Apache image and actual Operator-rendered configuration.
 
-从仓库根目录执行：
+Run from the repository root:
 
 ```sh
 docker build -f images/operator/Dockerfile -t expbuild/operator:test .
 python3 tools/cluster_lifecycle.py
 ```
 
-完整控制面测试还需要本地构建另外两个镜像：
+Full control-plane tests also require local builds of the other two images:
 
 ```sh
 docker build -f images/admin-api/Dockerfile -t expbuild/admin-api:test .
@@ -33,41 +33,41 @@ docker build -f images/admin-web/Dockerfile -t expbuild/admin-web:test .
 python3 tools/helm_lifecycle.py
 ```
 
-Helm 测试在临时集群中启动独立 PostgreSQL，不使用外部数据库。使用真实 Chart 的迁移和管理员初始化 Job，通过登录/会话/CSRF 调用项目与实例 API，等待异步操作完成，再验证数据读写、暂停恢复和密码轮换。升级后检查数据仍可读，随后通过 API 删除实例并检查 PVC、凭据清理。另创建 Retain 实例，在删除实例后查询保留 PVC，再通过独立的清理接口确认删除，最后卸载 Helm release。
+Helm tests start separate PostgreSQL inside the temporary cluster and do not use an external database. They use the real chart's migration and administrator bootstrap Jobs, call project and instance APIs through login/session/CSRF, wait for asynchronous operations to complete, then verify reads/writes, pause/resume, and password rotation. After upgrade, they check that data remains readable, delete instances through the API, and check PVC and credential cleanup. A separate Retain instance is also created; after instance deletion, the retained PVC is queried and deletion confirmed through the dedicated cleanup endpoint, before the Helm release is finally uninstalled.
 
-测试凭据仅用于一次性集群。请求失败时仅输出操作路径、状态或错误码，不输出创建和轮换响应中的明文密码。诊断输出包含工作负载状态、事件和服务日志，不打印 Secret 数据。
+Test credentials are used only in disposable clusters. On request failure, output includes only the operation path, status, or error code, never plaintext passwords from creation or rotation responses. Diagnostics include workload status, events, and service logs, but do not print Secret data.
 
-默认内部模式通过端口转发访问服务，不证明 Ingress、DNS 或 TLS 可用；下文 Gateway 模式另行验证实际 TLS 代理。kind 默认网络不提供本项目网络策略的隔离验收；该门槛需要单独在启用策略执行的 CNI 上验证。测试数据库是临时存储，也不证明数据库备份、恢复或高可用。测试卸载前先删除缓存实例，不能据此假定 Helm 卸载会自动清理所有项目工作负载。
+Default internal mode accesses services through port forwarding and does not prove Ingress, DNS, or TLS availability; Gateway mode below separately validates a real TLS proxy. kind's default network does not provide isolation acceptance for this project's network policies; that gate must be validated separately with a policy-enforcing CNI. The test database uses temporary storage and does not demonstrate database backup, recovery, or high availability. Tests delete cache instances before uninstalling; this must not be taken to mean that Helm uninstallation automatically cleans up all project workloads.
 
-## 真实 Gateway 数据面测试
+## Real Gateway data-plane tests
 
-Gateway 模式还需要 Go 与 OpenSSL。`python3 tools/helm_lifecycle.py --gateway` 在相同的隔离集群中安装 Envoy Gateway v1.8.5，校验 Chart 压缩包 SHA256，控制器和 Envoy v1.38.4 代理均固定镜像摘要。脚本生成短期测试 CA 和通配叶证书；通过 Gateway Service 的本地端口转发访问真实 TLS 监听器，客户端仍验证实际 hostname/SNI 与证书信任，不使用跳过证书验证选项。
+Gateway mode additionally requires Go and OpenSSL. `python3 tools/helm_lifecycle.py --gateway` installs Envoy Gateway v1.8.5 in the same isolated cluster, verifies the chart archive SHA256, and pins image digests for both the controller and Envoy v1.38.4 proxy. The script generates a short-lived test CA and wildcard leaf certificate. It accesses a real TLS listener through local port forwarding to the Gateway Service; clients still validate the actual hostname/SNI and certificate trust, without options that skip certificate verification.
 
-WebDAV 检查包括匿名拒绝、错误 hostname/不受信任 CA 拒绝、16 MiB PUT/GET、PROPFIND、LOCK 和受锁约束的 DELETE、暂停恢复、凭据轮换以及实例删除后的入口撤销。故意拒绝 TLS 的测试独立使用端口转发会话，避免 kubectl 在连接重置后退出影响后续测试。
+WebDAV checks cover anonymous rejection, rejection of incorrect hostnames/untrusted CAs, 16 MiB PUT/GET, PROPFIND, LOCK and lock-constrained DELETE, pause/resume, credential rotation, and ingress revocation after instance deletion. Deliberately rejected TLS tests use separate port-forwarding sessions so kubectl exiting after a connection reset does not affect subsequent tests.
 
-同一任务再创建固定镜像摘要的 bazel-remote v2.6.2 实例。Go 合约客户端通过受信任 TLS 和 gRPC authority 验证 capabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载、匿名和旧密码拒绝，并在凭据滚动更新后读取原数据。它使用标准 protobuf 字段构造 wire message，不代表完整 Bazel 构建客户端、ActionCache 或压缩协议已经认证。凭据通过权限 0600 的临时文件交接，调用后删除，不出现在命令行参数或日志中。
+The same job then creates a digest-pinned bazel-remote v2.6.2 instance. A Go contract client uses trusted TLS and gRPC authority to verify capabilities, FindMissingBlobs, chunked 8 MiB ByteStream upload/download, rejection of anonymous access and old passwords, and reads of original data after rolling credential updates. It constructs wire messages from standard protobuf fields; this does not qualify a complete Bazel build client, ActionCache, or compression protocol. Credentials are handed over in temporary files with mode 0600, removed after use, and never appear in command-line arguments or logs.
 
-该测试没有公网 DNS、外部负载均衡器或执行 NetworkPolicy 的 CNI，因而不证明这些设施可用。实际通过状态与失败记录见 [实施状态](progress.md)。
+This test has no public DNS, external load balancer, or NetworkPolicy-enforcing CNI, so it does not demonstrate those facilities. See [implementation status](progress.md) for actual passes and failure records.
 
-## 执行 NetworkPolicy 的隔离集群
+## Isolated cluster with NetworkPolicy enforcement
 
-`python3 tools/helm_lifecycle.py --gateway --isolation` 创建禁用默认 CNI 的独立 kind 集群，安装固定 Chart SHA256 的 Cilium 1.19.7，并核对渲染出的组件镜像均为摘要引用。版本依据[官方 v1.19.7 兼容矩阵](https://github.com/cilium/cilium/blob/v1.19.7/Documentation/network/kubernetes/compatibility.rst)，包含当前测试使用的 Kubernetes 1.32。测试保留 kube-proxy，使用 Kubernetes IPAM，不开启 Cilium 的 Gateway 或额外 L7 代理。
+`python3 tools/helm_lifecycle.py --gateway --isolation` creates a separate kind cluster with the default CNI disabled, installs Cilium 1.19.7 with a pinned chart SHA256, and verifies that all rendered component images use digest references. The version follows the [official v1.19.7 compatibility matrix](https://github.com/cilium/cilium/blob/v1.19.7/Documentation/network/kubernetes/compatibility.rst), which includes Kubernetes 1.32 used by the current tests. Tests retain kube-proxy, use Kubernetes IPAM, and do not enable Cilium Gateway or extra L7 proxies.
 
-CI 增加 isolation 模式，包含原有 Gateway/TLS、Prometheus 自动采集与轮换链路，以及直接从测试 Pod 发起的新 TCP 连接。它不通过端口转发判断 NetworkPolicy。覆盖 Service IP 与 Pod IP 两种目标：
+CI adds isolation mode, including the existing Gateway/TLS, automatic Prometheus collection, and rotation paths, plus new TCP connections directly from test Pods. It does not use port forwarding to judge NetworkPolicy. Both Service IP and Pod IP targets are covered:
 
-- namespace 授权与 client=true 同时存在才能访问缓存 8080/9092。
-- 只有 namespace 授权、只有 Pod 标签、其他项目授权或同项目无授权的 Pod 均不能连接。
-- 伪造 Gateway/监控 Pod 标签不能绕过 namespace 限制。
-- 指定 Gateway namespace 内对应标签的 Pod 可访问两个端口；监控 namespace 内对应标签只能访问 8080。
-- 删除 namespace 授权或 Pod 客户端标签后，新连接被阻断；恢复标签后可重新连接。
+- Cache ports 8080/9092 are reachable only when namespace authorization and client=true are both present.
+- Pods with only namespace authorization, only the Pod label, authorization for another project, or no authorization within the same project cannot connect.
+- Forged Gateway/monitoring Pod labels cannot bypass namespace restrictions.
+- Appropriately labeled Pods in the designated Gateway namespace can access both ports; appropriately labeled Pods in the monitoring namespace can access only 8080.
+- Removing namespace authorization or the client Pod label blocks new connections; restoring labels restores connectivity.
 
-负向断言要求 TCP 超时，DNS 错误、连接拒绝或进程错误不算策略拦截。正向检查在撤销前后验证服务仍可达。既有连接的处理、多节点跨节点流量、IPv6、其他 CNI 和生产网络环境不在本项覆盖范围。当前新任务已编码，真实通过状态以实施记录和 CI 为准。
+Negative assertions require TCP timeouts; DNS errors, connection refusal, or process errors do not count as policy enforcement. Positive checks verify service reachability before and after revocation. Existing connections, multi-node cross-node traffic, IPv6, other CNIs, and production networking are outside this scope. The new job is implemented; actual passing status is determined by implementation records and CI.
 
-## 真实浏览器管理流程
+## Real-browser management workflows
 
-`npm run test:browser` 使用固定 Playwright/Chromium、已构建的 admin-web、实际 Fastify API 和 PostgreSQL。启动器创建随机命名的专用数据库并执行全部 migrations，退出时仅删除自己创建的数据库；不复用运行中的服务，不读取业务 kubeconfig，也不安装 Kubernetes client/worker。项目创建后保持 pending，不能把这套测试记为缓存实例部署成功。
+`npm run test:browser` uses pinned Playwright/Chromium, a built admin-web, the actual Fastify API, and PostgreSQL. The launcher creates a dedicated randomly named database and applies all migrations, deleting only its own database on exit. It does not reuse running services, read a business kubeconfig, or install a Kubernetes client/worker. Projects remain pending after creation, so these tests must not be recorded as successful cache-instance deployments.
 
-在专用测试 PostgreSQL 上设置 `TEST_DATABASE_URL`（账号需具备创建测试数据库权限），在仓库根目录执行：
+Set `TEST_DATABASE_URL` to dedicated test PostgreSQL (the account needs permission to create test databases), then run from the repository root:
 
 ```sh
 npm ci
@@ -76,6 +76,6 @@ npx playwright install --with-deps chromium --only-shell
 npm run test:browser
 ```
 
-本地运行需空闲的 127.0.0.1:4173。浏览器和数据库连接使用实际网络请求，不拦截或伪造 API 响应；测试仅创建公开的测试账号与临时数据。测试覆盖登录退出、HttpOnly 会话、项目创建、配额保存及刷新后的持久化、缺失 CSRF 拒绝、跨项目权限拒绝，以及新标签页继承会话后的旧版本配额写入冲突。截图和 trace 只在失败时保留在本地 `test-results/browser`，未配置自动上传。
+Local execution requires a free 127.0.0.1:4173. Browser and database connections use real network requests; API responses are neither intercepted nor fabricated. Tests create only public test accounts and temporary data. Coverage includes login/logout, HttpOnly sessions, project creation, quota saving and persistence after refresh, rejection of missing CSRF, cross-project access denial, and stale-version quota-write conflicts after a new tab inherits a session. Screenshots and traces are retained only on failure in local `test-results/browser`; automatic upload is not configured.
 
-管理 API CI 已增加浏览器安装与执行步骤。当前未覆盖浏览器创建真实缓存实例、文件读写、真实域名和生产入口；这些需要继续与隔离 Kubernetes 链路结合。浏览器运行失败不能用组件测试结果替代。
+Management API CI now includes browser installation and execution steps. Current coverage does not include creating real cache instances from the browser, file reads/writes, real domains, or production ingress; these still need integration with the isolated Kubernetes path. Component-test results cannot substitute for a failed browser run.

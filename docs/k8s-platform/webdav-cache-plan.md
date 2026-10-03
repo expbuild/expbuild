@@ -1,59 +1,59 @@
-# expbuild 自研 WebDAV 缓存服务方案
+# Proposal for an expbuild WebDAV cache service
 
-日期：2026-10-01。状态：待实现的简要方案。
+Date: 2026-10-01. Status: brief proposal, not yet implemented.
 
-目标是提供一个适合构建缓存的小型 WebDAV 服务，原生支持命中统计、容量淘汰和可扩展存储。复用成熟协议库，自研缓存内核，并作为独立引擎接入现有 Kubernetes 管理平台。
+The goal is a small WebDAV service suited to build caching, with native hit statistics, capacity-based eviction, and extensible storage. It reuses a mature protocol library, implements a custom cache core, and integrates as an independent engine with the existing Kubernetes management platform.
 
-## 首期范围
+## Initial scope
 
-首期采用 Go，每个实例一个活动服务进程、独立 PVC 和凭据，使用本地文件存储。实现条目命中统计、容量预算、按最近访问时间淘汰和可选到期删除。后续增加 S3 兼容存储，再增加本地加速层。
+The initial implementation uses Go, with one active service process, separate PVC, and credentials per instance, backed by local files. It implements entry-hit statistics, capacity budgets, eviction by last access time, and optional expiration-based deletion. S3-compatible storage follows, then a local acceleration layer.
 
-WebDAV 方法按真实客户端验收，至少覆盖当前模板已验证的目录、读写和锁行为，并明确 HEAD、OPTIONS、UNLOCK 等配套方法。COPY、MOVE、PROPPATCH 等扩展单独验证和声明；不因支持部分方法就宣称兼容所有 WebDAV 客户端。该服务保存允许自动删除的缓存数据，不承诺普通文件存储的永久保留语义。
+WebDAV methods are accepted against real clients, covering at least the directory, read/write, and locking behavior already verified for the current template, with explicit support for related methods such as HEAD, OPTIONS, and UNLOCK. Extensions such as COPY, MOVE, and PROPPATCH are validated and declared separately; partial method support does not justify compatibility claims for all WebDAV clients. This service stores cache data that may be deleted automatically; it does not promise permanent-retention semantics for ordinary file storage.
 
-当前 Apache 模板继续保持现状；自研服务通过新模板交付，验证通过后再考虑迁移。首期不引入多副本同时写入或跨实例共享条目索引。
+The existing Apache template remains unchanged. The custom service ships as a new template, with migration considered only after validation. The initial release does not introduce concurrent writes from multiple replicas or a shared entry index across instances.
 
-## 核心模块
+## Core modules
 
-| 模块 | 职责与建议实现 |
+| Module | Responsibilities and suggested implementation |
 |---|---|
-| 协议适配 | 使用 Go WebDAV Handler，将文件、目录和锁操作接入缓存内核 |
-| 缓存内核 | 管理条目版本、并发读写、容量、到期和淘汰 |
-| 元数据 | 记录路径、版本、存储位置、大小、访问时间、到期时间及状态；持久保存必要的目录、属性和锁信息 |
-| 存储适配 | 统一流式读写、删除接口；先实现本地文件，再适配 S3 |
-| 运行管理 | 提供健康检查、当前生效策略、状态和 Prometheus 指标 |
+| Protocol adapter | Use Go's WebDAV Handler to connect file, directory, and lock operations to the cache core |
+| Cache core | Manage entry versions, concurrent reads/writes, capacity, expiration, and eviction |
+| Metadata | Record paths, versions, storage locations, sizes, access times, expiration times, and states; persist required directory, property, and lock information |
+| Storage adapter | Unified streaming read/write and deletion interfaces; local files first, then S3 |
+| Runtime management | Provide health checks, effective policies, status, and Prometheus metrics |
 
-协议层可复用 [golang.org/x/net/webdav](https://pkg.go.dev/golang.org/x/net/webdav) 的 Handler、FileSystem 和 LockSystem 接口；认证、请求限制和客户端兼容性由服务验证。
+The protocol layer can reuse the Handler, FileSystem, and LockSystem interfaces in [golang.org/x/net/webdav](https://pkg.go.dev/golang.org/x/net/webdav); the service validates authentication, request limits, and client compatibility.
 
-元数据先作为进程内模块，建议使用 SQLite 加内存热点索引。SQLite WAL 需要适合其文件语义的卷，不能将其当作跨节点共享数据库使用，见 [WAL 文档](https://www.sqlite.org/wal.html)。数据库选型及索引规模通过原型测试确认。
+Metadata initially runs as an in-process module, preferably SQLite plus an in-memory hot index. SQLite WAL requires a volume with suitable filesystem semantics and must not be treated as a shared cross-node database; see the [WAL documentation](https://www.sqlite.org/wal.html). Prototype tests determine the database choice and index scale.
 
-现有 [Gradle 缓存引擎](../../operator/internal/gradlecache/server.go) 可提供上传发布、预算和计数的参考；提取公共模块时保留各协议的 key、覆盖写入及锁语义，不直接沿用 Gradle 的首次写入获胜规则。
+The existing [Gradle cache engine](../../operator/internal/gradlecache/server.go) provides references for upload publication, budgets, and counters. When extracting shared modules, preserve each protocol's key, overwrite, and locking semantics rather than directly adopting Gradle's first-write-wins rule.
 
-## 读写与淘汰规则
+## Read/write and eviction rules
 
-- **上传发布**：先预留空间并写入临时数据，完成持久化后提交可见的条目版本；中断上传不暴露半成品。数据与元数据分别提交，需要恢复记录和孤立数据回收机制。
-- **读取统计**：区分条目不存在、读取失败和成功读取；访问时间在内存更新并批量持久化，首期接受近似 LRU，不承诺严格全局访问顺序。
-- **安全淘汰**：选择未被锁定且可回收的条目，阻止新的读取引用后等待已有读取完成，再删除对应版本的数据；失败保留待清理状态并重试，不能误删覆盖写入后的新版本。
-- **容量控制**：条目预算与磁盘实际占用分别核算，计入上传预留、临时文件和待回收数据。只有物理回收完成才释放对应空间额度；无法腾出空间时限制或拒绝写入。
-- **故障恢复**：重启核对未完成上传、待删除记录和存储对象，恢复索引与容量。发布、删除和版本状态可靠提交，访问热度允许近似恢复。
+- **Upload publication**: reserve space and write temporary data first, then commit a visible entry version after durability is established. Interrupted uploads must not expose partial data. Separate data and metadata commits require recovery records and orphan-data reclamation.
+- **Read statistics**: distinguish missing entries, read failures, and successful reads. Update access times in memory and persist them in batches; the initial release accepts approximate LRU and does not promise strict global access ordering.
+- **Safe eviction**: choose unlocked, reclaimable entries, prevent new read references, wait for existing reads to finish, then delete data for that version. Failures retain pending-cleanup state for retry; a newer overwritten version must never be deleted accidentally.
+- **Capacity control**: account for entry budgets separately from actual disk consumption, including upload reservations, temporary files, and data awaiting reclamation. Release the corresponding space only after physical reclamation completes; throttle or reject writes if space cannot be freed.
+- **Failure recovery**: on restart, reconcile unfinished uploads, pending-deletion records, and storage objects to restore indexes and capacity accounting. Publication, deletion, and version state must commit reliably; access hotness may recover approximately.
 
-到期删除先按写入或覆盖后的保留时长计算；淘汰队列使用最近访问时间。两种策略分别配置，活动写入和有效 DAV 锁都必须参与协调。
+Expiration initially uses a retention duration measured from write or overwrite; the eviction queue uses last access time. Configure the two policies separately, coordinating both with active writes and valid DAV locks.
 
-## 存储与指标
+## Storage and metrics
 
-每个实例先选择一种主存储，由缓存内核管理完整条目的生命周期。后续增加本地 SSD 加速远端对象存储时，单独配置本地加速容量；清理本地副本不删除远端条目。
+Each instance initially chooses one primary store, with the cache core managing the complete entry lifecycle. When local SSD acceleration for remote object storage is added later, configure a separate local acceleration budget; cleaning local copies must not delete remote entries.
 
-首期指标包括条目命中与未命中、读写失败、流量和延迟、条目数与容量、上传预留、待回收空间，以及按原因分类的淘汰数量和字节数。认证失败和服务故障不计为未命中，HEAD 和目录探测单独统计。
+Initial metrics include entry hits/misses, read/write failures, traffic and latency, entry count and capacity, upload reservations, pending-reclamation space, and eviction counts/bytes by reason. Authentication failures and service failures are not misses; HEAD and directory probes are counted separately.
 
-分层存储阶段再增加本地加速命中率与远端读取量。实例指标不以路径或 key 作为标签，历史统计交给平台指标系统；构建任务命中率需要客户端数据，不能用服务请求命中率替代。
+Tiered storage adds local-acceleration hit rates and remote read volumes. Instance metrics must not use paths or keys as labels; the platform metrics system handles history. Build-task hit rates require client data and cannot be replaced by service-request hit rates.
 
-## 平台接入与实施顺序
+## Platform integration and implementation sequence
 
-Operator 负责部署、配置、凭据和状态，缓存进程执行实际淘汰；管理 API 和界面展示模板准确声明的能力与生效策略。每个实例独立管理元数据，管理平台数据库不保存逐条缓存记录。滚动更新与故障恢复必须保证同一实例只有一个活动写入者。
+The Operator handles deployment, configuration, credentials, and status; the cache process performs actual eviction. The management API and UI display accurately declared template capabilities and effective policies. Each instance manages its own metadata; the management-platform database does not store per-entry cache records. Rolling updates and failure recovery must guarantee only one active writer per instance.
 
-| 阶段 | 交付内容 | 验收重点 |
+| Phase | Deliverables | Acceptance focus |
 |---|---|---|
-| 本地存储 | WebDAV 适配、元数据、容量与到期策略、指标、新模板接入 | 真实客户端读写与锁、覆盖写入、并发淘汰、磁盘满、进程中断和重启恢复 |
-| 对象存储 | S3 兼容后端，沿用条目策略和指标 | 上传失败、版本发布、删除重试、元数据与对象核对，以及重启后恢复 |
-| 分层加速 | 本地热点副本缓存及独立预算 | 两层命中率、并发回源、缓存失效和本地空间回收 |
+| Local storage | WebDAV adapter, metadata, capacity/expiration policies, metrics, new template integration | Real-client reads/writes and locks, overwrites, concurrent eviction, full disks, process interruption, restart recovery |
+| Object storage | S3-compatible backend retaining entry policies and metrics | Upload failures, version publication, deletion retries, metadata/object reconciliation, restart recovery |
+| Tiered acceleration | Local hot-copy cache with a separate budget | Hit rates for both layers, concurrent origin fetches, cache invalidation, local-space reclamation |
 
-每阶段测量不同条目大小和并发下的延迟、吞吐、内存及恢复耗时，再确定资源规格与性能目标。进入替换前，必须通过现有平台生命周期测试和真实客户端兼容测试；本方案不代表当前已实现上述能力。
+At each phase, measure latency, throughput, memory, and recovery time across entry sizes and concurrency levels before setting resource specifications and performance targets. Before replacement, pass existing platform lifecycle tests and real-client compatibility tests. This proposal does not indicate that these capabilities are already implemented.

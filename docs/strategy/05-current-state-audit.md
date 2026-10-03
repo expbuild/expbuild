@@ -1,191 +1,191 @@
-# expbuild 与 expbuild-admin 现状审计
+# Current-State Audit of expbuild and expbuild-admin
 
-审计日期：2026-09-28。仓库：`/home/ubuntu/work/expbuild/expbuild`。提交：`a0458e723818f943107c96cbc7a0895237bd06ca`，提交时间 2025-12-05。工作区在审计开始时干净。
+Audit date: 2026-09-28. Repository: `/home/ubuntu/work/expbuild/expbuild`. Commit: `a0458e723818f943107c96cbc7a0895237bd06ca`, dated 2025-12-05. The working tree was clean when the audit began.
 
-管理端仓库：`/home/ubuntu/work/expbuild/expbuild-admin`；提交：`853a48c521100b89e287f2e98f2f1931f67be495`。下方先记录数据面 15 项发现，再记录管理端。全文的规划建议以总览和最终路线图的阶段范围为准。
+Admin repository: `/home/ubuntu/work/expbuild/expbuild-admin`; commit: `853a48c521100b89e287f2e98f2f1931f67be495`. The 15 data-plane findings appear first, followed by the admin findings. Planning recommendations throughout are subject to the phase scope in the overview and final roadmap.
 
-方法：直接读取生产实现、配置、接口和测试；未以 README 的功能声明为实现证据；未编译、未运行测试、未进行性能或漏洞利用测试，因此下述是静态代码审计结论，不代表已通过实际客户端兼容性测试。没有修改产品代码。
+Method: directly read production implementations, configuration, interfaces, and tests; README feature claims were not treated as implementation evidence. No compilation, tests, performance testing, or exploit testing was performed. The findings below therefore come from a static code audit and do not indicate successful compatibility tests with real clients. No product code was changed.
 
-总体判断：当前是具备真实 CAS/AC 数据读写和远程 worker 路径的 Rust REAPI 原型，适合保留组件后重构；不是多协议缓存平台，也不能把现有配置项或管理概念视作生产能力。最先要完成的是正确性与信任边界，随后建立协议无关缓存内核、租户/策略上下文、流式存储和控制平面。
+Overall assessment: this is currently a Rust REAPI prototype with real CAS/AC reads and writes and a remote-worker path, suitable for refactoring while retaining components. It is not a multi-protocol cache platform, and existing configuration options or management concepts cannot be treated as production capabilities. Correctness and trust boundaries come first, followed by a protocol-independent cache core, tenant/policy context, streaming storage, and a control plane.
 
-## 15 项关键结论
+## 15 Key Findings
 
-### 1. 已有可复用的 REAPI、CAS、AC、worker 分层，但产品协议范围仍单一
+### 1. Reusable REAPI, CAS, AC, and worker layers exist, but the product still supports only one protocol family
 
-- 已实现：Tokio/tonic gRPC 服务、CAS/AC manager、文件系统 CAS 和 AC、RE 客户端、CLI、Host/Docker executor。
-- 证据：[crates/server-bin/src/main.rs:67](/home/ubuntu/work/expbuild/expbuild/crates/server-bin/src/main.rs:67) 注册的服务只有 Capabilities、CAS、AC、ByteStream、Execution 和自定义 WorkerScheduler；[crates/server/src/cas/manager.rs:20](/home/ubuntu/work/expbuild/expbuild/crates/server/src/cas/manager.rs:20) 对普通 CAS 读取做 SHA256/大小校验，`:32` 对普通 CAS 写入校验。
-- 缺失：HTTP build cache、Gradle、Bazel HTTP、Turborepo、OCI/BuildKit registry、S3 兼容缓存等服务适配器；当前不能称为“多协议”。
-- 规划：保留传输实现、摘要工具、客户端和测试资产，把协议适配器与存储/策略/索引的核心接口分开。
+- Implemented: Tokio/tonic gRPC services, CAS/AC managers, filesystem CAS and AC, RE client, CLI, Host/Docker executors.
+- Evidence: [crates/server-bin/src/main.rs:67](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server-bin/src/main.rs#L67) registers only Capabilities, CAS, AC, ByteStream, Execution, and a custom WorkerScheduler; [crates/server/src/cas/manager.rs:20](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/cas/manager.rs#L20) validates SHA256/size for ordinary CAS reads, and `:32` validates ordinary CAS writes.
+- Missing: service adapters for HTTP build cache, Gradle, Bazel HTTP, Turborepo, OCI/BuildKit registry, S3-compatible caching, and others; the current product cannot be called “multi-protocol.”
+- Plan: retain transport implementations, digest utilities, clients, and test assets; separate protocol adapters from core storage/policy/index interfaces.
 
-### 2. 基础 CAS API 已实现，REAPI 细节与资源控制不完整
+### 2. Basic CAS APIs exist, but REAPI details and resource controls are incomplete
 
-- 已实现：FindMissingBlobs、BatchReadBlobs、BatchUpdateBlobs、GetTree。
-- 部分实现：[crates/server/src/grpc/cas_service.rs:49](/home/ubuntu/work/expbuild/expbuild/crates/server/src/grpc/cas_service.rs:49) 批量写逐条串行且没有按声明的 batch 总大小控制；缺失 digest 会令整个 RPC 提前失败。`:140` 的 GetTree 一次收集完整树后发送，忽略 page_size/page_token，没有树大小上限。
-- `:175` 的 SplitBlob、`:182` 的 SpliceBlob 明确 Unimplemented；Capabilities 正确声明这两项为 false，因此它们不是必须立即补齐的协议违约。
-- 规划：先明确支持的 REAPI 版本和功能子集；错误码、请求大小、压缩、分页/流式、空 blob、坏输入等进入一致性测试门槛。
+- Implemented: FindMissingBlobs, BatchReadBlobs, BatchUpdateBlobs, GetTree.
+- Partial implementation: [crates/server/src/grpc/cas_service.rs:49](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/grpc/cas_service.rs#L49) processes batch writes serially without enforcing the declared total batch-size limit; a missing digest fails the entire RPC early. GetTree at `:140` collects the whole tree before sending, ignores page_size/page_token, and has no tree-size limit.
+- SplitBlob at `:175` and SpliceBlob at `:182` explicitly return Unimplemented. Capabilities correctly declares both false, so they are not protocol violations that must be filled immediately.
+- Plan: first define the supported REAPI version and feature subset; make error codes, request sizes, compression, pagination/streaming, empty blobs, malformed inputs, and similar cases part of the conformance-test gate.
 
-### 3. Capabilities 宣告与实际实现不一致，会破坏真实客户端兼容性
+### 3. Advertised Capabilities differ from the implementation and will break real-client compatibility
 
-- [crates/server/src/config/mod.rs:145](/home/ubuntu/work/expbuild/expbuild/crates/server/src/config/mod.rs:145) 默认宣告 ZSTD/DEFLATE；[crates/server/src/grpc/capabilities_service.rs:61](/home/ubuntu/work/expbuild/expbuild/crates/server/src/grpc/capabilities_service.rs:61) 同时宣告 ByteStream 和 BatchUpdate 压缩。
-- 但 [crates/server/src/grpc/cas_service.rs:64](/home/ubuntu/work/expbuild/expbuild/crates/server/src/grpc/cas_service.rs:64) 直接对传入原始 data 做 SHA256，未按 compressor 解压；ByteStream `:34` 只识别 blobs 路径，不识别 compressed-blobs。
-- Capabilities `:25` 可宣告 SHA1/MD5/SHA384/SHA512，但实际 [crates/server/src/util/digest.rs:5](/home/ubuntu/work/expbuild/expbuild/crates/server/src/util/digest.rs:5) 固定 SHA256。
-- `action_cache_update_enabled` / `exec_enabled` 仅影响宣告；服务始终注册，服务实现不读取这些开关。
-- 规划：能力由实际实现推导，禁止“配置即可宣告支持”；真实 Bazel/Buck2 等客户端互操作测试优先于继续增加 proto。
+- [crates/server/src/config/mod.rs:145](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/config/mod.rs#L145) advertises ZSTD/DEFLATE by default; [crates/server/src/grpc/capabilities_service.rs:61](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/grpc/capabilities_service.rs#L61) advertises compression for both ByteStream and BatchUpdate.
+- However, [crates/server/src/grpc/cas_service.rs:64](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/grpc/cas_service.rs#L64) computes SHA256 directly over incoming raw data without decompressing according to compressor; ByteStream `:34` recognizes only blobs paths, not compressed-blobs.
+- Capabilities `:25` can advertise SHA1/MD5/SHA384/SHA512, but [crates/server/src/util/digest.rs:5](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/util/digest.rs#L5) actually hardcodes SHA256.
+- `action_cache_update_enabled` / `exec_enabled` affect only advertisements; services are always registered, and their implementations do not read these switches.
+- Plan: derive capabilities from actual implementations; prohibit “support by configuration alone.” Prioritize real Bazel/Buck2 and other client interoperability tests over adding more proto definitions.
 
-### 4. ByteStream 写入既不是真流式持久化，也不支持可靠续传
+### 4. ByteStream writes provide neither true streaming persistence nor reliable resume
 
-- [crates/server/src/grpc/bytestream_service.rs:128](/home/ubuntu/work/expbuild/expbuild/crates/server/src/grpc/bytestream_service.rs:128) 整个上传累积到 Vec，直到 finish_write 才校验大小/哈希；忽略 write_offset、后续资源名变化，缺少累计上传硬上限。
-- `:23` 定义 write_states，`:185` 查询它，但生产代码从不插入或更新，因此 QueryWriteStatus 无法报告上传进度/完成态。
-- `:78` 将负 read_offset 直接转 u64；读取直接调用 blob_store，绕过 CasManager 的校验。下载虽分块，单流 channel 可积压约 100 个 1 MiB chunk。
-- 规划：实现 UploadSession、持久化提交点、顺序/偏移验证、流式摘要、临时对象 commit/abort、背压、租户额度和会话清理。
+- [crates/server/src/grpc/bytestream_service.rs:128](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/grpc/bytestream_service.rs#L128) accumulates the entire upload in a Vec and validates size/hash only at finish_write; it ignores write_offset and subsequent resource-name changes and lacks a hard cumulative upload limit.
+- `:23` defines write_states, and `:185` queries it, but production code never inserts or updates it, so QueryWriteStatus cannot report upload progress/completion.
+- `:78` casts a negative read_offset directly to u64; reads call blob_store directly, bypassing CasManager validation. Downloads are chunked, but a single stream's channel can queue approximately 100 chunks of 1 MiB each.
+- Plan: implement UploadSession, durable commit points, sequence/offset validation, streaming digests, temporary-object commit/abort, backpressure, tenant quotas, and session cleanup.
 
-### 5. 没有租户隔离和服务端身份边界；instance_name 只是被客户端发送
+### 5. There is no tenant isolation or server-side identity boundary; instance_name is merely sent by the client
 
-- [crates/server/src/config/mod.rs:21](/home/ubuntu/work/expbuild/expbuild/crates/server/src/config/mod.rs:21) 有 instance_name，但服务端实际请求路径不验证/使用它；CAS、AC、执行请求都只提取 digest 或名称。
-- [crates/server/src/storage/traits.rs:11](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/traits.rs:11) 与 `:42` 接口没有租户、namespace、主体、策略上下文，键仅为 REAPI Digest。
-- [crates/server-bin/src/main.rs:77](/home/ubuntu/work/expbuild/expbuild/crates/server-bin/src/main.rs:77) 直接启动全部 gRPC 服务，未配置认证 interceptor、TLS、权限检查或独立 worker 身份边界。客户端 TLS 支持不能等同服务端已有安全能力。
-- [crates/worker/src/agent.rs:52](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/agent.rs:52) 还把 CAS 客户端固定为 instance_name 空字符串、tls=false、无 headers。
-- 规划：在协议入口做 principal → organization/project/namespace → read/write/admin policy；不同协议的 key 映射必须带 namespace；worker 通道独立认证。是否跨租户做底层去重应独立于可见性和访问控制。
+- [crates/server/src/config/mod.rs:21](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/config/mod.rs#L21) defines instance_name, but actual server request paths neither validate nor use it; CAS, AC, and execution requests extract only digests or names.
+- Interfaces at [crates/server/src/storage/traits.rs:11](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/traits.rs#L11) and `:42` have no tenant, namespace, principal, or policy context; keys are only REAPI Digest.
+- [crates/server-bin/src/main.rs:77](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server-bin/src/main.rs#L77) starts all gRPC services directly, without authentication interceptors, TLS, permission checks, or a separate worker identity boundary. Client-side TLS support does not establish server-side security capabilities.
+- [crates/worker/src/agent.rs:52](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/agent.rs#L52) also hardcodes the CAS client to an empty instance_name, tls=false, and no headers.
+- Plan: implement principal → organization/project/namespace → read/write/admin policy at protocol entry points; key mappings for different protocols must include namespace; authenticate worker channels separately. Whether to deduplicate underlying content across tenants should be independent of visibility and access control.
 
-### 6. 输入路径和摘要未在信任边界严格校验
+### 6. Input paths and digests are not strictly validated at trust boundaries
 
-- [crates/server/src/storage/filesystem.rs:23](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/filesystem.rs:23)、[crates/server/src/storage/filesystem_action_cache.rs:23](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/filesystem_action_cache.rs:23) 直接拿外部 hash 做路径和字符串字节切片；没有限制长度、hex 字符、非负大小，存在路径逃逸/Unicode 切片 panic 的结构性风险。
-- AC Update 不会像 CAS 数据写入那样证明 hash 等于内容摘要，因此不能依靠普通 CAS 的 verify_digest 覆盖这个边界。
-- [crates/client/src/client/main_client.rs:552](/home/ubuntu/work/expbuild/expbuild/crates/client/src/client/main_client.rs:552) 和 `:568` 将远端 Directory 节点名直接 join 并写磁盘；worker 使用这段代码，在容器启动前就 materialize 到宿主目录。
-- [crates/worker/src/agent.rs:424](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/agent.rs:424)、[crates/worker/src/executor/host.rs:134](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/executor/host.rs:134) 同样直接拼接 output_path/working_directory。
-- 规划：ValidatedDigest、ValidatedRelativePath 成为核心类型；拒绝绝对路径、..、非法节点名、符号链接逃逸；目录 materialization 必须有根目录约束和树大小/深度预算。本审计没有实施漏洞利用。
+- [crates/server/src/storage/filesystem.rs:23](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/filesystem.rs#L23) and [crates/server/src/storage/filesystem_action_cache.rs:23](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/filesystem_action_cache.rs#L23) use external hashes directly in paths and byte-indexed string slices; without length, hex-character, or nonnegative-size constraints, this creates structural risks of path escape/Unicode-slicing panics.
+- Unlike CAS data writes, AC Update does not prove that the hash equals a content digest, so ordinary CAS verify_digest cannot cover this boundary.
+- [crates/client/src/client/main_client.rs:552](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/client/src/client/main_client.rs#L552) and `:568` directly join remote Directory node names and write to disk; workers use this code to materialize into host directories before containers start.
+- [crates/worker/src/agent.rs:424](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/agent.rs#L424) and [crates/worker/src/executor/host.rs:134](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/executor/host.rs#L134) likewise join output_path/working_directory directly.
+- Plan: make ValidatedDigest and ValidatedRelativePath core types; reject absolute paths, .., invalid node names, and symlink escapes. Directory materialization needs root confinement and tree-size/depth budgets. This audit did not attempt exploitation.
 
-### 7. AC 是简单可变映射，尚无引用完整性、写入信任和缓存正确性策略
+### 7. AC is a simple mutable mapping without reference integrity, write trust, or cache-correctness policies
 
-- [crates/server/src/grpc/action_cache_service.rs:34](/home/ubuntu/work/expbuild/expbuild/crates/server/src/grpc/action_cache_service.rs:34) 直接返回存储的 ActionResult；`:67` 直接接受调用者的结果。manager 本身不拥有 CAS，因此不能验证引用 blob 是否存在。
-- 未处理 inline_stdout/inline_stderr/inline_output_files 请求，未验证产物引用存活，也未区分可信 CI 写入与开发者只读权限。
-- [crates/server/src/execution/manager.rs:164](/home/ubuntu/work/expbuild/expbuild/crates/server/src/execution/manager.rs:164) 完成时无条件写 AC；没有读取 Action.do_not_cache，也没有区分退出码失败的缓存策略。
-- 规划：把 mutable action/key index 与 immutable blob 分离；写入权限、引用/可见性检查、结果可复现策略、租约/保留引用和陈旧 AC 清理必须联合设计，避免 GC 后出现“命中但产物缺失”。
+- [crates/server/src/grpc/action_cache_service.rs:34](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/grpc/action_cache_service.rs#L34) returns the stored ActionResult directly; `:67` directly accepts callers' results. The manager itself does not own CAS and therefore cannot verify that referenced blobs exist.
+- inline_stdout/inline_stderr/inline_output_files requests are not handled, artifact-reference liveness is not checked, and trusted CI writes are not distinguished from developer read-only access.
+- [crates/server/src/execution/manager.rs:164](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/execution/manager.rs#L164) unconditionally writes AC on completion; it does not read Action.do_not_cache or distinguish caching policy for failed exit codes.
+- Plan: separate the mutable action/key index from immutable blobs. Jointly design write permissions, reference/visibility checks, result-reproducibility policies, leases/retention references, and stale AC cleanup to avoid “hit but artifacts missing” after GC.
 
-### 8. 只有 filesystem 后端完成，持久化并发安全和扩容能力仍不足
+### 8. Only the filesystem backend is complete; persistent-storage concurrency safety and scalability remain inadequate
 
-- [crates/server/src/storage/mod.rs:20](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/mod.rs:20)、`:23`、`:36`、`:39` 对 Redis、Tiered、Redis AC、Memory AC 均直接 bail，虽然配置可反序列化这些选项。
-- [crates/server/src/storage/filesystem.rs:84](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/filesystem.rs:84) CAS 临时文件名固定；AC `filesystem_action_cache.rs:69` 亦相同，并发写同 digest/动作会争用临时文件。
-- BlobStore 有流读/写接口，但普通接口依然 Vec；流写只验长度不验哈希；主 ByteStream 写入没有使用流写。普通写未 fsync，存储损坏与缺失错误主要用字符串处理。
-- 规划：filesystem 作为开发和节点 L1，生产增加 S3 兼容对象存储；元数据/索引与 blobs 分离，commit 条件、幂等写、唯一临时对象、损坏探测、校验与恢复需先定义。不要把 Redis 大对象缓存视作唯一扩容路径。
+- [crates/server/src/storage/mod.rs:20](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/mod.rs#L20), `:23`, `:36`, and `:39` immediately bail for Redis, Tiered, Redis AC, and Memory AC, although configuration can deserialize these options.
+- [crates/server/src/storage/filesystem.rs:84](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/filesystem.rs#L84) uses a fixed CAS temporary filename; AC at `filesystem_action_cache.rs:69` does the same, so concurrent writes to the same digest/action contend for temporary files.
+- BlobStore has streaming read/write interfaces, but ordinary interfaces still use Vec. Streaming writes verify length but not hash; the main ByteStream write path does not use streaming writes. Ordinary writes do not fsync, and corruption/missing-storage errors are primarily handled as strings.
+- Plan: use filesystem storage for development and node L1, and add S3-compatible object storage for production. Separate metadata/indexes from blobs; first define commit conditions, idempotent writes, unique temporary objects, corruption detection, verification, and recovery. Do not view caching large objects in Redis as the only scaling path.
 
-### 9. 生命周期、运营管理和服务可观测性没有形成闭环
+### 9. Lifecycle, operational management, and service observability do not yet form complete workflows
 
-- [crates/server/src/config/mod.rs:153](/home/ubuntu/work/expbuild/expbuild/crates/server/src/config/mod.rs:153) 定义 GcConfig，但服务启动与管理器代码没有使用 config.gc；没有 GC 扫描/标记/清扫、容量水位、TTL 执行、租户配额。
-- AC touch 会更新时间，CAS touch 接口存在，但没有生命周期控制器；worker [crates/worker/src/agent.rs:514](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/agent.rs:514) 的工作目录清理被注释。
-- [crates/server-bin/src/main.rs:93](/home/ubuntu/work/expbuild/expbuild/crates/server-bin/src/main.rs:93) 是 tracing 日志初始化；未发现服务端 Prometheus/OTel 指标导出、健康/readiness 服务、审计事件、管理 API、租户 CRUD、配置版本或数据库 migrations。
-- 规划：指标至少包括协议/租户命中率、字节命中、p95/p99 延迟、传输字节、写入拒绝、GC 回收与安全跳过、后端错误和节省的构建时间；admin 需要真实控制 API 和审计记录，不能仅从日志拼页面。
+- [crates/server/src/config/mod.rs:153](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/config/mod.rs#L153) defines GcConfig, but service startup and manager code do not use config.gc; there is no GC scan/mark/sweep, capacity watermarks, TTL enforcement, or tenant quotas.
+- AC touch updates timestamps and a CAS touch interface exists, but there is no lifecycle controller; worker working-directory cleanup at [crates/worker/src/agent.rs:514](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/agent.rs#L514) is commented out.
+- [crates/server-bin/src/main.rs:93](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server-bin/src/main.rs#L93) initializes tracing logs. No server-side Prometheus/OTel metrics export, health/readiness service, audit events, management API, tenant CRUD, configuration versions, or database migrations were found.
+- Plan: metrics should include at least protocol/tenant hit rates, byte hits, p95/p99 latency, transferred bytes, rejected writes, GC reclamation and safety skips, backend errors, and saved build time. Admin needs real control APIs and audit records, not pages assembled solely from logs.
 
-### 10. scheduler 是内存原型，租约不能提供故障恢复
+### 10. The scheduler is an in-memory prototype; its leases do not provide failure recovery
 
-- [crates/server/src/execution/scheduler.rs:14](/home/ubuntu/work/expbuild/expbuild/crates/server/src/execution/scheduler.rs:14) 队列、worker、lease、结果均为进程内集合；重启丢失状态，不能多副本一致调度。
-- `:349` lease 过期仅删除，日志明确写 “would requeue in production”；没有重新入队或生成失败结果；heartbeat 只刷新 worker，不续 task lease。
-- `:89` 是 FIFO，priority 字段不用于排队；没有按项目公平调度、幂等去重、持久化恢复。worker max_concurrent_executions 未在服务端租赁路径实施。
-- 规划：若先做缓存平台，Execution 作为独立实验模块保留；生产远程执行需要持久化状态机、租约续期/fencing、attempt id、重试/超时/取消、公平队列和 worker 身份完整设计。
+- [crates/server/src/execution/scheduler.rs:14](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/execution/scheduler.rs#L14) stores queues, workers, leases, and results in process-local collections; restarts lose state, and consistent multi-replica scheduling is impossible.
+- `:349` only deletes expired leases, explicitly logging “would requeue in production”; it does not requeue or generate a failure result. Heartbeats refresh workers but do not renew task leases.
+- `:89` is FIFO; priority is unused for queue ordering. There is no per-project fair scheduling, idempotent deduplication, or persistent recovery. Worker max_concurrent_executions is not enforced on the server lease path.
+- Plan: if the cache platform comes first, retain Execution as a separate experimental module. Production remote execution needs a full design for durable state machines, lease renewal/fencing, attempt ids, retries/timeouts/cancellation, fair queues, and worker identities.
 
-### 11. execution 语义存在会浪费构建与挂起请求的错误
+### 11. Execution semantics contain errors that waste builds and leave requests hanging
 
-- [crates/server/src/execution/manager.rs:110](/home/ubuntu/work/expbuild/expbuild/crates/server/src/execution/manager.rs:110) 命中 AC 后将 operation 标 done，但 `:188` 返回后仍无条件构建 task 并 `:204` submit；命中后还会重复执行。
-- `:83` ExecuteResponse.cached_result 永远 false。
-- `:198` platform 固定 None、timeout 固定 3600 秒、priority 固定 0，未从 Action/ExecuteRequest 提取真实约束。
-- `:217` worker Failed 仅记录错误并退出监视循环，不把 operation 置完成错误；lease 丢失同样无法完成。`grpc/execution_service.rs:54` 每秒轮询，发送失败未退出；operations 没有回收。
-- 规划：先把 Operation 转为明确终态的持久化状态机；每条成功/失败/取消/失联路径都必须有限时终止。命中结果不得入执行队列。
+- [crates/server/src/execution/manager.rs:110](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/execution/manager.rs#L110) marks an operation done after an AC hit, but after `:188` returns, it still unconditionally constructs a task and submits it at `:204`; a cache hit therefore still triggers redundant execution.
+- `:83` always sets ExecuteResponse.cached_result to false.
+- `:198` fixes platform to None, timeout to 3600 seconds, and priority to 0 rather than extracting actual constraints from Action/ExecuteRequest.
+- `:217` only logs worker Failed and exits the monitoring loop without completing the operation with an error; lease loss likewise cannot complete it. `grpc/execution_service.rs:54` polls every second and does not exit after send failure; operations are not reclaimed.
+- Plan: first turn Operation into a durable state machine with explicit terminal states. Every success/failure/cancellation/disconnection path must terminate within a bounded time. Cache hits must not enter the execution queue.
 
-### 12. worker 隔离有接口和 Docker 基础，但不能支撑不受信任多租户执行
+### 12. Worker isolation has interfaces and a Docker foundation, but cannot support untrusted multi-tenant execution
 
-- 已实现 [crates/worker/src/executor/mod.rs:19](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/executor/mod.rs:19) TaskExecutor；Docker `executor/docker.rs:172` 配置 CPU、memory、pids、readonly rootfs、network_mode、non-privileged，有实际代码，不只是设计文档。
-- Host [crates/worker/src/executor/host.rs:148](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/executor/host.rs:148) 用宿主 Command，未 env_clear；所谓 whitelist `:77` 在过滤为空时反而复制所有请求环境变量；超时用 timeout(cmd.output())，没有 kill_on_drop/进程组回收。
-- Docker `:135` 合并 NetworkPolicy，但实际 `:177` 只用全局 network_mode；working_directory `:170` 固定 /workspace。disk limit 未实现（capabilities 正确声明 false）。
-- Docker `:187` auto_remove=true，但 `:386` 之后在等待退出后再读取日志和产物，存在容器自动删除导致日志/产物丢失的竞态风险，未做动态验证。
-- 规划：默认禁止公有/不可信 Host executor；先明确租户信任模型，后选择容器/微 VM 与资源和网络策略；需要真实 Docker 异常路径测试。
+- [crates/worker/src/executor/mod.rs:19](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/executor/mod.rs#L19) implements TaskExecutor. Docker `executor/docker.rs:172` configures CPU, memory, pids, readonly rootfs, network_mode, and non-privileged operation; this is actual code, not just a design document.
+- Host at [crates/worker/src/executor/host.rs:148](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/executor/host.rs#L148) uses the host Command without env_clear. The so-called whitelist at `:77` copies all requested environment variables when filtering yields none. Timeouts use timeout(cmd.output()) without kill_on_drop/process-group cleanup.
+- Docker `:135` merges NetworkPolicy, but actual execution at `:177` uses only the global network_mode; working_directory at `:170` is fixed to /workspace. Disk limits are not implemented (capabilities correctly declares false).
+- Docker `:187` sets auto_remove=true, but logs and artifacts are read only after waiting for exit after `:386`. Automatic container removal therefore creates a race risk of losing logs/artifacts; this was not dynamically validated.
+- Plan: prohibit Host executors for public/untrusted workloads by default. Define the tenant trust model before choosing containers/micro-VMs and resource/network policies; real Docker failure-path tests are needed.
 
-### 13. 输出与目录树协议存在具体兼容性缺口
+### 13. Output and directory-tree protocols have specific compatibility gaps
 
-- [crates/worker/src/agent.rs:553](/home/ubuntu/work/expbuild/expbuild/crates/worker/src/agent.rs:553) 遇空 contents 直接 continue，零字节输出文件会丢失。
-- `:581` 只收集旧 output_directories 字段，现代 output_paths 中的目录不会被同样收集；Host 只返回 is_file 产物。
-- `:587` upload_directory_tree_from_path 实际返回 Directory 摘要（`crates/client/src/client/main_client.rs:507`），却在 `agent.rs:595` 同时填入 tree_digest 与 root_directory_digest；REAPI 的 Tree 对象与 Directory 对象不是同一编码。
-- `crates/client/src/client/main_client.rs:529` 下载目录树不处理 symlinks；`crates/client/src/action/directory.rs:107` 构造时 symlinks 为空。执行元数据的开始/结束时间都在执行结束后生成（agent.rs:463）。
-- 规划：真实第三方客户端应测零字节文件、嵌套输出目录、可执行位、符号链接、working directory、Tree 和 Directory 语义、错误产物与计时。
+- [crates/worker/src/agent.rs:553](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/worker/src/agent.rs#L553) immediately continues on empty contents, losing zero-byte output files.
+- `:581` collects only the old output_directories field; directories in modern output_paths are not collected the same way. Host returns only is_file artifacts.
+- upload_directory_tree_from_path at `:587` actually returns a Directory digest (`crates/client/src/client/main_client.rs:507`), but `agent.rs:595` puts it in both tree_digest and root_directory_digest. REAPI Tree and Directory objects do not have the same encoding.
+- `crates/client/src/client/main_client.rs:529` does not handle symlinks when downloading directory trees; `crates/client/src/action/directory.rs:107` constructs them with empty symlinks. Execution metadata start/end times are both generated after execution completes (agent.rs:463).
+- Plan: real third-party clients should test zero-byte files, nested output directories, executable bits, symlinks, working directories, Tree and Directory semantics, failure artifacts, and timing.
 
-### 14. 扩展边界值得保留，但目前接口把核心绑在 REAPI 类型上
+### 14. Extension boundaries are worth retaining, but current interfaces bind the core to REAPI types
 
-- [crates/server/src/storage/traits.rs:2](/home/ubuntu/work/expbuild/expbuild/crates/server/src/storage/traits.rs:2) 直接依赖 REAPI Digest/ActionResult；BlobStore 和 ActionCacheStore 分离是好起点，但不是平台级 Key/Blob/Manifest/Policy 模型。
-- `TaskExecutor` 提供执行后端扩展；存储工厂是封闭 enum match；没有协议注册、扩展能力协商、插件版本/权限/隔离、扩展配置模式或 hooks。
-- 规划：近期采用编译期 Rust trait 与独立 adapter crate，稳定内部 API 后再提供进程外 gRPC 插件；不建议一开始用动态加载 Rust ABI 承诺开放生态。BlobStore 应支持流式 put/get、range、stat、commit/abort，另设 namespace-aware CacheIndex/ManifestStore；REAPI ActionResult 可保留为协议专用 payload。
+- [crates/server/src/storage/traits.rs:2](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/crates/server/src/storage/traits.rs#L2) directly depends on REAPI Digest/ActionResult. Separating BlobStore from ActionCacheStore is a good start, but it is not a platform-level Key/Blob/Manifest/Policy model.
+- `TaskExecutor` supports execution-backend extension; the storage factory is a closed enum match. There is no protocol registration, extension capability negotiation, plugin versioning/permissions/isolation, extension configuration schema, or hooks.
+- Plan: use compile-time Rust traits and separate adapter crates in the near term, then offer out-of-process gRPC plugins after stabilizing internal APIs. Do not initially promise an open ecosystem through a dynamically loaded Rust ABI. BlobStore should support streaming put/get, range, stat, and commit/abort, with a separate namespace-aware CacheIndex/ManifestStore; REAPI ActionResult can remain a protocol-specific payload.
 
-### 15. 有真实集成测试骨架，但覆盖无法证明生产正确性
+### 15. A real integration-test framework exists, but coverage cannot demonstrate production correctness
 
-- [tests/Cargo.toml:10](/home/ubuntu/work/expbuild/expbuild/tests/Cargo.toml:10)、`:15` 真实注册 2 个集成测试 target；harness 会启动本地 gRPC server 和 Host worker，不是全部 mock。
-- 共 4 个 CAS 集成案例和 3 个 execution 案例；覆盖基本小/大 blob、目录与 echo/文件输出/退出 42。
-- [tests/integration/test_cas_operations.rs:116](/home/ubuntu/work/expbuild/expbuild/tests/integration/test_cas_operations.rs:116) 名为 test_find_missing_blobs，实际 `:138` 与 `:141` 仅调用 download_blob，从未调用 FindMissingBlobs RPC。
-- 未发现真实 Bazel/Gradle 等客户端互操作、ByteStream resume、跨 namespace 隔离、GC 引用一致性、并发同键、损坏数据、租约丢失、重启恢复、Docker 执行、认证或 quota 的覆盖。worker tests 主要是 Host echo/health/capabilities 和枚举默认值。
-- 规划：建立协议 conformance suite + 原生客户端 smoke tests + 数据完整性/安全负面用例 + 断网/重启/后端故障测试；本审计未运行现有测试，不能称它们已通过。
+- [tests/Cargo.toml:10](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/tests/Cargo.toml#L10) and `:15` actually register 2 integration-test targets. The harness starts a local gRPC server and Host worker; it is not all mocks.
+- There are 4 CAS integration cases and 3 execution cases, covering basic small/large blobs, directories, and echo/file output/exit 42.
+- [tests/integration/test_cas_operations.rs:116](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/tests/integration/test_cas_operations.rs#L116) is named test_find_missing_blobs, but `:138` and `:141` only call download_blob and never call the FindMissingBlobs RPC.
+- No coverage was found for real Bazel/Gradle or other client interoperability, ByteStream resume, cross-namespace isolation, GC reference consistency, concurrent same-key writes, corrupt data, lease loss, restart recovery, Docker execution, authentication, or quotas. Worker tests mainly cover Host echo/health/capabilities and enum defaults.
+- Plan: establish a protocol conformance suite + native-client smoke tests + data-integrity/security negative cases + network-disconnection/restart/backend-failure tests. Existing tests were not run in this audit and cannot be described as passing.
 
-## 对重新规划的直接建议
+## Direct Recommendations for Replanning
 
-1. 第一阶段明确“可信、可运营的多协议缓存”为主线；远程执行另设里程碑，避免把安全隔离与调度系统的复杂度挤入缓存 MVP。
-2. 最小平台内核：RequestContext(principal/tenant/namespace/protocol)、ValidatedDigest、不可变 BlobStore、可变 CacheIndex、对象引用/保留策略、UploadSession、Quota/Policy、Metrics/Audit。
-3. 第一批只选择 2–3 个实测价值高的协议：REAPI cache（先修正确性）、Bazel HTTP/Gradle（需各自 key 与鉴权约定）、Turborepo 可作为第二批；OCI/BuildKit 应以独立 registry adapter/集成方式处理，不能仅映射 blob 即宣告支持。
-4. 管理平面负责组织/项目、凭据与 RBAC、配额保留策略、命中与容量分析、协议实例、后端配置、审计与运营任务；数据平面高频读写不要被管理数据库同步写路径拖住。
-5. 保留客户端传输、proto、trait 分层、file backend、Docker 基础和集成 harness；重构 tenant-aware 核心、协议能力宣告、流写、生命周期和调度状态机，不应在现有字段上继续堆开关。
+1. Make “trusted, operable multi-protocol caching” the first-phase focus. Give remote execution separate milestones rather than squeezing secure-isolation and scheduling-system complexity into the cache MVP.
+2. Minimal platform core: RequestContext(principal/tenant/namespace/protocol), ValidatedDigest, immutable BlobStore, mutable CacheIndex, object references/retention policies, UploadSession, Quota/Policy, Metrics/Audit.
+3. Select only 2–3 protocols with high demonstrated value for the first batch: REAPI cache (fix correctness first), Bazel HTTP/Gradle (each needs its own key and authentication conventions), with Turborepo as a possible second batch. Treat OCI/BuildKit as a separate registry adapter/integration; merely mapping blobs does not establish support.
+4. The management plane owns organizations/projects, credentials and RBAC, quota/retention policies, hit/capacity analysis, protocol instances, backend configuration, auditing, and operational tasks. High-frequency data-plane reads/writes must not be held back by synchronous management-database writes.
+5. Retain client transport, proto, trait layering, the file backend, Docker foundations, and the integration harness. Refactor the tenant-aware core, capability advertisements, streaming writes, lifecycle, and scheduling state machine instead of piling more switches onto existing fields.
 
-## expbuild-admin 的真实完成度
+## Actual Completion Status of expbuild-admin
 
-### A1. 前后端基础已存在，但没有真正的组织级多租户模型
+### A1. Frontend and backend foundations exist, but there is no real organization-level multi-tenant model
 
-React 页面、Express API、JWT 登录、项目 CRUD、流水线上报和 Prisma 数据库不是纯静态 mock，值得保留。当前模型是 User 拥有多个 Project，而不是组织、成员、团队、项目与服务账号。Project 上直接保存一个明文 apiKey；没有独立 token 生命周期、scope 或多个 CI 身份。见 [schema.prisma](/home/ubuntu/work/expbuild/expbuild-admin/server/prisma/schema.prisma:13) 和 [项目创建](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/projects.ts:34)。
+React pages, Express APIs, JWT login, project CRUD, pipeline reporting, and the Prisma database are not purely static mocks and are worth retaining. The current model has a User owning multiple Projects rather than organizations, members, teams, projects, and service accounts. A Project directly stores one plaintext apiKey; there is no independent token lifecycle, scope, or multiple CI identities. See [schema.prisma](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/prisma/schema.prisma#L13) and [project creation](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/projects.ts#L34).
 
-设计文档说生产使用 PostgreSQL，但实际 schema 的 provider 是 sqlite；没有证据表明生产 PostgreSQL 迁移已完成。需要新数据模型与迁移方案，不能把 README 的目标架构当已经运行的能力。
+Design documents describe PostgreSQL in production, but the actual schema provider is sqlite; there is no evidence of a completed production PostgreSQL migration. A new data model and migration plan are needed; the README's target architecture must not be treated as an operational capability.
 
-### A2. 项目过滤存在覆盖授权范围的路径
+### A2. Project filtering has a path that overrides authorization scope
 
-流水线列表先把 where.projectId 限制为当前用户项目集合，但传入 projectId 后直接覆盖这一条件，没有验证指定项目仍属于授权集合。因此能造成跨项目列表暴露的结构性风险；这是静态代码发现，未进行动态利用。见 [pipeline.ts](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/pipeline.ts:16) 与 [覆盖条件](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/pipeline.ts:24)。
+The pipeline list initially restricts where.projectId to the current user's project set, but a supplied projectId directly overwrites that condition without checking that the specified project remains authorized. This creates a structural risk of cross-project list exposure; it is a static-code finding, not a dynamically exploited issue. See [pipeline.ts](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/pipeline.ts#L16) and [condition override](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/pipeline.ts#L24).
 
-新的查询层应强制 scope 与用户过滤取交集，详情、列表、搜索、导出全部一致；不能依赖每个路由开发者记住手动加 ownerId。
+The new query layer should enforce the intersection of authorization scope and user filters consistently for details, lists, search, and exports. It cannot rely on every route developer remembering to add ownerId manually.
 
-### A3. CacheMetric 没有项目归属，统计不能按租户可靠隔离
+### A3. CacheMetric has no project ownership, so statistics cannot be reliably isolated by tenant
 
-上报接口会验证 apiKey 对应的 Project，但写入 CacheMetric 时不保存 projectId；GET /cache 只按时间查询，dashboard 也聚合全库最近指标。这意味着即使登录保护存在，不同用户仍可能看到同一组缓存统计。见 [模型](/home/ubuntu/work/expbuild/expbuild-admin/server/prisma/schema.prisma:67)、[指标写入](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/metrics.ts:54)、[全局聚合](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/metrics.ts:108)。
+The reporting endpoint verifies the Project associated with an apiKey but does not save projectId when writing CacheMetric. GET /cache queries only by time, and the dashboard aggregates recent metrics across the entire database. Thus, even with login protection, different users may see the same cache statistics. See the [model](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/prisma/schema.prisma#L67), [metric writes](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/metrics.ts#L54), and [global aggregation](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/metrics.ts#L108).
 
-savingsSeconds 由上报者直接提供，无法证实它是 CPU 节省、墙钟差还是手工估计；不能拿现有 dashboard 作为实际加速效果的证据。需要事件来源、定义、基线、聚合与可信度字段。
+savingsSeconds is supplied directly by the reporter; it cannot be established whether it means CPU savings, wall-clock difference, or a manual estimate. The existing dashboard is not evidence of actual acceleration. Event source, definition, baseline, aggregation, and confidence fields are needed.
 
-### A4. Agent 心跳没有认证，节点列表也没有租户范围
+### A4. Agent heartbeats are unauthenticated, and the node list has no tenant scope
 
-POST /heartbeat 未使用 authenticate，也没有 API key 验证；按 hostname upsert 可修改已有节点状态。GET 虽要求登录，但查询所有 BuildAgent。模型没有 tenant/project/pool 外键。见 [节点列表](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/agents.ts:9)、[心跳](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/agents.ts:35)。
+POST /heartbeat uses neither authenticate nor API-key verification; upsert by hostname can modify existing node status. GET requires login but queries all BuildAgent records. The model has no tenant/project/pool foreign keys. See the [node list](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/agents.ts#L9) and [heartbeat](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/agents.ts#L35).
 
-应改为经过注册的机器身份与实例 ID，hostname 只作显示字段；节点归属、心跳权限、失联状态和排空命令进入同一管理闭环。现有 Rust worker 没有与这套 API 自动联动的实现证据。
+Use registered machine identities and instance IDs instead, with hostname only for display. Node ownership, heartbeat permissions, lost-contact status, and drain commands should be part of one complete management workflow. There is no implementation evidence that the existing Rust worker automatically integrates with this API.
 
-### A5. UI 有真实 API，但仍混入演示值和错误掩盖
+### A5. The UI uses real APIs but still mixes in demo values and hides errors
 
-dataService 为 agent 生成 10.0.x.x 假 IP，CPU/内存固定 0，把距离上次心跳的时间当 uptime；pipeline buildNumber、initiator、Jenkins URL 也由前端填占位值。metrics/pipelines 请求失败直接返回 MOCK 数据。见 [agent 映射](/home/ubuntu/work/expbuild/expbuild-admin/services/dataService.ts:36)、[指标回退](/home/ubuntu/work/expbuild/expbuild-admin/services/dataService.ts:56)、[流水线映射](/home/ubuntu/work/expbuild/expbuild-admin/services/dataService.ts:75)。
+dataService generates fake 10.0.x.x IPs for agents, fixes CPU/memory to 0, and treats time since the last heartbeat as uptime. Pipeline buildNumber, initiator, and Jenkins URL are also frontend placeholders. Failed metrics/pipelines requests return MOCK data directly. See [agent mapping](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/services/dataService.ts#L36), [metrics fallback](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/services/dataService.ts#L56), and [pipeline mapping](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/services/dataService.ts#L75).
 
-可复用页面、图表、布局和类型组织，但数据模型及失败状态要重做。生产不能把“未知资源利用”显示为“0%”，也不能把服务故障显示成健康演示数据。
+Pages, charts, layouts, and type organization can be reused, but the data model and failure states need rebuilding. Production must not display “unknown resource utilization” as “0%” or disguise service failures as healthy demo data.
 
-### A6. 配额只是构建上报次数检查，无法约束缓存资源
+### A6. Quotas only check build-report counts and cannot constrain cache resources
 
-pipeline report 先读取 usedBuilds 与 monthlyQuotaBuilds，再创建记录，再递增；不是同事务的原子额度预留，重试也没有幂等键。schema 中虽名为 monthly，但当前路由没有月度账期和重置模型。见 [quota 检查](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/pipeline.ts:112) 和 [分离递增](/home/ubuntu/work/expbuild/expbuild-admin/server/src/routes/pipeline.ts:136)。
+pipeline report first reads usedBuilds and monthlyQuotaBuilds, then creates a record, then increments the count. This is not an atomic quota reservation in one transaction, and retries have no idempotency key. Although schema names say monthly, the current route has no monthly billing-period or reset model. See the [quota check](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/pipeline.ts#L112) and [separate increment](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/routes/pipeline.ts#L136).
 
-这最多是原型层的上报次数限制，不是存储/带宽/对象数/并发/执行资源配额。需要由数据面强制执行的资源准入和可对账账本，不能仅增加管理端 quota 字段。
+At most, this is a prototype report-count limit, not a quota for storage/bandwidth/object count/concurrency/execution resources. Resource admission enforced by the data plane and a reconcilable ledger are required; adding admin quota fields alone is insufficient.
 
-### A7. 认证与平台运维尚未达到企业闭环
+### A7. Authentication and platform operations are not yet complete enterprise capabilities
 
-JWT_SECRET 未配置时使用固定开发默认值，生产应拒绝这种配置。当前没有独立角色授权中间件、团队成员模型、token scope/rotation/revocation、SSO、审计与配置版本的完整实现证据。见 [认证工具](/home/ubuntu/work/expbuild/expbuild-admin/server/src/utils/auth.ts:5) 和 [认证中间件](/home/ubuntu/work/expbuild/expbuild-admin/server/src/middleware/auth.ts:16)。
+When JWT_SECRET is unset, a fixed development default is used; production should reject this configuration. There is currently no evidence of complete implementations for independent role-authorization middleware, team membership, token scope/rotation/revocation, SSO, auditing, or configuration versioning. See [authentication utilities](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/utils/auth.ts#L5) and [authentication middleware](https://github.com/expbuild/expbuild-admin/blob/853a48c521100b89e287f2e98f2f1931f67be495/server/src/middleware/auth.ts#L16).
 
-管理页面有“登录”和“SaaS”并不意味着具有企业 IAM 或 SaaS 隔离能力。控制面与数据面的认证、策略和事件目前应按待建立的新契约规划。
+“Login” and “SaaS” on management pages do not establish enterprise IAM or SaaS isolation. Control- and data-plane authentication, policies, and events should currently be planned as new contracts yet to be established.
 
-## 复用与重构决策
+## Reuse and Refactoring Decisions
 
-| 资产 | 建议 | 理由 |
+| Asset | Recommendation | Rationale |
 |---|---|---|
-| Rust/Tokio/tonic、proto、客户端 IO | 选择性复用 | 技术方向匹配，但接口语义和能力宣告要校准 |
-| 文件存储与现有 traits | 改造 | 保留基本 IO，增加 scope、流式提交、完整性和后端能力 |
-| REAPI 服务 | 按真实规范与测试逐项修复 | 不能把现有服务注册当兼容认证 |
-| 内存 scheduler/worker | 暂作实验，独立后续重构/集成 | 持久状态、失败恢复、隔离与结果格式缺口大 |
-| React 页面/布局/图表 | 复用视觉与组件基础 | 产品信息架构、真实数据、错误状态需调整 |
-| Express/Prisma 框架 | 可保留 | 无必要为语言统一立即重写；领域模型与授权层需重新建立 |
-| 当前数据库模型和 API key 设计 | 重构并迁移 | 没有组织/namespace/服务账号/可靠用量与隔离字段 |
-| 既有文档与测试 | 保留作历史依据，更新声明并扩充有效案例 | 避免历史目标被误读为现有能力 |
+| Rust/Tokio/tonic, proto, client IO | Reuse selectively | Technical direction fits, but interface semantics and capability advertisements need alignment |
+| File storage and existing traits | Adapt | Retain basic IO; add scope, streaming commits, integrity, and backend capabilities |
+| REAPI services | Fix item by item against the actual specification and tests | Existing service registration is not compatibility certification |
+| In-memory scheduler/worker | Keep experimental for now; refactor/integrate separately later | Major gaps in durable state, failure recovery, isolation, and result formats |
+| React pages/layouts/charts | Reuse visual and component foundations | Product information architecture, real data, and error states need adjustment |
+| Express/Prisma framework | May be retained | No need for an immediate rewrite merely to unify languages; rebuild domain models and authorization layers |
+| Current database model and API-key design | Refactor and migrate | Lacks organizations/namespaces/service accounts/reliable usage and isolation fields |
+| Existing docs and tests | Retain as historical evidence; update claims and expand effective cases | Avoid mistaking historical goals for current capabilities |
 
-本轮不改变产品代码，也不表示上述问题已经修复。下一步实施应把正确性和权限问题放在增加协议之前。
+This round changes no product code and does not imply that the issues above are fixed. Implementation should address correctness and permissions before adding protocols.
 
-另有发布元数据需要整理：expbuild 根 LICENSE 实际为 MIT，而 README 描述 MIT/Apache 双许可并链接当前缺失的 LICENSE-MIT/LICENSE-APACHE；本次未在 expbuild-admin 的已跟踪项目文件中找到独立 LICENSE。商业化前应由维护者确认意图、权利来源和分发许可，不能直接沿用 README 的双许可表述。此处只记录文件不一致，不推断未授权代码的使用许可。[当前 LICENSE](/home/ubuntu/work/expbuild/expbuild/LICENSE:1)。
+Release metadata also needs cleanup: expbuild's root LICENSE is actually MIT, while the README describes MIT/Apache dual licensing and links to currently missing LICENSE-MIT/LICENSE-APACHE files. No independent LICENSE was found among expbuild-admin's tracked project files in this audit. Before commercialization, maintainers should confirm intent, rights provenance, and distribution licensing rather than simply carrying forward the README's dual-license claim. This records file inconsistencies only; it does not infer a license to use code without authorization. [Current LICENSE](https://github.com/expbuild/expbuild/blob/a0458e723818f943107c96cbc7a0895237bd06ca/LICENSE#L1).

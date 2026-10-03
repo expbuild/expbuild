@@ -1,27 +1,27 @@
-# expbuild 管理界面
+# expbuild management UI
 
-React + TypeScript 的新管理控制台，与 `apps/admin-api` 同源部署。
+The new React + TypeScript management console is deployed on the same origin as `apps/admin-api`.
 
-目前支持登录、会话恢复、退出、项目创建/切换、实例列表、实例创建、
-资源与淘汰容量配置、暂停/恢复、删除确认、连接地址和操作进度，
-以及用户创建/启停、本人修改密码、管理员重置密码、按邮箱添加成员、角色调整/移除、项目审计记录和缓存凭据轮换。
-管理员、维护者和只读用户的按钮与后端权限相对应，最终授权由 API 完成。
+It currently supports login, session restoration, logout, project creation/switching, instance lists and creation,
+resource and eviction-capacity configuration, pause/resume, deletion confirmation, connection endpoints, and operation progress,
+as well as user creation/activation/deactivation, changing your own password, administrator password resets, adding members by email, changing roles/removing members, project audit records, and cache credential rotation.
+The actions available to administrators, maintainers, and read-only users correspond to backend permissions; the API makes the final authorization decision.
 
-## 信息结构与国际化
+## Information architecture and internationalization
 
-控制台采用固定侧栏、顶部项目切换和独立功能页面。项目内分为概览、缓存实例、操作记录、资源与配额、成员权限、审计记录；平台用户管理使用独立入口。权限仍由 API 校验，界面按角色显示可用操作。页面使用 hash 路由，刷新和浏览器前进/后退可恢复项目与功能页。
+The console uses a fixed sidebar, a project switcher at the top, and separate feature pages. Project pages include Overview, Cache instances, Operations, Resources and quotas, Members and permissions, and Audit records; platform user management has a separate entry point. The API still enforces permissions, while the UI shows available actions by role. Pages use hash routing so refresh and browser back/forward navigation restore the project and feature page.
 
-实例列表支持名称/资源标识搜索以及协议、管理状态筛选。创建使用对话框，实例详情使用抽屉；原生 dialog 提供焦点约束、Escape 关闭和关闭后的焦点恢复。创建与凭据变更提交期间禁止关闭，避免丢失一次性密码。窄屏使用可展开导航与横向滚动表格。
+The instance list supports searches by name/resource identifier and filters by protocol and management state. Creation uses a dialog, while instance details use a drawer; the native dialog provides focus containment, Escape-to-close, and focus restoration on close. Closing is disabled while creation or credential changes are being submitted to avoid losing a one-time password. Narrow screens use expandable navigation and horizontally scrolling tables.
 
-- 当前界面语言为 English 和简体中文。优先读取用户保存的选择，其次识别浏览器的简体中文偏好，其他语言回退到 English。
-- 语言偏好保存在 `localStorage` 的 `expbuild-locale`，存储被禁用时仍可在当前页面切换。切换语言不重载页面或重置表单；页面的 `lang` 和标题同步更新。
-- `src/messages.ts` 集中保存中文原文和英文翻译。新增文案使用 `t()`，动态内容使用完整句子的参数插值；`i18n.test.ts` 检查静态文案覆盖与参数一致性。
-- 日期、数量使用 `Intl` 按所选语言格式化，日期采用浏览器的本地时区。协议、资源 ID、端点、用户输入和后端诊断代码保持原值。
-- 概览只展示已有接口可证明的数据，操作摘要统计最近 100 条记录。首次采集失败显示未知，不将失败当作零用量或服务健康。
+- The current UI languages are English and Simplified Chinese. The user's saved choice takes precedence, followed by the browser's Simplified Chinese preference; other languages fall back to English.
+- The language preference is saved as `expbuild-locale` in `localStorage`; switching still works for the current page when storage is disabled. Switching languages does not reload the page or reset forms; the page's `lang` and title update together.
+- `src/messages.ts` centrally stores the Chinese source strings and English translations. Use `t()` for new copy and interpolate parameters into complete sentences for dynamic content; `i18n.test.ts` checks static-string coverage and parameter consistency.
+- Dates and numbers use `Intl` formatting for the selected language; dates use the browser's local time zone. Protocols, resource IDs, endpoints, user input, and backend diagnostic codes retain their original values.
+- Overview shows only data supported by existing endpoints; operation summaries cover the latest 100 records. A failed first collection appears as unknown, rather than being treated as zero usage or a healthy service.
 
-## 本地运行
+## Running locally
 
-在仓库根目录执行：
+Run from the repository root:
 
 ```sh
 npm ci
@@ -29,28 +29,28 @@ npm run dev --workspace @expbuild/admin-api
 npm run dev --workspace @expbuild/admin-web
 ```
 
-API 的 `APP_ORIGIN` 使用 `http://localhost:5173`，浏览器也使用这个地址。
-Vite 将 `/v1` 代理到本机 3001 端口，保留原始 Origin。
-API 需要 PostgreSQL、Kubernetes 配置和操作加密密钥，见对应 README。
+Set the API's `APP_ORIGIN` to `http://localhost:5173` and use that address in the browser as well.
+Vite proxies `/v1` to local port 3001, preserving the original Origin.
+The API requires PostgreSQL, Kubernetes configuration, and an operation-encryption key; see its README.
 
 ```sh
 npm run build --workspace @expbuild/admin-web
 npm test --workspace @expbuild/admin-web
 ```
 
-构建结果位于 `dist`。生产部署需由同一入口提供静态文件与 `/v1` 反向代理，
-不能把 Vite 开发服务器作为生产服务器。
+Build output is placed in `dist`. Production deployments must serve static files and the `/v1` reverse proxy through the same entry point;
+do not use the Vite development server in production.
 
-## 行为与边界
+## Behavior and boundaries
 
-- 认证会话保存在 HttpOnly cookie；CSRF token 使用当前标签页的 sessionStorage。
-  新标签页没有 CSRF token 时需重新登录。实例连接密码只保留在组件内存中。
-- 同一个表单请求失败后重试沿用幂等键，修改表单内容后生成新键。
-- 编辑基于打开表单时的配置版本；后台刷新不会将旧表单升级成新版本写入。
-- 实例生命周期与服务 Ready 状态分别显示；服务未就绪不会显示为就绪。
-- 模板目录由 API 的启用配置提供，界面支持现有 REAPI/Bazel、Gradle HTTP 和 WebDAV 模板，按真实模板能力展示统计和配置。WebDAV 保持现有引擎能力；本次仅调整管理界面的布局与文案。邮件找回密码尚未实现。项目列表最多显示 200 条，操作记录最多显示 100 条。
-- 组件测试使用模拟 API，不能代替真实浏览器和 Kubernetes 联调。
+- Authentication sessions are stored in HttpOnly cookies; the CSRF token uses the current tab's sessionStorage.
+  A new tab without a CSRF token requires login again. Instance connection passwords are kept only in component memory.
+- Retrying the same failed form request reuses its idempotency key; changing the form contents generates a new key.
+- Edits use the configuration version captured when the form was opened; background refreshes do not upgrade a stale form to write against a new version.
+- Instance lifecycle and service Ready state are displayed separately; a service that is not ready is not shown as ready.
+- The template catalog comes from the API's enabled configuration. The UI supports the existing REAPI/Bazel, Gradle HTTP, and WebDAV templates and displays statistics and configuration according to actual template capabilities. WebDAV retains its existing engine capabilities; this change only adjusts the management UI's layout and copy. Email password recovery is not implemented. Project lists show at most 200 entries, and operation lists at most 100.
+- Component tests use a mock API and cannot replace real-browser and Kubernetes integration testing.
 
-实例详情展示引擎缓存使用量、容量、条目数和采集时间。采集失败时保留最近结果并标记不可用；暂停/删除实例停止轮询。统计不等于整个 PVC 的磁盘用量。
+Instance details show engine cache usage, capacity, entry count, and collection time. Collection failures retain the latest result and mark it unavailable; polling stops for paused/deleted instances. These statistics do not represent disk usage for the entire PVC.
 
-浏览器测试运行真实生产构建、管理 API 和隔离 PostgreSQL，Kubernetes 使用测试适配器。`tests/browser/international.spec.ts` 覆盖英文回退、中英文切换和保存、表单不丢失、页面路由、搜索筛选、抽屉焦点、提交期间防关闭和移动布局，并输出页面截图。它不替代真实 Kubernetes 集群测试。
+Browser tests run the real production build, management API, and isolated PostgreSQL, with a test adapter for Kubernetes. `tests/browser/international.spec.ts` covers English fallback, language switching and persistence, preservation of form state, page routing, search and filtering, drawer focus, prevention of closing during submission, and mobile layouts, and outputs page screenshots. It does not replace testing against a real Kubernetes cluster.

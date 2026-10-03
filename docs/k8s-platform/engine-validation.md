@@ -1,10 +1,10 @@
-# bazel-remote 引擎验证记录
+# bazel-remote engine validation record
 
-当前候选引擎：[官方 bazel-remote v2.6.2](https://github.com/buchgr/bazel-remote/releases/tag/v2.6.2)。
-已在 Linux amd64 上运行校验过发布摘要的官方二进制，并完成真实协议测试。
-原生协议测试与下文的隔离 Kubernetes 镜像验证分别记录，不代表生产环境认证。
+Current candidate engine: [official bazel-remote v2.6.2](https://github.com/buchgr/bazel-remote/releases/tag/v2.6.2).
+The official binary has been run on Linux amd64 after verification against its release digest, and real protocol tests have completed.
+Native protocol tests and the isolated Kubernetes image validation below are recorded separately; neither implies production qualification.
 
-## 可复现入口
+## Reproduction entry point
 
 ```sh
 python3 tools/download_bazel_remote.py /tmp/expbuild-bazel-remote
@@ -12,66 +12,66 @@ cd operator
 BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote go test ./internal/controller -run TestRealBazelRemoteContract -count=1 -v
 ```
 
-下载工具固定版本并检查官方发布资产 SHA256；不会自动采用 latest。
-测试使用 Operator 渲染出来的配置，仅把存储目录、认证文件路径和监听地址改为
-临时目录与本机随机端口。进程在测试结束时停止，不使用现有服务或集群。
-未指定二进制时，该测试明确跳过。本地与[远程 Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36668365993)均已通过该原生引擎测试；容器与 Gateway 链路单独验收。
+The download tool pins the version and checks the official release asset SHA256; it does not automatically select latest.
+Tests use the configuration rendered by the Operator, changing only the storage directory, credentials-file path, and listen addresses
+to temporary directories and random local ports. The process stops when tests finish; no existing service or cluster is used.
+The test explicitly skips if no binary is specified. This native-engine test has passed both locally and in [remote Kubernetes CI](https://github.com/expbuild/expbuild/actions/runs/36668365993); container and Gateway paths have separate acceptance checks.
 
-## 已通过的行为
+## Behaviors verified
 
-- 原生配置格式启动，配置的 1 GiB 缓存预算与认证探测匹配。
-- bcryptjs 生成的 htpasswd 可用于 HTTP Basic 和 gRPC Basic 认证。
-- 未认证 HTTP 读写与 REAPI FindMissingBlobs 被拒绝。
-- HTTP CAS 按 SHA256 路径上传/下载，读取内容与原始数据一致。
-- 同一 digest 上传前被 FindMissingBlobs 返回，上传后不再缺失。
-- 使用新的认证文件重启后，旧用户被拒绝，新用户能读取此前存储的数据。
+- Startup with the native configuration format; the configured 1 GiB cache budget matches authenticated probes.
+- bcryptjs-generated htpasswd works for HTTP Basic and gRPC Basic authentication.
+- Unauthenticated HTTP reads/writes and REAPI FindMissingBlobs are rejected.
+- HTTP CAS uploads/downloads use SHA256 paths, and downloaded content matches the original data.
+- FindMissingBlobs reports a digest before upload and no longer reports it missing afterward.
+- After restart with a new credentials file, the old user is rejected and the new user can read previously stored data.
 
-FindMissingBlobs 测试使用官方 [REAPI protobuf 字段定义](https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto)，
-直接构造 wire message；这验证该 RPC 的真实行为，不代表完整 Bazel 客户端验收。
+The FindMissingBlobs test uses the official [REAPI protobuf field definitions](https://github.com/bazelbuild/remote-apis/blob/main/build/bazel/remote/execution/v2/remote_execution.proto)
+to construct wire messages directly. This verifies the RPC's real behavior, not complete Bazel-client acceptance.
 
-## 已通过的 Kubernetes 与 TLS 链路
+## Kubernetes and TLS paths verified
 
-[真实 kind/Helm/Gateway CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)已通过固定镜像
-`buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512`。
+[Real kind/Helm/Gateway CI](https://github.com/expbuild/expbuild/actions/runs/36669207282) passed with the pinned image
+`buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512`.
 
-- 经管理 API 创建实例，Operator 启动非 root UID/GID/fsGroup 1000、只读根文件系统的 StatefulSet，使用真实 PVC 和独立临时卷。
-- 受信任 TLS/SNI 下 GetCapabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载，以及 HTTPS CAS 上传/下载。
-- 匿名访问被拒绝；通过管理 API 轮换凭据并滚动更新后，旧密码被拒绝，新密码通过 gRPC/HTTP 读取原数据。
-- 删除实例后清理 HTTPRoute 与 GRPCRoute。
+- Instance creation through the management API; the Operator starts a StatefulSet with non-root UID/GID/fsGroup 1000, a read-only root filesystem, a real PVC, and separate temporary volumes.
+- GetCapabilities, FindMissingBlobs, chunked 8 MiB ByteStream upload/download, and HTTPS CAS upload/download under trusted TLS/SNI.
+- Anonymous access is rejected; after credential rotation through the management API and a rolling update, the old password is rejected and the new password reads existing data over gRPC/HTTP.
+- HTTPRoute and GRPCRoute are cleaned up after instance deletion.
 
-这是 Linux amd64、kind 默认存储与固定 Envoy Gateway 的验证，不涵盖所有架构、生产 CSI 或真实 Bazel 构建客户端。
+This validation uses Linux amd64, kind's default storage, and a pinned Envoy Gateway; it does not cover all architectures, production CSI, or real Bazel build clients.
 
-## 仍需完成
+## Outstanding work
 
-- 多架构、生产 PVC 权限、磁盘满、故障恢复和单写者边界。
-- 真实 Bazel 经 TLS Gateway 的构建、压缩及 FindMissing 批量负载。
-- 淘汰策略边界、存储容量变化、指标与平台统计的一致性。
-- 公网 DNS、多节点网络隔离、轮换期间并发客户端行为与性能基线。
+- Multiple architectures, production PVC permissions, full disks, failure recovery, and single-writer boundaries.
+- Real Bazel builds, compression, and FindMissing batch workloads through a TLS Gateway.
+- Eviction-policy boundaries, storage-capacity changes, and consistency between metrics and platform statistics.
+- Public DNS, multi-node network isolation, concurrent client behavior during rotation, and performance baselines.
 
-测试不将已通过的 RPC 扩大为完整性能或生产可用性结论。
+Passing RPC tests is not extrapolated into a claim of complete performance or production availability.
 
-## 原生 LRU 预算实测
+## Native LRU budget measurements
 
-在同一份渲染配置、默认压缩存储和 1 GiB 预算下，真实 v2.6.2 引擎通过以下测试：顺序上传 A、B 两个各 400 MiB 的不可压缩 CAS 数据块，完整读取 A 更新访问顺序，再上传同等大小的 C。随后 B 返回 404，A、C 可完整读出且 SHA256 匹配；实际缓存容量未超过预算，最终条目数为 2。
+With the same rendered configuration, default compressed storage, and a 1 GiB budget, the real v2.6.2 engine passed this test: upload two incompressible 400 MiB CAS blobs, A and B, in sequence; read A fully to update access order; then upload C of the same size. B subsequently returns 404, while A and C can be read fully with matching SHA256 hashes. Actual cache capacity stays within budget, with a final entry count of 2.
 
-数据由可重复的 AES-CTR 流生成，客户端按流上传、下载和校验，不把完整大文件留在内存。测试使用临时目录，需要至少约 2 GiB 可用磁盘空间；不触碰已有缓存。示例：
+Data is generated with a reproducible AES-CTR stream; the client streams uploads, downloads, and verification without keeping complete large files in memory. The test uses a temporary directory and needs at least approximately 2 GiB of free disk space; it does not touch existing caches. Example:
 
 ```sh
 BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote BAZEL_LRU_TEST=1 go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
 ```
 
-命令从 operator 目录运行。磁盘较小的临时目录可通过 TMPDIR 指向独立测试目录。CI 已加入此项，本地实际执行通过；它验证该预算和访问序列下的原生 LRU，不替代磁盘满、并发上传、重启排序或吞吐基准。
+Run from the operator directory. If the default temporary directory has limited disk space, point TMPDIR to a separate test directory. This check is included in CI and passed locally; it verifies native LRU for this budget and access sequence, not full-disk behavior, concurrent uploads, ordering after restart, or throughput benchmarks.
 
-## 真实 Bazel 构建客户端
+## Real Bazel build client
 
-本地已通过固定 SHA256 的 Bazel 8.8.1 Linux amd64 客户端测试，分别使用 HTTP 与 REAPI gRPC 连接上述实际引擎。首次构建上传 ActionCache/CAS；第二次构建使用全新的 output_base，正确恢复产物且不重新执行动作。第三次使用另一个新目录并关闭远程缓存，必须触发动作的退出码 42，排除本地缓存或测试规则误判。
+Local tests passed with the SHA256-pinned Bazel 8.8.1 Linux amd64 client, connecting to the actual engine above over HTTP and REAPI gRPC separately. The first build uploads ActionCache/CAS; the second uses a fresh output_base, correctly restores outputs, and does not re-execute the action. A third build uses another fresh directory with remote caching disabled and must trigger the action's exit code 42, ruling out local-cache effects or a false-positive test rule.
 
-测试规则的未声明 guard/marker 是刻意设置的测试探针：首次构建后删除 guard，让重复执行必然失败。它不作为生产构建规则示例。凭据写入权限 0600 的临时配置，不作为进程参数。
+The rule's undeclared guard/marker is an intentional test probe: removing the guard after the first build makes repeated execution fail. It is not an example production build rule. Credentials are written to a temporary configuration with mode 0600, not passed as process arguments.
 
 ```sh
 python3 tools/download_bazel_client.py /tmp/expbuild-bazel
-# 在 operator 目录运行，先按上文下载引擎。
+# Run from the operator directory after downloading the engine as described above.
 BAZEL_BIN=/tmp/expbuild-bazel BAZEL_REMOTE_BIN=/tmp/expbuild-bazel-remote go test ./internal/controller -run '^TestRealBazelRemoteContract$' -count=1 -v
 ```
 
-需要为临时目录预留约 2 GiB 磁盘空间。此项使用回环 HTTP/gRPC，尚不证明实际 Bazel 经 TLS Gateway、多版本兼容、压缩协商或远程执行。已加入 CI，新增客户端部分的远程结果待确认。
+Allow approximately 2 GiB of disk space for the temporary directory. This test uses loopback HTTP/gRPC and does not yet establish real Bazel operation through a TLS Gateway, compatibility across versions, compression negotiation, or remote execution. It is included in CI; remote results for the newly added client portion remain to be confirmed.

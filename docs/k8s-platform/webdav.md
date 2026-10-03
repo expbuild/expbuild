@@ -1,49 +1,49 @@
-# WebDAV 引擎实现进度
+# WebDAV engine implementation progress
 
-第二个引擎使用 Apache HTTP Server 的 [mod_dav](https://httpd.apache.org/docs/2.4/mod/mod_dav.html)
-及 [mod_dav_fs](https://httpd.apache.org/docs/2.4/mod/mod_dav_fs.html)。当前已接入
-Operator、CRD、Helm 镜像参数、管理 API、管理界面和真实协议测试。
+The second engine uses Apache HTTP Server's [mod_dav](https://httpd.apache.org/docs/2.4/mod/mod_dav.html)
+and [mod_dav_fs](https://httpd.apache.org/docs/2.4/mod/mod_dav_fs.html). It is currently integrated with
+the Operator, CRD, Helm image parameters, management API, management UI, and real protocol tests.
 
-后续方向见[自研 WebDAV 缓存服务方案](webdav-cache-plan.md)。该方案尚待实现，不改变本文记录的 Apache 模板能力与验证边界。
+See the [custom WebDAV cache-service proposal](webdav-cache-plan.md) for future direction. That proposal is not yet implemented and does not change the Apache template's capabilities or validation boundaries recorded here.
 
-## 资源与能力
+## Resources and capabilities
 
-- 模板名 `webdav-apache`。新建使用 `0.2.0`，旧 `0.1.0` 实例继续按原版本维护；单副本 StatefulSet + 独立 PVC。
-- 独立 HTTP 服务，使用 htpasswd；读取和写入都要求认证。
-- 以 UID/GID 1000 运行，fsGroup 1000，根文件系统只读、无额外 capabilities。
-- 内容位于 `/data/content`，DAV 锁数据库位于 `/data/locks`，不作为内容暴露。
-- 配置使用独立不可变 ConfigMap；沿用暂停、凭据版本、归属检查与 Retain/Delete 流程。
-- 就绪要求工作负载版本完成，并用探测凭据执行 Depth=0 的 PROPFIND，检查 207 DAV XML。
-- `enginePolicy: none`、`maxCacheGiB: 0`。CRD 拒绝 WebDAV 使用 REAPI 的 LRU/预算配置。`0.2.0` 增加只读内容扫描 sidecar，复用受信 Operator 镜像中的 `/webdav-stats`；将实例 CPU/内存请求与限制拆分给两个容器，总量保持不变。
+- Template name: `webdav-apache`. New instances use `0.2.0`; existing `0.1.0` instances continue to be maintained according to their original version. Single-replica StatefulSet + separate PVC.
+- Separate HTTP service using htpasswd; both reads and writes require authentication.
+- Runs as UID/GID 1000 with fsGroup 1000, a read-only root filesystem, and no extra capabilities.
+- Content lives in `/data/content`; the DAV lock database lives in `/data/locks` and is not exposed as content.
+- Configuration uses a separate immutable ConfigMap; existing pause, credential-version, ownership-check, and Retain/Delete workflows are reused.
+- Readiness requires the workload revision to be complete and a Depth=0 PROPFIND with probe credentials that validates a 207 DAV XML response.
+- `enginePolicy: none`, `maxCacheGiB: 0`. The CRD rejects REAPI LRU/budget configuration for WebDAV. `0.2.0` adds a read-only content-scanning sidecar using `/webdav-stats` from the trusted Operator image; instance CPU/memory requests and limits are split between the two containers without changing the totals.
 
-Apache 没有原生缓存 LRU 或磁盘配额。本模板的 PVC 容量是请求的卷大小，不能当作
-所有 CSI 上都有效的硬配额。也不能并发扫描删除活动 DAV 文件来伪装淘汰功能，因为
-文件与锁状态需要协调。`0.2.0` 每 30 秒分批扫描 `/data/content` 的普通文件，最多 100 万个目录项、目录深度 128 层、15 秒；遇到无法完成的扫描则返回不可用而非零。`/status` 仅在内部 Service 的 9093 端口提供，要求当前探测凭据，扫描挂载为只读。该数据是近似文件数与文件大小快照，`capacityBytes` 是 PVC 申请容量，不是 CSI 硬配额；不代表命中率。可靠淘汰策略与请求指标仍待独立实现。
+Apache has no native cache LRU or disk quota. This template's PVC capacity is the requested volume size and cannot be treated as
+a hard quota effective with every CSI driver. Nor can concurrently scanning and deleting active DAV files stand in for eviction,
+because file and lock state must be coordinated. `0.2.0` scans regular files in `/data/content` in batches every 30 seconds, with limits of 1 million directory entries, 128 directory levels, and 15 seconds. A scan that cannot complete returns unavailable, not zero. `/status` is exposed only on port 9093 of the internal Service, requires current probe credentials, and uses a read-only scan mount. These data are approximate snapshots of file counts and sizes; `capacityBytes` is the PVC's requested capacity, not a CSI hard quota, and the data do not represent hit rates. Reliable eviction and request metrics still require separate implementation.
 
-## 开发部署入口
+## Development deployment entry point
 
-Operator 需配置 `--webdav-image=仓库@sha256:摘要`；Helm 使用 `images.webdav`。
-0.2.0 的统计容器另外使用独立批准的 `--webdav-stats-image` / `images.webdavStats` digest，
-不随控制器镜像自动变化。升级前遵循[实例镜像迁移步骤](image-upgrade-risk.md)。
-未配置时，WebDAV 实例报告 InvalidConfiguration，不会猜测或拉取任意镜像。
-`images/webdav/Dockerfile` 使用已查询官方 Registry 的 Apache 2.4.68 trixie 镜像及固定摘要。
-原 2.4.66-bookworm 标签在远程 CI 中确认不存在，已替换。下述原生协议测试使用
-Ubuntu Apache 2.4.66，不代表新的容器镜像已通过运行认证。
+Configure the Operator with `--webdav-image=registry@sha256:digest`; Helm uses `images.webdav`.
+The 0.2.0 statistics container additionally uses a separately approved `--webdav-stats-image` / `images.webdavStats` digest;
+it does not change automatically with the controller image. Follow the [instance image migration procedure](image-upgrade-risk.md) before upgrading.
+Without configuration, WebDAV instances report InvalidConfiguration; the Operator does not guess or pull arbitrary images.
+`images/webdav/Dockerfile` uses Apache 2.4.68 trixie with a pinned digest checked against the official Registry.
+The former 2.4.66-bookworm tag was confirmed missing in remote CI and replaced. The native protocol tests below use
+Ubuntu Apache 2.4.66 and do not establish runtime qualification of the newer container image.
 
-`operator/examples/webdav.yaml` 展示 CR 格式。实际应用前须创建受管理项目 namespace、
-StorageClass 和归属匹配的 Secret，包含 htpasswd、probe-username、probe-password。
-Helm 配置 `images.webdav` 后同步设置 API 的 `WEBDAV_ENABLED=true`，模板目录才返回 WebDAV，
-未启用时 API 拒绝新建。手动部署需同时配置 API 开关和 Operator 镜像。关闭开关后仍允许
-管理已有实例，避免阻止暂停或删除；Operator 镜像应保留到实例全部退出。
-API 创建时指定 `template: webdav-apache` 和 `cacheGiB: 0`，其余资源参数与现有模板一致。
-模板目录声明无原生 LRU 和缓存预算。`0.2.0` 声明实时内容统计能力；旧 `0.1.0` 仍不支持统计。控制台按精确版本展示能力。
-更新必须保留原模板，禁止跨引擎切换。控制台从 API 获取可用模板，启用后可选择 WebDAV 创建；编辑时固定原模板，隐藏缓存预算和统计请求。
-对外访问仍需 TLS 入口；当前服务地址为集群内部 HTTP。
+`operator/examples/webdav.yaml` shows the CR format. Before applying it, create a managed project namespace,
+StorageClass, and ownership-matched Secret containing htpasswd, probe-username, and probe-password.
+Configuring `images.webdav` in Helm also sets `WEBDAV_ENABLED=true` for the API; only then does the template catalog return WebDAV.
+When disabled, the API rejects creation. Manual deployments must configure both the API flag and Operator image. Disabling the flag still allows
+management of existing instances so pause or deletion is not blocked; retain the Operator image configuration until all instances have exited.
+Specify `template: webdav-apache` and `cacheGiB: 0` on API creation; other resource parameters match the existing template.
+The template catalog declares no native LRU or cache budget. `0.2.0` declares live content-statistics capability; older `0.1.0` still does not support statistics. The console displays capabilities by exact version.
+Updates must preserve the original template; switching engines is prohibited. The console fetches available templates from the API and offers WebDAV creation when enabled; editing fixes the original template and hides cache-budget and statistics requests.
+External access still requires TLS ingress; the current service address is internal HTTP.
 
-## 已验证
+## Verified behavior
 
-本地解包 Ubuntu Apache 2.4.66 二进制和运行库，没有安装或启动系统 Apache 服务。
-测试使用临时目录、随机本机端口，退出时停止整个测试进程组。
+Ubuntu Apache 2.4.66 binaries and runtime libraries were unpacked locally without installing or starting the system Apache service.
+Tests use temporary directories and random local ports and stop the entire test process group on exit.
 
 ```sh
 cd operator
@@ -51,11 +51,11 @@ APACHE_BIN=/path/to/apache2 APACHE_MODULES=/path/to/apache2/modules \
   go test ./internal/webdav -run TestApacheWebDAVContract -count=1 -v
 ```
 
-真实测试已通过 bcrypt 认证、匿名写入拒绝、MKCOL、PUT/GET、PROPFIND、LOCK、
-无锁令牌 DELETE 拒绝和携带正确资源锁条件的 DELETE。配置兼容 UnixD 模块内置或动态加载。
-另有资源模型测试、隔离 API Server 的能力约束/调谐测试及协议探测测试。
+Real tests passed bcrypt authentication, rejection of anonymous writes, MKCOL, PUT/GET, PROPFIND, LOCK,
+rejection of DELETE without a lock token, and DELETE with the correct resource lock condition. Configuration supports either built-in or dynamically loaded UnixD.
+Additional tests cover the resource model, capability constraints/reconciliation in an isolated API server, and protocol probes.
 
-真实 PostgreSQL 配合模拟 Kubernetes 已验证模板启用限制、错误预算拒绝、创建到就绪、
-禁止跨引擎更新、不支持统计时不触发采集，以及关闭创建开关后仍可暂停已有实例。
+Real PostgreSQL with mocked Kubernetes verified template enablement restrictions, rejection of invalid budgets, creation through readiness,
+rejection of cross-engine updates, no collection when statistics are unsupported, and the ability to pause existing instances after creation is disabled.
 
-当前统计实现的真实集群与管理 API 联调已加入 CI，结果仍待确认。请求指标、可靠淘汰、长期扫描开销、生产 CSI、锁持久性和故障恢复仍待验证。
+Real-cluster and management API integration tests for the current statistics implementation have been added to CI; results remain to be confirmed. Request metrics, reliable eviction, long-term scanning overhead, production CSI, lock persistence, and failure recovery still require validation.

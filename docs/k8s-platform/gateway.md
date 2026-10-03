@@ -1,20 +1,20 @@
-# 独立域名入口（Gateway API）
+# Per-instance domain ingress (Gateway API)
 
-状态：适配代码、API Server 契约及固定 Envoy Gateway 的隔离集群协议验收已通过。默认关闭；生产部署仍需验证 DNS、入口负载均衡、CNI 与存储环境。
+Status: adapter code, API server contracts, and isolated-cluster protocol acceptance with a pinned Envoy Gateway have passed. Disabled by default; production deployments still need to validate DNS, ingress load balancing, CNI, and storage environments.
 
-## 资源与职责
+## Resources and responsibilities
 
-部署方安装 Gateway API Standard CRD（代码契约固定 v1.2.1）、兼容 HTTPRoute/GRPCRoute 的控制器，并管理共享 Gateway、DNS 和 TLS 证书。expbuild Operator 仅创建实例所在 namespace 的路由和最小 NetworkPolicy，不创建或修改共享 Gateway、证书、DNS、GatewayClass。
+The deployer installs Gateway API Standard CRDs (code contracts pin v1.2.1), a controller compatible with HTTPRoute/GRPCRoute, and manages the shared Gateway, DNS, and TLS certificates. The expbuild Operator creates only routes and minimal NetworkPolicies in each instance's namespace; it does not create or modify the shared Gateway, certificates, DNS, or GatewayClass.
 
-实例访问方式可选 `ClusterInternal` 或 `Gateway`。管理 API 通过 `GATEWAY_ENABLED=true` 启用后，模板目录发布可选方式，界面显示独立域名选项。默认值为 ClusterInternal；PATCH 是完整配置，客户端必须保留当前 exposure，避免意外改回内部访问。
+Instance exposure can be `ClusterInternal` or `Gateway`. Once enabled in the management API with `GATEWAY_ENABLED=true`, the template catalog advertises the available modes and the UI shows the per-instance domain option. The default is ClusterInternal. PATCH accepts a complete configuration, so clients must preserve the current exposure to avoid accidentally reverting to internal access.
 
-外部地址为 `http-<CR-UID>.<baseDomain>` 与 `grpc-<CR-UID>.<baseDomain>`，分别使用 HTTPS 和 gRPC TLS。域名绑定集群分配的不可变 CR UID，避免手写 CR 重复 instanceId 或跨 namespace 重名导致路由冲突。实例更新和暂停恢复保持 UID；删除重建产生新地址。WebDAV 只有 HTTP 路由。Bazel HTTP 和 REAPI 路由分别指向同一实例 Service 的 8080、9092 端口，后者声明 `kubernetes.io/h2c`。
+External addresses are `http-<CR-UID>.<baseDomain>` and `grpc-<CR-UID>.<baseDomain>`, using HTTPS and gRPC TLS respectively. Domains bind to the immutable CR UID assigned by the cluster, preventing routing conflicts from manually written CRs with duplicate instanceId values or names reused across namespaces. Updates and pause/resume preserve the UID; deletion and recreation produce a new address. WebDAV has only an HTTP route. Bazel HTTP and REAPI routes point to ports 8080 and 9092 of the same instance Service; the latter declares `kubernetes.io/h2c`.
 
-[Gateway API 的 GRPCRoute 规范](https://gateway-api.sigs.k8s.io/reference/api-types/grpcroute/)建议 HTTP 与 gRPC 使用不同 hostname；本适配采用这一方式。实例本身继续使用引擎原生认证，Gateway 应保留 Authorization 及原始请求方法、路径，不额外缓存或改写请求。
+The [Gateway API GRPCRoute specification](https://gateway-api.sigs.k8s.io/reference/api-types/grpcroute/) recommends different hostnames for HTTP and gRPC; this adapter follows that approach. Instances continue to use native engine authentication. The Gateway should preserve Authorization and the original request method and path, without additional caching or rewriting.
 
-## 配置示例
+## Configuration example
 
-以下为部署方维护的共享资源示意，不会随 expbuild Chart 自动创建：
+The following illustrates shared resources maintained by the deployer; the expbuild chart does not create them automatically:
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
@@ -46,9 +46,9 @@ spec:
             kind: GRPCRoute
 ```
 
-证书 Secret 位于 Gateway 所在 namespace，覆盖 `*.cache.example.com`；DNS 同名通配记录指向入口。Gateway API 的 TLS 配置规则见[官方说明](https://gateway-api.sigs.k8s.io/guides/user-guides/tls/)。入口可为内网地址，并不要求公网。
+The certificate Secret resides in the Gateway's namespace and covers `*.cache.example.com`; the corresponding wildcard DNS record points to the ingress. See the [official documentation](https://gateway-api.sigs.k8s.io/guides/user-guides/tls/) for Gateway API TLS rules. The ingress may use a private address; public Internet access is not required.
 
-对应 Helm values：
+Corresponding Helm values:
 
 ```yaml
 gateway:
@@ -61,37 +61,37 @@ gateway:
   dataPlaneNamespace: edge-data-plane
 ```
 
-`controllerName` 必须是所选 GatewayClass 使用的实际控制器名称；示例不是可直接运行的控制器。`dataPlaneNamespace` 是实际转发流量的 Pod 所在 namespace，可以不同于 Gateway 对象或控制器的 namespace。部署方需给这些数据面 Pod 设置 `cache.expbuild.io/gateway=true`，并确保重建后仍保留此标签。
+`controllerName` must be the actual controller name used by the chosen GatewayClass; the example does not identify a runnable controller. `dataPlaneNamespace` is the namespace of the Pods that actually forward traffic and may differ from the namespace of the Gateway object or controller. The deployer must label these data-plane Pods with `cache.expbuild.io/gateway=true` and ensure the label survives recreation.
 
-每个外部实例的 NetworkPolicy 同时要求来源 namespace 名称与 Pod 标签匹配，只开放该模板需要的端口。它与项目已有策略共同生效，不撤销已有客户端或控制面权限。若网络插件不执行 NetworkPolicy，不能据此宣称流量已经隔离。
+Each external instance's NetworkPolicy requires both the source namespace name and Pod label to match and opens only the ports required by that template. It operates alongside existing project policies and does not revoke existing client or control-plane permissions. If the network plugin does not enforce NetworkPolicy, these policies cannot be used to claim traffic isolation.
 
-## 就绪与清理
+## Readiness and cleanup
 
-Operator 要求选定监听器为 443/HTTPS/TLS Terminate，Gateway 与监听器当前 generation 的 Accepted/Programmed/ResolvedRefs 状态符合要求；每条路由的父对象、namespace、sectionName、controllerName、当前 generation 的 Accepted/ResolvedRefs 也必须匹配。后端仍需通过既有认证协议探测。
+The Operator requires the selected listener to use 443/HTTPS/TLS Terminate, with the required Accepted/Programmed/ResolvedRefs conditions for the current generation of the Gateway and listener. Each route must also match its parent, namespace, sectionName, controllerName, and current-generation Accepted/ResolvedRefs conditions. Backends must still pass the existing authenticated protocol probes.
 
-Gateway 模式下，Ready/EndpointReady 表示后端与路由配置接纳。`ExternalReachability=Unknown, reason=NotProbed` 明确表示没有验证外部 DNS、证书信任和客户端可达性；不可把上述状态作为完整外部可用性的证明。
+In Gateway mode, Ready/EndpointReady indicates that backend and route configurations have been accepted. `ExternalReachability=Unknown, reason=NotProbed` explicitly means external DNS, certificate trust, and client reachability have not been verified; these conditions are not proof of complete external availability.
 
-暂停、切回内部访问、删除实例时，先删除归属匹配的 HTTPRoute、GRPCRoute 和入口 NetworkPolicy，再继续后续处理。删除使用 UID/resourceVersion 前置条件，拒绝认领或删除其他实例资源。专门的 gateway-cleanup finalizer 在创建路由之前写入，并在确认路由已不存在后移除；清理失败会保留标记。
+When pausing, switching back to internal access, or deleting an instance, the Operator first deletes ownership-matched HTTPRoutes, GRPCRoutes, and ingress NetworkPolicies before continuing. Deletion uses UID/resourceVersion preconditions and refuses to adopt or delete resources belonging to other instances. A dedicated gateway-cleanup finalizer is written before route creation and removed only after route absence is confirmed; failed cleanup retains the marker.
 
-关闭入口配置前，应先将 Gateway 实例改回内部访问或删除。关闭后 Operator 不再监听路由变化，但保留路由清理权限，使已有标记的实例仍可在删除时撤销访问。不能先卸载 Gateway API CRD；API 缺失会使安全清理失败并阻止正常完成。路由对象删除与代理实际停止转发之间存在控制器收敛时间，需要在真实数据面验证。
+Before disabling ingress configuration, switch Gateway instances back to internal access or delete them. After it is disabled, the Operator no longer watches route changes, but retains cleanup permissions so instances with existing markers can still revoke access on deletion. Do not uninstall Gateway API CRDs first: missing APIs make safe cleanup fail and block normal completion. There is controller convergence time between deleting route objects and the proxy actually ceasing to forward traffic; this must be validated against a real data plane.
 
-## 已完成的隔离集群验收
+## Completed isolated-cluster acceptance
 
-[2026-09-30 的真实集群 CI](https://github.com/expbuild/expbuild/actions/runs/36669207282)通过，代码提交 `ea1aaa7`。使用固定 Chart SHA256 和镜像摘要的 Envoy Gateway v1.8.5、Envoy v1.38.4；可复现入口见 [测试说明](testing.md)。
+[Real-cluster CI on 2026-09-30](https://github.com/expbuild/expbuild/actions/runs/36669207282) passed at commit `ea1aaa7`. It used Envoy Gateway v1.8.5 and Envoy v1.38.4 with pinned chart SHA256 and image digests; see [testing instructions](testing.md) for the reproduction entry point.
 
-- 实际共享 HTTPS 监听器与跨 namespace HTTPRoute/GRPCRoute 接纳。
-- 临时 CA、通配证书、真实 hostname/SNI 校验；错误 hostname 和不受信任证书被拒绝。
-- WebDAV 认证、16 MiB PUT/GET、MKCOL/PROPFIND/LOCK、无令牌删除拒绝和指定资源锁令牌删除成功。
-- WebDAV 暂停后外部访问停止，恢复后读取原数据；轮换后旧密码拒绝、新密码读原数据；删除后外部入口撤销。
-- bazel-remote v2.6.2 固定摘要镜像、非 root UID/fsGroup、只读根文件系统、真实 PVC；gRPC TLS capabilities、FindMissingBlobs、8 MiB ByteStream 分块上传/下载及 Bazel HTTP CAS。
-- REAPI 与 HTTP 轮换后旧密码被拒绝、新密码读取原数据；删除后 HTTPRoute/GRPCRoute 清理。
+- Actual shared HTTPS listener and cross-namespace HTTPRoute/GRPCRoute acceptance.
+- Temporary CA, wildcard certificate, and real hostname/SNI validation; incorrect hostnames and untrusted certificates are rejected.
+- WebDAV authentication, 16 MiB PUT/GET, MKCOL/PROPFIND/LOCK, rejection of deletion without a token, and successful deletion with the specified resource's lock token.
+- External WebDAV access stops on pause and original data can be read after resume; rotation rejects the old password and allows the new password to read original data; deletion revokes external ingress.
+- bazel-remote v2.6.2 digest-pinned image, non-root UID/fsGroup, read-only root filesystem, and real PVC; gRPC TLS capabilities, FindMissingBlobs, chunked 8 MiB ByteStream upload/download, and Bazel HTTP CAS.
+- After REAPI and HTTP credential rotation, the old password is rejected and the new password reads original data; HTTPRoute/GRPCRoute cleanup follows deletion.
 
-流量通过本地端口转发抵达真实 Gateway TLS 监听器，没有绕过代理或证书校验。它不验证公网 DNS 或外部负载均衡器，也不证明生产 CSI 兼容性。
+Traffic reaches a real Gateway TLS listener through local port forwarding, without bypassing the proxy or certificate validation. This does not validate public DNS or an external load balancer, or establish production CSI compatibility.
 
-## 待完成的认证
+## Outstanding qualification
 
-- 真实 CNI 下允许/拒绝来源，以及生产网络与 DNS 配置。
-- 真实 Bazel 构建客户端、ActionCache、压缩与并发客户端行为。
-- WebDAV 重定向、MOVE/COPY 及更多客户端兼容性。
-- 入口超时、超大请求及负载测试；16 MiB/8 MiB 是已验证样本，不是容量上限或吞吐承诺。
-- REAPI 删除后的实际 RPC 拒绝；当前删除检查确认路由对象清理，WebDAV 另有数据面撤销断言。
+- Allowed/denied sources under a real CNI, and production network and DNS configuration.
+- Real Bazel build clients, ActionCache, compression, and concurrent client behavior.
+- WebDAV redirects, MOVE/COPY, and broader client compatibility.
+- Ingress timeouts, oversized requests, and load tests; 16 MiB/8 MiB are verified samples, not capacity limits or throughput promises.
+- Actual RPC rejection after REAPI deletion; current deletion checks confirm route-object cleanup, while WebDAV has a separate data-plane revocation assertion.

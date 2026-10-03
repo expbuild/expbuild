@@ -1,39 +1,39 @@
 # expbuild Helm Chart
 
-本 Chart 安装管理 API、静态管理界面、Operator、控制台 HTTPS 入口和迁移任务。
-企业 PostgreSQL、存储驱动、Ingress Controller、TLS 证书和 Secret 由部署方管理。
-缓存实例目前只提供集群内访问；这里的 Ingress 是管理控制台入口，不是缓存域名入口。
+This chart installs the management API, static management UI, Operator, console HTTPS ingress, and migration jobs.
+The deployer manages enterprise PostgreSQL, storage drivers, the Ingress Controller, TLS certificates, and Secrets.
+Cache instances currently provide in-cluster access only; the Ingress here is for the management console, not cache domains.
 
-## 安装前准备
+## Prerequisites
 
-1. Kubernetes 1.32+，可用的动态 StorageClass，以及支持 NetworkPolicy 的 CNI。
-2. 构建并上传三个平台镜像，参见仓库 `images/README.md`。
-3. 验证 bazel-remote 镜像和客户端兼容性，取得 SHA256 digest。仓库中的
-   `ci-values.yaml` 全部为不可部署的示例镜像，只用于测试模板。
-4. 准备 PostgreSQL 数据库和已有的控制面 namespace。建议一个集群运行一个
-   expbuild 控制面；当前 Operator 会观察所有受管理项目，不能靠 release 名隔离两套控制面。
-5. 给控制面 namespace 添加 `cache.expbuild.io/control-plane=true` 标签。
-   控制面访问规则允许该来源，Operator 协议探测依赖它。构建客户端使用下述独立授权规则。
-6. 在控制面 namespace 创建以下已有 Secret；通过企业凭据系统提供真实值，
-   不要把 Secret 内容写进 Helm values 或 Git：
+1. Kubernetes 1.32+, an available dynamic StorageClass, and a CNI that supports NetworkPolicy.
+2. Build and upload the three platform images; see `images/README.md` in the repository.
+3. Verify compatibility between the bazel-remote image and clients, and obtain its SHA256 digest. All images in
+   `ci-values.yaml` are non-deployable examples used only for template tests.
+4. Prepare a PostgreSQL database and an existing control-plane namespace. One expbuild control plane per cluster
+   is recommended; the current Operator watches all managed projects, so release names cannot isolate two control planes.
+5. Label the control-plane namespace with `cache.expbuild.io/control-plane=true`.
+   Control-plane access rules allow this source, and Operator protocol probes depend on it. Build clients use the separate authorization rules below.
+6. Create the following existing Secrets in the control-plane namespace. Supply real values through your enterprise credential system;
+   do not place Secret contents in Helm values or Git:
 
-| 配置 | Secret 数据键 | 用途 |
+| Setting | Secret data keys | Purpose |
 |---|---|---|
-| `secrets.database` | `DATABASE_URL` | API 与 worker 的数据库连接 |
-| `secrets.migrationDatabase`（可选） | `DATABASE_URL` | 有 DDL 权限的迁移账号；未指定时使用 database |
-| `secrets.operationEncryption` | `OPERATION_ENCRYPTION_KEY` | 32 随机字节的 64 位十六进制表示 |
-| `secrets.bootstrap`（可选） | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | 首次初始化管理员，密码至少 12 字符 |
-| `ingress.tlsSecret` | `tls.crt`, `tls.key` | 控制台 TLS，类型 kubernetes.io/tls |
+| `secrets.database` | `DATABASE_URL` | Database connection for the API and workers |
+| `secrets.migrationDatabase` (optional) | `DATABASE_URL` | Migration account with DDL permissions; defaults to database when omitted |
+| `secrets.operationEncryption` | `OPERATION_ENCRYPTION_KEY` | 32 random bytes represented as 64 hexadecimal characters |
+| `secrets.bootstrap` (optional) | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Initial administrator bootstrap; password must be at least 12 characters |
+| `ingress.tlsSecret` | `tls.crt`, `tls.key` | Console TLS; type kubernetes.io/tls |
 
-数据库迁移和管理员初始化都需要连到同一数据库。备份数据库时必须安全保管操作
-加密密钥；有待处理操作时替换密钥会使凭据交接无法解密。
+Database migrations and administrator bootstrap must connect to the same database. Keep the operation-encryption key
+secure when backing up the database; replacing it while operations are pending makes credential handoffs impossible to decrypt.
 
-## 配置与安装
+## Configuration and installation
 
-复制 `values.yaml` 到部署系统中，设置实际镜像、StorageClass、Secret 名称、
-`appOrigin` 和 `ingress.host`。Origin 必须是 `https://` 加域名，且不能有尾随路径。
-为私有镜像配置 `imagePullSecrets`。已有 bootstrap Secret 时，可在首次安装设置
-`bootstrap.enabled=true`。初始化不会覆盖已有账号，重复账号会让任务报错。
+Copy `values.yaml` into your deployment system and set real images, StorageClass, Secret names,
+`appOrigin`, and `ingress.host`. The origin must be `https://` followed by a domain, with no trailing path.
+Configure `imagePullSecrets` for private images. If a bootstrap Secret already exists, set
+`bootstrap.enabled=true` for the initial installation. Bootstrap does not overwrite existing accounts; duplicate accounts cause the job to fail.
 
 ```sh
 helm lint deploy/charts/expbuild -f /secure/path/production-values.yaml --strict
@@ -43,62 +43,62 @@ helm upgrade --install expbuild deploy/charts/expbuild \
   --namespace expbuild-system -f /secure/path/production-values.yaml --wait --timeout 10m
 ```
 
-namespace 与 Secret 必须先存在。安装需要授权集群级 CRD/RBAC。
-Chart 将 API 与 Operator 分配到不同 ServiceAccount；Web、迁移和 bootstrap
-任务不挂载 Kubernetes token。API 可创建项目 namespace、认证 Secret、
-NetworkPolicy 和 CacheInstance；为保留卷清理，API 还可读取/删除 PVC 和列出 Pod，以核对卷引用。Operator 管理实例资源、读取 Secret。
+The namespace and Secrets must already exist. Installation requires permission to manage cluster-scoped CRDs/RBAC.
+The chart assigns separate ServiceAccounts to the API and Operator; Web, migration, and bootstrap
+jobs do not mount Kubernetes tokens. The API can create project namespaces, authentication Secrets,
+NetworkPolicies, and CacheInstances; for retained-volume cleanup, it can also read/delete PVCs and list Pods to check volume references. The Operator manages instance resources and reads Secrets.
 
-集群角色的授权覆盖整个集群；项目归属标签和 UID 校验由应用层执行，
-不是 Kubernetes RBAC 的 namespace 限制。Operator 不能修改 Secret 或删除 PV，
-API 不能删除 PV、更新实例 status、创建 StatefulSet 或授予 RBAC 权限；选主权限仅在控制面
-namespace 生效。管理页面的 ServiceAccount 没有资源授权且不挂载 token。
-测试会在临时 API Server 中验证独立清单与 Helm 清单的允许和拒绝边界，
-不会安装到部署方的实际集群。
-资源归属还由应用校验，但集群管理员应将控制面视为可信基础设施。
+ClusterRole permissions apply cluster-wide; project ownership labels and UID checks are enforced by the application,
+not by namespace restrictions in Kubernetes RBAC. The Operator cannot modify Secrets or delete PVs;
+the API cannot delete PVs, update instance status, create StatefulSets, or grant RBAC permissions. Leader-election permissions apply only in the control-plane
+namespace. The management UI's ServiceAccount has no resource permissions and does not mount a token.
+Tests verify allow/deny boundaries for standalone and Helm manifests in a temporary API server;
+they do not install into the deployer's actual cluster.
+The application also checks resource ownership, but cluster administrators should treat the control plane as trusted infrastructure.
 
-Ingress 把 `/v1` 路由到 API，其他请求路由到 Web，从而保留同源 Cookie 与 CSRF。
-关闭 ingress 时，需自行提供同源反向代理；直接只转发 Web 服务无法调用 API。
-需要密码防爆破时，应在企业入口补充共享限流，API 当前仅有进程级登录限流。
+Ingress routes `/v1` to the API and other requests to Web, preserving same-origin cookies and CSRF behavior.
+When ingress is disabled, provide your own same-origin reverse proxy; forwarding only the Web service is insufficient for API access.
+If protection against password brute force is required, add shared rate limiting at the enterprise entry point; the API currently provides only process-local login rate limiting.
 
-## 升级与回退
+## Upgrades and rollback
 
-镜像绑定版本需要先应用新 CRD，再更新控制面。存量实例只在现有完整镜像集合
-匹配管理员批准 digest 时接纳，绑定后安装值只影响新实例。WebDAV 必须单独设置
-`images.webdavStats` 的批准 digest；不能复用控制器 tag。旧 Operator 不理解绑定，
-不能直接回退到旧版。详见 [首次迁移与恢复步骤](../../../docs/k8s-platform/image-upgrade-risk.md)。
+For the image-binding release, apply the new CRD before updating the control plane. Existing instances are adopted only when their complete current image set
+matches administrator-approved digests; after binding, installation values affect only new instances. WebDAV requires a separately approved digest for
+`images.webdavStats`; do not reuse the controller tag. Older Operators do not understand bindings,
+so a direct rollback to an older version is not supported. See [initial migration and recovery procedures](../../../docs/k8s-platform/image-upgrade-risk.md).
 
-- `pre-install,pre-upgrade` 迁移 Job 在新工作负载启动前运行。失败会中止 Helm
-  操作。Migration 使用事务、锁和 checksum，不在每个 API Pod 启动时自动执行。
-- Helm 不会自动升级 `crds/` 内已有 CRD。升级前审查新 schema，备份现有 CR，
-  再由有权限的管理员应用新 CRD；`make generate` 同步两份 CRD，CI 检查一致性。
-- 数据库回退不是 Helm rollback 的一部分。升级前备份 PostgreSQL、密钥及
-  Kubernetes 资源，确认旧镜像兼容新数据库。当前没有自动降级 SQL。
-- 镜像认证、真实集群滚动升级及故障恢复仍是交付验收项，不能以模板通过代替。
+- The `pre-install,pre-upgrade` migration Job runs before new workloads start. Failure aborts the Helm
+  operation. Migrations use transactions, locking, and checksums; they do not run automatically on every API Pod startup.
+- Helm does not automatically upgrade existing CRDs in `crds/`. Review the new schema and back up existing CRs before upgrading,
+  then have an authorized administrator apply the new CRD. `make generate` synchronizes both CRD copies, and CI checks their consistency.
+- Database rollback is not part of Helm rollback. Back up PostgreSQL, keys, and Kubernetes resources before upgrading,
+  and confirm that old images are compatible with the new database. There is currently no automatic downgrade SQL.
+- Image qualification, rolling upgrades in a real cluster, and failure recovery remain delivery acceptance requirements; passing template tests is not a substitute.
 
-## 卸载与保留数据
+## Uninstallation and retained data
 
-先通过管理 API 删除实例，并等待操作完成，再卸载控制面。Retain 实例保留其 PVC；
-Delete 实例由运行中的 Operator 执行受控删除。卸载不会删除项目 namespace、实例
-CR、PVC、外部 Secret、数据库或 CRD。直接卸载会留下运行中的缓存及无法执行的
-finalizer；可用原有密钥、数据库和正确配置重装控制面后继续处理。
+Delete instances through the management API and wait for operations to complete before uninstalling the control plane. Retain instances keep their PVCs;
+Delete instances are removed through controlled deletion by the running Operator. Uninstallation does not delete project namespaces, instance
+CRs, PVCs, external Secrets, the database, or CRDs. Uninstalling directly leaves running caches and finalizers that cannot execute;
+reinstall the control plane with the original keys, database, and correct configuration to resume processing.
 
-## 验证边界
+## Validation boundaries
 
-Chart lint、渲染和隔离 API Server 的资源校验在本地/CI 中执行。镜像启动及 Helm/API/WebDAV 的 PVC 生命周期已通过隔离 kind 集群验证；TLS、生产 CSI 和跨版本升级仍待验收。容器 CI 构建并运行检查，不发布镜像。详细记录见 [实施状态](../../../docs/k8s-platform/progress.md)。
+Chart linting, rendering, and resource validation with an isolated API server run locally/in CI. Image startup and Helm/API/WebDAV PVC lifecycles have passed isolated kind-cluster tests; TLS, production CSI, and cross-version upgrades still require acceptance testing. Container CI builds images and runs checks but does not publish images. See [implementation status](../../../docs/k8s-platform/progress.md) for detailed records.
 
-## 集群内构建客户端访问
+## In-cluster build-client access
 
-项目初始化会创建 `expbuild-isolation` 和 `expbuild-client-access` 两份 NetworkPolicy。
-前者隔离项目 namespace 入站并放行控制面；后者仅允许授权客户端访问项目内标记为
-expbuild 管理的缓存 Pod，端口为 TCP 8080（HTTP/WebDAV）、9092（REAPI）。
+Project initialization creates two NetworkPolicies: `expbuild-isolation` and `expbuild-client-access`.
+The former isolates inbound traffic to the project namespace while allowing the control plane; the latter allows only authorized clients to access cache Pods labeled
+as managed by expbuild in the project, on TCP ports 8080 (HTTP/WebDAV) and 9092 (REAPI).
 
-集群管理员在运行构建任务的 namespace 上设置标签（用实际项目 UUID 替换 `<project-id>`）：
+A cluster administrator labels the namespace that runs build jobs (replace `<project-id>` with the actual project UUID):
 
 ```sh
 kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>=true'
 ```
 
-构建 Pod 的标签还必须包含：
+Build Pods must also carry this label:
 
 ```yaml
 metadata:
@@ -106,37 +106,37 @@ metadata:
     cache.expbuild.io/client: "true"
 ```
 
-如果是 Deployment/Job，应把标签放在 `spec.template.metadata.labels`。
-namespace 授权和 Pod 标签必须同时满足。每个项目使用独立的 namespace 标签键，
-同一个构建 namespace 可以被管理员授予多个项目访问权。网络授权不替代实例凭据；
-客户端仍需提供该实例的用户名和密码。普通用户不应具有更改 namespace 授权标签的权限。
+For a Deployment/Job, place the label in `spec.template.metadata.labels`.
+Both namespace authorization and the Pod label are required. Each project uses a separate namespace label key;
+an administrator can grant the same build namespace access to multiple projects. Network authorization does not replace instance credentials;
+clients must still provide the instance username and password. Regular users should not have permission to change namespace authorization labels.
 
-撤销某个 namespace 的项目网络授权：
+To revoke a namespace's network access to a project:
 
 ```sh
 kubectl label namespace build-runners 'cache.expbuild.io/access-<project-id>-'
 ```
 
-撤销何时影响已有连接取决于 CNI；需要立即撤销凭据时还应轮换实例密码。
-策略不授予客户端出站权限，客户端所在 namespace 如限制 egress，仍需允许目标缓存端口
-以及 DNS 解析。可选 Gateway 模式已支持 TLS 与实例独立域名；部署方准备 DNS、证书和共享入口，详见 [Gateway 配置](../../../docs/k8s-platform/gateway.md)。
+When revocation affects existing connections depends on the CNI; rotate the instance password as well if credentials must be revoked immediately.
+These policies do not grant client egress access. If the client's namespace restricts egress, it must still allow the destination cache ports
+and DNS resolution. Optional Gateway mode supports TLS and per-instance domains; the deployer supplies DNS, certificates, and a shared entry point. See [Gateway configuration](../../../docs/k8s-platform/gateway.md).
 
-升级前创建的项目会在下一次创建实例时补齐客户端策略；只有既有实例且不新建时，
-需要部署方补装对应策略（可从新项目已生成策略核对字段，不要直接复制项目身份）。
-初始化检查不会覆盖同名的异属或已修改客户端策略，会报告冲突。策略不是持续对账的，
-其他额外 NetworkPolicy 也可能扩大允许范围，必须结合集群策略管理。
+Projects created before the upgrade receive the client policies the next time an instance is created. For projects with only existing instances and no new creation,
+the deployer must install the corresponding policies separately (use a newly generated project's policies to check fields, but do not copy its project identity).
+Initialization checks do not overwrite client policies with the same name that belong to another owner or have been modified; they report a conflict. Policies are not continuously reconciled,
+and additional NetworkPolicies may broaden access, so manage them together with cluster-wide policies.
 
-已验证 SDK 实际请求格式、重复初始化和冲突拒绝。真实客户端连通性、跨项目拒绝和
-撤销效果仍需在启用了 NetworkPolicy 的 CNI 上验收。
+The SDK's actual request format, repeated initialization, and conflict rejection have been verified. Real-client connectivity, cross-project denial, and
+revocation effects still require acceptance testing with a NetworkPolicy-enforcing CNI.
 
-## 保留卷清理
+## Retained-volume cleanup
 
-Retain 删除完成后，在实例详情中查看实际保留卷；管理员输入卷名确认清理。API 将删除请求放入异步队列并记录审计，核对项目、原实例 UID、PVC UID、ownerReferences、CR 是否存在以及所有 Pod 的卷引用。删除使用 PVC UID 与 resourceVersion 前置条件，避免清理同名替换卷。仅在确认 PVC 不存在后完成操作。
+After Retain deletion completes, view the actual retained volume in instance details; an administrator confirms cleanup by entering the volume name. The API queues the deletion asynchronously and records an audit event, checking the project, original instance UID, PVC UID, ownerReferences, whether the CR still exists, and all Pod volume references. Deletion uses PVC UID and resourceVersion preconditions to avoid removing a replacement volume with the same name. The operation completes only after PVC absence is confirmed.
 
-这是删除 PVC 声明，不是直接删除 PV 或保证底层数据擦除；实际回收由 StorageClass/PV 策略决定。不要绕过流程手动挂载待清理卷。拥有集群写权限的外部控制器可能并发改动资源，PVC protection 仍可能使清理保持等待直到引用解除。失败后排除原因、重新查询并再次确认。
+This deletes the PVC claim; it does not directly delete the PV or guarantee erasure of underlying data. Actual reclamation follows the StorageClass/PV policy. Do not bypass the workflow by manually mounting a volume awaiting cleanup. External controllers with cluster write permissions may change resources concurrently, and PVC protection may keep cleanup waiting until references are removed. After a failure, resolve the cause, query again, and confirm again.
 
-可在实例详情用原 PVC 重新创建同模板实例；平台先绑定新 CR UID，再让 Operator 转移已验证 PVC 的归属标签。升级已有安装以使用此能力时，必须先按“升级与回退”步骤更新 CacheInstance CRD，新字段不会由 Helm 自动升级。操作、故障恢复和 CSI 限制见[保留卷领回](../../../docs/k8s-platform/retained-volume-reclaim.md)。
+Instance details allow a new instance of the same template to be created using the original PVC; the platform first binds the new CR UID, then lets the Operator transfer the verified PVC's ownership labels. When upgrading an existing installation to use this capability, update the CacheInstance CRD first as described in “Upgrades and rollback”; Helm does not automatically upgrade the new fields. See [retained-volume reclaim](../../../docs/k8s-platform/retained-volume-reclaim.md) for operations, failure recovery, and CSI limitations.
 
-## 实例独立域名
+## Per-instance domains
 
-可选 `gateway.enabled` 将实例路由接入部署方已有的 Gateway API HTTPS 监听器。必须提供完整 gateway 配置、DNS、证书和带授权标签的数据面 Pod；默认关闭。Operator 拥有实例 HTTPRoute/GRPCRoute/入口 NetworkPolicy 的管理权限及 Gateway 只读权限，不可修改 Gateway 或证书。清理权限不随功能关闭而移除，避免已有实例无法撤销路由。详见 [入口配置与未完成认证](../../../docs/k8s-platform/gateway.md)。
+The optional `gateway.enabled` setting connects instance routes to an existing Gateway API HTTPS listener supplied by the deployer. It requires complete gateway configuration, DNS, certificates, and data-plane Pods with authorization labels; it is disabled by default. The Operator can manage instance HTTPRoutes/GRPCRoutes/ingress NetworkPolicies and has read-only access to Gateways; it cannot modify Gateways or certificates. Cleanup permissions remain when the feature is disabled so existing instance routes can still be revoked. See [ingress configuration and outstanding qualification](../../../docs/k8s-platform/gateway.md).

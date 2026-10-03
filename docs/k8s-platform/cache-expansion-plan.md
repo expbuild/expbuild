@@ -1,175 +1,175 @@
-# expbuild 缓存类型扩展调研与规划
+# expbuild Cache Type Expansion Research and Plan
 
-整理日期：2026-10-02。依据：2026-10-01 的官方文档与项目资料调研。状态：候选扩展规划，尚未进行新增引擎的运行、兼容性或性能验证。本文记录建议范围和推进顺序，具体引擎与版本在原型验证后确定。
+Compiled: 2026-10-02. Basis: research into official documentation and project materials on 2026-10-01. Status: candidate expansion plan; no runtime, compatibility, or performance validation of new engines has been conducted. This document records the recommended scope and sequence; specific engines and versions will be selected after prototype validation.
 
-建议优先扩展 Docker/OCI 镜像拉取缓存、BuildKit 构建缓存、通用制品与 CI 缓存，再接入各语言的软件包缓存。沿用 Kubernetes 管理独立实例的架构，复用已有引擎，统一生命周期、凭据、配置与可观测入口。
+Prioritize Docker/OCI image pull caching, BuildKit build caching, and general artifact and CI caching, followed by language-specific package caches. Continue the Kubernetes architecture for managing independent instances, reuse existing engines, and unify lifecycle, credentials, configuration, and observability entry points.
 
-现有模板覆盖 REAPI/Bazel HTTP、Gradle HTTP 和 Apache WebDAV；实际交付与验证边界见[实施状态](progress.md)。本规划不表示新增类型已经接入，也不改变 WebDAV 暂时保持现状的约定；自研方向另见[WebDAV 缓存服务方案](webdav-cache-plan.md)。
+Existing templates cover REAPI/Bazel HTTP, Gradle HTTP, and Apache WebDAV; see [Implementation Status](progress.md) for actual delivery and validation boundaries. This plan does not mean new types are already integrated or change the agreement to leave WebDAV unchanged for now; see the [WebDAV Cache Service Plan](webdav-cache-plan.md) for the internally developed service direction.
 
-## 扩展原则
+## Expansion Principles
 
-- 按用途和客户端定义服务模板。同一协议可以承载不同用途，不能因为都使用 HTTP 就宣称互通。
-- 平台管理实例，引擎处理协议和数据。缓存请求直接访问引擎，管理 API 和 Operator 不进入逐条缓存读写链路。
-- 默认继续采用小型独立实例。引擎内部管理条目与索引，不引入跨引擎统一 CacheCatalog。
-- 每个精确模板版本声明已验证的存储、清理、指标及客户端能力。缺少的能力显示不支持，不虚构默认实现。
-- 候选引擎支持对象存储，不代表 expbuild 当前已支持对象存储实例；相关资源模型、凭据和配额需单独实现。
+- Define service templates by use case and client. The same protocol can serve different purposes; using HTTP does not establish interoperability.
+- The platform manages instances, while engines handle protocols and data. Cache requests go directly to engines; the management API and Operator do not participate in individual cache reads and writes.
+- Continue using small, independent instances by default. Engines manage their own entries and indexes; do not introduce a unified cross-engine CacheCatalog.
+- Each exact template version declares verified storage, cleanup, metric, and client capabilities. Mark missing capabilities as unsupported rather than inventing default implementations.
+- A candidate engine's object-storage support does not mean expbuild currently supports object-storage instances; the associated resource model, credentials, and quotas require separate implementation.
 
-本文表格中的接入判断与优先级是规划建议；链接支持的是上游能力，不能替代 expbuild 的实际验收。
+Integration assessments and priorities in this document's tables are planning recommendations; linked sources support upstream capabilities and do not replace actual expbuild acceptance testing.
 
-## 缓存类型与候选实现
+## Cache Types and Candidate Implementations
 
-| 类型 | 内容与用途 | 候选实现或接入方式 | 建议顺序 |
+| Type | Content and purpose | Candidate implementation or integration | Suggested sequence |
 |---|---|---|---|
-| Docker/OCI 镜像拉取缓存 | 缓存上游镜像清单、配置和镜像层，减少重复下载 | [Distribution](https://distribution.github.io/distribution/recipes/mirror/)、[zot](https://zotregistry.dev/v2.1.21/articles/mirroring/)、Harbor | 第一阶段 |
-| BuildKit 构建缓存 | 复用 Dockerfile 构建步骤和多阶段构建结果 | 可写 OCI Registry，使用 [cache-to 与 cache-from](https://docs.docker.com/build/cache/backends/registry/) | 第一阶段 |
-| 通用制品与 CI 缓存 | 按 key 保存文件、目录归档和中间结果 | HTTP/WebDAV、S3；优先验证 [GitLab Runner 分布式缓存](https://docs.gitlab.com/ci/caching/) | 第一阶段，先确定数据保留语义 |
-| npm 包缓存 | 包元数据与 tarball，面向 npm、pnpm、Yarn | [Verdaccio](https://www.verdaccio.org/docs/caching/) | 第二阶段 |
-| Maven 依赖缓存 | JAR、POM、插件和仓库元数据 | [Reposilite](https://reposilite.com/)、Nexus Repository | 第二阶段，验证代理缓存行为 |
-| Python 包缓存 | wheel、源码包和 PyPI 索引 | [devpi](https://github.com/devpi/devpi) | 第二阶段 |
-| Go Modules 缓存 | 模块版本的 .mod、.info、.zip | [Athens](https://docs.gomods.io/configuration/storage/) | 第二阶段 |
-| C/C++ 与 Rust 编译缓存 | 编译产物和查询所需元数据 | [sccache](https://github.com/mozilla/sccache)、[ccache](https://ccache.dev/manual/latest.html) 的远程存储接口 | 第三阶段，优先复用已有后端 |
-| Monorepo 任务缓存 | 构建、测试等任务的输出和日志 | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching)、[Nx 自托管缓存 API](https://nx.dev/docs/kb/self-hosted-caching) | 第三阶段 |
-| HTTP 下载缓存 | SDK、工具链、安装包和源码压缩包 | [NGINX 缓存代理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)，按指定上游接入 | 第三阶段或按实际需求提前 |
-| 其他软件包生态 | NuGet、Cargo、Composer、APT、RPM、Alpine 等 | [Nexus 格式适配](https://help.sonatype.com/en/formats.html)、Pulp 对应插件或专用服务 | 按客户需求分别验证 |
-| Nix 二进制缓存 | 已构建的 Nix store 内容 | [Attic](https://docs.attic.rs/) | 专项扩展，进一步评估成熟度 |
-| 模型与数据集缓存 | 模型文件、数据集及其下载内容 | 先研究上游专用接口、认证、重定向与存储协议 | 专项扩展，尚未锁定引擎 |
+| Docker/OCI image pull cache | Cache upstream image manifests, configurations, and layers to reduce repeated downloads | [Distribution](https://distribution.github.io/distribution/recipes/mirror/), [zot](https://zotregistry.dev/v2.1.21/articles/mirroring/), Harbor | Phase 1 |
+| BuildKit build cache | Reuse Dockerfile build steps and multistage build results | Writable OCI Registry using [cache-to and cache-from](https://docs.docker.com/build/cache/backends/registry/) | Phase 1 |
+| General artifact and CI cache | Store files, directory archives, and intermediate results by key | HTTP/WebDAV, S3; prioritize validation of [GitLab Runner distributed caching](https://docs.gitlab.com/ci/caching/) | Phase 1; establish data-retention semantics first |
+| npm package cache | Package metadata and tarballs for npm, pnpm, and Yarn | [Verdaccio](https://www.verdaccio.org/docs/caching/) | Phase 2 |
+| Maven dependency cache | JARs, POMs, plugins, and repository metadata | [Reposilite](https://reposilite.com/), Nexus Repository | Phase 2; validate proxy-cache behavior |
+| Python package cache | Wheels, source packages, and the PyPI index | [devpi](https://github.com/devpi/devpi) | Phase 2 |
+| Go Modules cache | Module versions' .mod, .info, and .zip files | [Athens](https://docs.gomods.io/configuration/storage/) | Phase 2 |
+| C/C++ and Rust compilation cache | Compilation outputs and metadata needed for lookup | Remote storage interfaces of [sccache](https://github.com/mozilla/sccache) and [ccache](https://ccache.dev/manual/latest.html) | Phase 3; prioritize reuse of existing backends |
+| Monorepo task cache | Outputs and logs from build, test, and other tasks | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching), [Nx self-hosted cache API](https://nx.dev/docs/kb/self-hosted-caching) | Phase 3 |
+| HTTP download cache | SDKs, toolchains, installers, and source archives | [NGINX caching proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), configured for designated upstreams | Phase 3, or earlier based on actual demand |
+| Other package ecosystems | NuGet, Cargo, Composer, APT, RPM, Alpine, and others | [Nexus format support](https://help.sonatype.com/en/formats.html), corresponding Pulp plugins, or dedicated services | Validate individually based on customer needs |
+| Nix binary cache | Built Nix store contents | [Attic](https://docs.attic.rs/) | Specialized extension; further maturity assessment required |
+| Model and dataset cache | Model files, datasets, and their downloaded content | First research upstream-specific APIs, authentication, redirects, and storage protocols | Specialized extension; engine not yet selected |
 
-这些类型不必各自对应一套新引擎。例如 OCI 引擎可以承载镜像、BuildKit 缓存和 OCI 制品，但产品入口、权限、清理策略和验收应分别定义。Maven 依赖缓存加速依赖下载，已有 Gradle HTTP 缓存复用任务结果，两者互补。
+These types do not each require a new engine. For example, an OCI engine can host images, BuildKit caches, and OCI artifacts, but product entry points, permissions, cleanup policies, and acceptance criteria should be defined separately. Maven dependency caching accelerates dependency downloads, while the existing Gradle HTTP cache reuses task results; they complement each other.
 
-## Docker 与 OCI 服务
+## Docker and OCI Services
 
-### 镜像拉取与 BuildKit 构建缓存
+### Image Pull Caching and BuildKit Build Caching
 
-建议先定义两个独立用途的模板：
+First define templates for two distinct purposes:
 
-| 用途 | 数据如何进入服务 | 主要配置 |
+| Purpose | How data enters the service | Main configuration |
 |---|---|---|
-| 镜像拉取缓存 | 客户端请求未缓存的镜像时，服务从上游获取 | 上游地址及凭据、允许的仓库范围、重验证和保留策略 |
-| BuildKit 构建缓存 | 构建客户端主动上传缓存，后续构建读取 | 读写凭据、缓存仓库或引用、分支隔离、保留与回收策略 |
+| Image pull cache | The service fetches from upstream when a client requests an uncached image | Upstream address and credentials, allowed repository scope, revalidation and retention policies |
+| BuildKit build cache | Build clients explicitly upload cache data for later builds to read | Read/write credentials, cache repository or reference, branch isolation, retention and reclamation policies |
 
-BuildKit 的 Registry 后端可以将缓存与最终镜像分开保存，支持 `mode=max` 导出多阶段构建缓存。接入时仍需验证客户端版本、构建驱动和媒体类型组合。[Docker Registry 缓存文档](https://docs.docker.com/build/cache/backends/registry/)
+BuildKit's Registry backend can store caches separately from final images and supports `mode=max` to export multistage build caches. Integration still requires validation of client versions, build drivers, and media-type combinations. [Docker Registry cache documentation](https://docs.docker.com/build/cache/backends/registry/)
 
-建议首版使用独立实例，后续再评估同一引擎内的仓库隔离。不能把只支持拉取代理的实例同时当作可写缓存仓库；例如 Harbor 的代理缓存项目明确不支持 push。[Harbor 代理缓存](https://goharbor.io/docs/main/administration/configure-proxy-cache/)
+Use independent instances for the first release, then assess repository isolation within a single engine later. An instance supporting only pull-through proxying cannot simultaneously be treated as a writable cache repository; for example, Harbor proxy-cache projects explicitly do not support push. [Harbor proxy cache](https://goharbor.io/docs/main/administration/configure-proxy-cache/)
 
-### 引擎比较
+### Engine Comparison
 
-| 候选 | 官方资料中的能力 | 对 expbuild 的建议判断 | 待验证重点 |
+| Candidate | Capabilities in official sources | Suggested assessment for expbuild | Validation priorities |
 |---|---|---|---|
-| Distribution | 单上游拉取缓存、过期清理；官方建议拉取缓存采用 filesystem 存储 | 作为最小实现和兼容性基线 | Docker/containerd/BuildKit 接入、凭据、清理、指标口径 |
-| zot | 按需同步、本地及对象存储、保留策略、在线 GC、Prometheus 指标 | 作为覆盖更多 OCI 用途的重点候选 | 原始 digest、多架构镜像、上游认证、清理期间读取、资源开销 |
-| Harbor | 多种上游的代理缓存项目、配额、保留策略和仓库管理 | 优先考虑企业已有 Harbor 的集成场景 | 独立部署成本、外部服务归属、管理权限与配额映射 |
+| Distribution | Single-upstream pull-through caching and expiration cleanup; official guidance recommends filesystem storage for pull-through caches | Minimal implementation and compatibility baseline | Docker/containerd/BuildKit integration, credentials, cleanup, metric definitions |
+| zot | On-demand synchronization, local and object storage, retention policies, online GC, Prometheus metrics | Primary candidate for broader OCI uses | Original digests, multi-architecture images, upstream authentication, reads during cleanup, resource overhead |
+| Harbor | Proxy-cache projects for multiple upstream types, quotas, retention policies, and repository management | Prioritize integration with existing enterprise Harbor deployments | Standalone deployment cost, external-service ownership, management permissions, and quota mapping |
 
-依据：[Distribution 拉取缓存](https://distribution.github.io/distribution/recipes/mirror/)、[zot 镜像同步](https://zotregistry.dev/v2.1.21/articles/mirroring/)、[zot 存储](https://zotregistry.dev/v2.1.21/articles/storage/)、[zot 保留策略](https://zotregistry.dev/v2.1.21/articles/retention/)、[zot 指标](https://zotregistry.dev/v2.1.21/articles/monitoring/)、[Harbor 代理缓存](https://goharbor.io/docs/main/administration/configure-proxy-cache/)。
+Sources: [Distribution pull-through cache](https://distribution.github.io/distribution/recipes/mirror/), [zot image synchronization](https://zotregistry.dev/v2.1.21/articles/mirroring/), [zot storage](https://zotregistry.dev/v2.1.21/articles/storage/), [zot retention policies](https://zotregistry.dev/v2.1.21/articles/retention/), [zot metrics](https://zotregistry.dev/v2.1.21/articles/monitoring/), [Harbor proxy cache](https://goharbor.io/docs/main/administration/configure-proxy-cache/).
 
-Distribution 与 zot 先做对比原型，尚不固定最终选型。Harbor 外部实例接入只是候选方向，不表示现有 Operator 已能管理外部仓库。
+Prototype Distribution and zot comparatively before fixing the final choice. Integration with external Harbor instances is only a candidate direction and does not mean the current Operator can manage external registries.
 
-### 协议与清理边界
+### Protocol and Cleanup Boundaries
 
-Docker daemon 的 `registry-mirrors` 机制面向 Docker Hub，不能据此宣称透明代理所有 Registry。其他上游需要对应的客户端配置或镜像引用改写；平台应生成与客户端匹配的接入说明。Distribution 的镜像地址还要求位于域名根路径，可复用平台独立实例域名的方向。[Distribution 文档](https://distribution.github.io/distribution/recipes/mirror/)
+The Docker daemon's `registry-mirrors` mechanism targets Docker Hub; it does not establish transparent proxying for every Registry. Other upstreams need corresponding client configuration or rewritten image references; the platform should generate client-specific integration instructions. Distribution also requires the mirror address to be at the domain's root path, aligning with the platform's dedicated instance domains. [Distribution documentation](https://distribution.github.io/distribution/recipes/mirror/)
 
-镜像按 digest 拉取时必须保持内容身份。zot 对混合 Docker/OCI 镜像的兼容与 digest 保留有专门配置；原型应覆盖按 digest 固定引用、多架构清单及相关签名或引用信息，不只验证按 tag 拉取。[zot 同步与兼容配置](https://zotregistry.dev/v2.1.21/articles/mirroring/)
+Pulling images by digest must preserve content identity. zot has specific configuration for mixed Docker/OCI image compatibility and digest preservation; prototypes should cover digest-pinned references, multi-architecture manifests, and associated signatures or reference information, rather than testing only pulls by tag. [zot synchronization and compatibility configuration](https://zotregistry.dev/v2.1.21/articles/mirroring/)
 
-镜像清理要分成三步理解：保留策略选择可删除的引用，GC 回收不再被引用的数据，容量控制决定空间不足时如何处理。原生支持 GC 不等于支持容量上限下的 LRU 淘汰，不能在界面上混成一个开关。[zot 存储与 GC](https://zotregistry.dev/v2.1.21/articles/storage/)
+Understand image cleanup as three separate steps: retention policies select references eligible for deletion, GC reclaims data no longer referenced, and capacity control determines behavior when space runs out. Native GC support does not imply LRU eviction under a capacity limit; the UI must not combine these into one switch. [zot storage and GC](https://zotregistry.dev/v2.1.21/articles/storage/)
 
-上游凭据的授权范围必须与实例访问范围一致。代理持有的上游私有仓库权限，不能通过一个权限更宽的共享缓存入口泄露给其他项目。[Harbor 代理凭据边界](https://goharbor.io/docs/main/administration/configure-proxy-cache/)
+The authorization scope of upstream credentials must match instance access scope. A proxy's access to private upstream repositories must not leak to other projects through a shared cache endpoint with broader permissions. [Harbor proxy credential boundaries](https://goharbor.io/docs/main/administration/configure-proxy-cache/)
 
-## 制品与 CI 缓存
+## Artifact and CI Caching
 
-### 数据用途与保留规则
+### Data Purposes and Retention Rules
 
-artifacts 是文件用途的统称，不是一种通用缓存协议。第一阶段先明确以下边界，再确定对外模板：
+“Artifacts” describes file purposes, not a universal caching protocol. Phase 1 should establish the following boundaries before defining exposed templates:
 
-| 数据用途 | 示例 | 建议的管理规则 |
+| Data purpose | Examples | Suggested management rules |
 |---|---|---|
-| 可重建缓存 | 依赖目录、编译目录、临时结果归档 | 按 key 读写，允许到期和容量淘汰；丢失时客户端能重新生成 |
-| 流水线产物 | 下一个阶段必须读取的中间包、测试报告 | 关联构建或任务，校验完整性，并设置明确保留期 |
-| 发布制品 | 正式版本安装包、交付包 | 版本与不可变性、保留保护、下载权限；不能沿用普通缓存自动淘汰语义 |
+| Rebuildable cache | Dependency directories, compilation directories, temporary-result archives | Read/write by key, with expiration and capacity eviction allowed; clients can regenerate lost data |
+| Pipeline artifacts | Intermediate packages and test reports needed by subsequent stages | Associate with a build or task, verify integrity, and set an explicit retention period |
+| Release artifacts | Official version installers and delivery packages | Versioning and immutability, retention protection, download permissions; do not reuse ordinary cache auto-eviction semantics |
 
-GitLab 将 cache 与 artifacts 作为不同机制：前者用于复用缓存，后者用于保存和传递任务产物。expbuild 的服务设计应保留这种差异。[GitLab 缓存与制品说明](https://docs.gitlab.com/ci/caching/)
+GitLab treats cache and artifacts as separate mechanisms: the former reuses cached data, while the latter stores and passes task outputs. expbuild's service design should preserve this distinction. [GitLab caching and artifacts](https://docs.gitlab.com/ci/caching/)
 
-首轮建议验证可重建缓存；流水线产物和发布制品作为独立能力候选，尚未决定完整制品仓库的产品范围，不在缓存模板内默认承诺永久保存。
+Validate rebuildable caching in the first round. Pipeline and release artifacts remain separate candidate capabilities; the product scope of a full artifact repository is undecided, and cache templates do not promise permanent retention by default.
 
-### 接入路线
+### Integration Path
 
-普通文件和 CI 归档可采用 HTTP/WebDAV 或 S3。GitLab Runner 已支持分布式缓存和对象存储生命周期清理，适合作为首个真实客户端。S3 只提供存储接口，key 规则、回退匹配、归档格式和命中语义仍由客户端或适配服务负责；不能因为后端兼容 S3 就宣称兼容所有 CI。[GitLab 分布式缓存](https://docs.gitlab.com/ci/caching/)
+Ordinary files and CI archives can use HTTP/WebDAV or S3. GitLab Runner already supports distributed caching and object-storage lifecycle cleanup, making it suitable as the first real client. S3 supplies only the storage interface; key rules, fallback matching, archive formats, and hit semantics remain the responsibility of clients or adapter services. An S3-compatible backend does not establish compatibility with every CI system. [GitLab distributed caching](https://docs.gitlab.com/ci/caching/)
 
-OCI 制品可复用 Registry，通过 ORAS 上传、下载普通文件。应单独声明客户端、制品格式与保留策略；可上传文件并不表示已经具备发布审批、完整版本治理等制品仓库功能。[ORAS 快速开始](https://oras.land/docs/quickstart/)
+OCI artifacts can reuse a Registry, with ORAS uploading and downloading ordinary files. Declare clients, artifact formats, and retention policies separately; file upload support does not establish artifact-repository features such as release approvals or complete version governance. [ORAS quickstart](https://oras.land/docs/quickstart/)
 
-GitHub Actions 需要单独适配。连接 GitHub.com 的自托管 Runner 默认仍使用 GitHub 的缓存存储；提供 S3 接口不等于可直接替换官方 `actions/cache`。后续应明确是提供专用 Action/CLI，还是实现并验证对应服务协议。[GitHub 缓存说明](https://docs.github.com/en/actions/concepts/workflows-and-actions/dependency-caching)
+GitHub Actions requires a separate adapter. Self-hosted runners connected to GitHub.com still use GitHub's cache storage by default; exposing S3 does not directly replace official `actions/cache`. Later work should specify whether to provide a dedicated Action/CLI or implement and validate the corresponding service protocol. [GitHub caching overview](https://docs.github.com/en/actions/concepts/workflows-and-actions/dependency-caching)
 
-## 软件包与任务缓存
+## Package and Task Caching
 
-### 专用软件包服务
+### Dedicated Package Services
 
-优先评估 Verdaccio、devpi、Athens 和 Reposilite，各自验证包管理器真实请求、索引刷新、私有上游、离线读取、故障恢复与清理行为。资源开销、启动时间及每实例成本应实测，不仅依据项目对轻量化的描述判断。
+Prioritize evaluating Verdaccio, devpi, Athens, and Reposilite, verifying real package-manager requests, index refresh, private upstreams, offline reads, recovery, and cleanup behavior for each. Measure resource overhead, startup time, and per-instance cost rather than relying only on projects' claims of being lightweight.
 
-软件包服务需要分别描述元数据过期、内容淘汰和物理空间回收。Verdaccio 的 `maxage` 控制上游元数据有效时间，不能直接展示为包文件保留时间；第三方存储插件的清理与指标也需另行认证。[Verdaccio 缓存策略](https://www.verdaccio.org/docs/caching/)
+Package services need separate descriptions of metadata expiration, content eviction, and physical-space reclamation. Verdaccio's `maxage` controls upstream metadata validity and cannot be displayed directly as package-file retention; cleanup and metrics for third-party storage plugins also require separate certification. [Verdaccio caching policy](https://www.verdaccio.org/docs/caching/)
 
-需要大量包格式时，可评估 Nexus 或 Pulp 作为另一类部署选项。调研时 Nexus Community Edition 文档列出 40,000 个组件、每天 100,000 次请求的使用限制；选型时应重新核对目标版本与许可。Pulp 提供按需下载和空间回收，具体支持范围取决于插件，不能将回收 API 等同于已实现自动 LRU。[Nexus 使用限制](https://help.sonatype.com/en/usage-center.html)、[Pulp 按需下载](https://pulpproject.org/pulpcore/docs/user/learn/on-demand-downloading/)、[Pulp 空间回收](https://pulpproject.org/pulpcore/docs/user/guides/reclaim-disk-space/)
+When many package formats are needed, evaluate Nexus or Pulp as another deployment option. At the time of research, Nexus Community Edition documentation listed usage limits of 40,000 components and 100,000 requests per day; recheck the target version and license during selection. Pulp provides on-demand downloads and space reclamation, with exact support depending on plugins; a reclamation API does not establish implemented automatic LRU. [Nexus usage limits](https://help.sonatype.com/en/usage-center.html), [Pulp on-demand downloading](https://pulpproject.org/pulpcore/docs/user/learn/on-demand-downloading/), [Pulp space reclamation](https://pulpproject.org/pulpcore/docs/user/guides/reclaim-disk-space/)
 
-### 编译与 Monorepo 任务
+### Compilation and Monorepo Tasks
 
-sccache 支持 S3、WebDAV 等远程后端；ccache 也提供远程存储机制。接入可以先复用已有服务，增加客户端配置、独立命名空间与兼容性验收。两者的 key、数据格式和统计不同，不能假设条目互通。ccache 的远程存储与 helper 机制还需按具体客户端版本认证。[sccache](https://github.com/mozilla/sccache)、[ccache 手册](https://ccache.dev/manual/latest.html)
+sccache supports remote backends including S3 and WebDAV; ccache also provides remote storage mechanisms. Integration can initially reuse existing services, adding client configuration, independent namespaces, and compatibility acceptance tests. Their keys, data formats, and statistics differ, so entry interoperability must not be assumed. Certify ccache remote storage and helper mechanisms against specific client versions as well. [sccache](https://github.com/mozilla/sccache), [ccache manual](https://ccache.dev/manual/latest.html)
 
-Turborepo 提供公开远程缓存协议和社区实现，Nx 提供自托管服务 OpenAPI。可评估独立协议适配器复用文件或对象存储，但鉴权、任务内容和兼容版本分别管理。[Turborepo 协议](https://turborepo.dev/docs/core-concepts/remote-caching)、[社区服务实现](https://github.com/ducktors/turborepo-remote-cache)、[Nx API](https://nx.dev/docs/kb/self-hosted-caching)
+Turborepo provides a public remote-cache protocol and community implementations, while Nx provides an OpenAPI for self-hosted services. Evaluate separate protocol adapters reusing file or object storage, while managing authentication, task content, and compatible versions separately. [Turborepo protocol](https://turborepo.dev/docs/core-concepts/remote-caching), [community service implementation](https://github.com/ducktors/turborepo-remote-cache), [Nx API](https://nx.dev/docs/kb/self-hosted-caching)
 
-### 专项扩展
+### Specialized Extensions
 
-Nix 可研究 Attic，其文档描述了 S3 后端、去重及 GC，同时仍标注早期原型状态，应进一步核对维护与发布情况。[Attic](https://docs.attic.rs/)
+For Nix, investigate Attic. Its documentation describes an S3 backend, deduplication, and GC, but still labels it an early prototype; further check maintenance and release status. [Attic](https://docs.attic.rs/)
 
-模型和数据集缓存需要专门研究。Hugging Face 下载涉及 Hub API、重定向及独立存储服务，不能只代理一个域名就认定兼容。大规模镜像或文件分发还可以研究 Dragonfly 的 P2P 加速，但这是分发层扩展，不应替代每种缓存服务自身的数据与权限语义。[Hugging Face 下载链路](https://github.com/huggingface/hub-docs/blob/main/docs/hub/datasets-downloading.md)、[Dragonfly](https://d7y.io/docs/)
+Model and dataset caching requires dedicated research. Hugging Face downloads involve Hub APIs, redirects, and separate storage services; proxying one domain alone does not establish compatibility. Dragonfly's P2P acceleration may also be investigated for large-scale image or file distribution, but this is a distribution-layer extension and must not replace each cache service's own data and permission semantics. [Hugging Face download path](https://github.com/huggingface/hub-docs/blob/main/docs/hub/datasets-downloading.md), [Dragonfly](https://d7y.io/docs/)
 
-## 平台模板能力扩展
+## Platform Template Capability Extensions
 
-现有模板通过编译内注册表接入，当前声明不足以表达全部候选服务。建议随着首批原型逐步增加以下能力，避免在原型前建立过大的统一模型。
+Existing templates integrate through a compiled-in registry, and current declarations cannot express every candidate service. Add the following capabilities incrementally alongside the first prototypes, avoiding an oversized unified model before prototyping.
 
-| 能力维度 | 模板需要说明的内容 |
+| Capability dimension | What the template must describe |
 |---|---|
-| 用途与协议 | 镜像代理、构建缓存、文件归档、发布制品；对应协议与操作 |
-| 数据来源 | 客户端写入、上游回源，或经过验证的混合方式 |
-| 上游配置 | 地址白名单、仓库范围、凭据引用、重验证、断网行为 |
-| 存储 | PVC、对象存储、可选本地加速层，各自的容量和清理边界 |
-| 清理策略 | 容量淘汰、到期、版本保留、GC、保留保护是否支持及何时生效 |
-| 可观测 | 指标来源、命中单位、上游流量、回收结果、数据质量状态 |
-| 客户端 | 已认证版本、接入配置、鉴权、读写权限和真实验收结果 |
+| Purpose and protocol | Image proxy, build cache, file archive, release artifacts; corresponding protocols and operations |
+| Data source | Client writes, upstream fetches, or a verified combination |
+| Upstream configuration | Address allowlists, repository scope, credential references, revalidation, disconnected behavior |
+| Storage | PVC, object storage, optional local acceleration tier; capacity and cleanup boundaries for each |
+| Cleanup policies | Support and effective timing for capacity eviction, expiration, version retention, GC, and retention protection |
+| Observability | Metric sources, hit units, upstream traffic, reclamation results, data-quality status |
+| Clients | Certified versions, integration configuration, authentication, read/write permissions, and real acceptance results |
 
-对象存储实例需要独立设计凭据、bucket 或前缀归属、配额及删除策略，不能把 PVC 容量与对象存储容量视为同一个字段。引擎应执行条目清理，Operator 负责声明配置、触发受支持的维护动作和观测结果。
+Object-storage instances need separate designs for credentials, bucket or prefix ownership, quotas, and deletion policies; PVC capacity and object-storage capacity are not the same field. Engines should clean up entries, while the Operator declares configuration, triggers supported maintenance actions, and observes results.
 
-界面按用途组织服务目录，提供中英文名称、配置说明和客户端示例，沿用平台面向全球用户的方向。不支持的策略不显示为可选项，也不能接受后静默忽略。
+Organize the service catalog by purpose, providing Chinese and English names, configuration guidance, and client examples in line with the platform's global audience. Unsupported policies must not appear as selectable options or be accepted and silently ignored.
 
-## 可观测与统计语义
+## Observability and Statistical Semantics
 
-延续[可观测规划](observability-plan.md)的身份隔离、指标低基数和缺失数据规则。新增类型至少评估请求、服务错误、延迟、流量、容量和清理结果；只有真实可测的指标才进入模板能力声明。
+Continue the identity isolation, low metric cardinality, and missing-data rules in the [Observability Plan](observability-plan.md). Evaluate at least requests, server errors, latency, traffic, capacity, and cleanup results for new types; only metrics that can actually be measured enter template capability declarations.
 
-| 统计 | 含义与限制 |
+| Statistic | Meaning and limitations |
 |---|---|
-| 请求命中 | 有效缓存查询是否直接获得已有数据；认证失败、服务错误和首次回源成功分别统计 |
-| 字节命中 | 请求的数据字节中由缓存提供的比例；区分请求次数与字节数 |
-| 上游流量 | 实际回源请求及传输量；未观测到上游行为时不估造精确节省值 |
-| 构建任务命中 | BuildKit、编译器或任务客户端跳过了多少工作，需要客户端数据 |
-| 存储占用 | 逻辑条目、实际物理占用、临时上传和待回收空间分别展示 |
-| 清理结果 | 引用删除、数据回收、释放字节、失败及积压分别展示 |
+| Request hits | Whether valid cache queries directly obtain existing data; count authentication failures, server errors, and successful first upstream fetches separately |
+| Byte hit rate | Proportion of requested data bytes served from cache; distinguish request counts from byte counts |
+| Upstream traffic | Actual upstream requests and transferred data; do not fabricate precise savings without observing upstream behavior |
+| Build task hits | How much work BuildKit, compilers, or task clients skipped; requires client data |
+| Storage usage | Show logical entries, actual physical usage, temporary uploads, and space pending reclamation separately |
+| Cleanup results | Show reference deletion, data reclamation, bytes freed, failures, and backlog separately |
 
-成功响应不等于缓存命中：代理首次回源成功也会返回成功状态。有 `/metrics` 不等于已有准确缓存命中率，应检查计数器定义并做冷、热请求对照。各模板分别统计 metadata、manifest、blob、任务结果等操作，不将不同语义的命中率直接平均。
+A successful response is not a cache hit: a proxy's first successful upstream fetch also returns success. Having `/metrics` does not establish an accurate cache hit rate; inspect counter definitions and compare cold and warm requests. Each template counts operations such as metadata, manifest, blob, and task results separately, without directly averaging hit rates with different meanings.
 
-## 建议实施顺序与验收
+## Suggested Implementation Sequence and Acceptance
 
-| 阶段 | 工作范围 | 进入下一阶段前的产出 |
+| Phase | Work scope | Outputs before the next phase |
 |---|---|---|
-| 第一阶段 | Distribution 与 zot 对比；镜像拉取、BuildKit、通用制品/CI 缓存原型 | 明确引擎和版本、制品保留边界、存储方式、客户端兼容与指标缺口 |
-| 第二阶段 | Verdaccio、devpi、Athens；Maven 候选验证 | 软件包模板、上游认证和隔离、元数据刷新、可执行清理与客户端示例 |
-| 第三阶段 | sccache/ccache、Turborepo/Nx、HTTP 下载代理及其他包生态 | 客户端与模板认证矩阵、可复用的存储适配、独立统计 |
-| 专项扩展 | Nix、模型与数据集、P2P 分发、外部 Harbor 等 | 根据实际用户需求形成独立方案，避免作为首批交付前提 |
+| Phase 1 | Compare Distribution and zot; prototype image pull, BuildKit, and general artifact/CI caching | Establish engines and versions, artifact-retention boundaries, storage approach, client compatibility, and metric gaps |
+| Phase 2 | Verdaccio, devpi, Athens; validate Maven candidates | Package templates, upstream authentication and isolation, metadata refresh, executable cleanup, and client examples |
+| Phase 3 | sccache/ccache, Turborepo/Nx, HTTP download proxy, and other package ecosystems | Client/template certification matrix, reusable storage adapters, separate statistics |
+| Specialized extensions | Nix, models and datasets, P2P distribution, external Harbor, and others | Separate plans based on actual user needs, avoiding prerequisites for initial delivery |
 
-顺序是建议，不是日历或交付承诺。HTTP 上游代理仍需验证 Cache-Control、重验证、认证响应隔离和淘汰；现有 WebDAV 不因本次规划继续扩展 Apache 模板。
+This sequence is a recommendation, not a calendar or delivery commitment. HTTP upstream proxies still require validation of Cache-Control, revalidation, authentication-response isolation, and eviction; this plan does not extend the existing Apache WebDAV template further.
 
-新增模板的最低验收范围：
+Minimum acceptance scope for new templates:
 
-- 真实客户端冷请求、热请求、缺失数据和错误行为；OCI 额外验证 digest、多架构镜像及 BuildKit 缓存恢复。
-- 上游私有认证、实例读写权限、凭据轮换及项目间隔离；缓存归属不能扩大原有授权。
-- 并发读写、重复回源、上传中断、重启恢复、磁盘或存储预算耗尽、清理与读取并发。
-- 将清理规则与最终释放空间对照，明确保留数据不会被普通缓存策略删除。
-- 生命周期与管理链路：创建、配置、暂停恢复、删除、存储保留，以及 Helm/API/Operator 的一致行为。
-- 核对指标中的命中、未命中、错误与回源；测量启动、吞吐、延迟、内存和恢复耗时后再定义规格。
+- Real-client cold requests, warm requests, missing data, and error behavior; OCI additionally validates digests, multi-architecture images, and BuildKit cache restoration.
+- Private upstream authentication, instance read/write permissions, credential rotation, and project isolation; cache ownership must not broaden existing authorization.
+- Concurrent reads/writes, duplicate upstream fetches, interrupted uploads, restart recovery, exhausted disk or storage budgets, and concurrent cleanup and reads.
+- Compare cleanup rules with space ultimately released, and ensure ordinary cache policies do not delete protected retained data.
+- Lifecycle and management flow: creation, configuration, suspension/resumption, deletion, storage retention, and consistent Helm/API/Operator behavior.
+- Verify hits, misses, errors, and upstream fetches in metrics; measure startup, throughput, latency, memory, and recovery duration before defining specifications.
 
-每个原型最终应交付固定版本或镜像摘要、原生配置与能力矩阵、真实客户端用例、指标映射、清理与恢复结果，以及已知限制。通过后再进入模板、CRD、管理 API 和界面的正式实现；本文不启动这些开发工作。
+Each prototype should ultimately deliver a pinned version or image digest, native configuration and capability matrix, real-client cases, metric mappings, cleanup and recovery results, and known limitations. Proceed to formal template, CRD, management API, and UI implementation only after passing validation; this document does not initiate that development work.

@@ -1,133 +1,133 @@
-# 产品定位与企业管理能力
+# Product Positioning and Enterprise Management Capabilities
 
-日期：2026-09-28。本文是设计建议；仓库现状与外部事实分别见审计、协议和竞品报告。
+Date: 2026-09-28. This document contains design recommendations; repository status and external facts are covered separately in the audit, protocol, and competitive research reports.
 
-## 1. 产品承诺与边界
+## 1. Product Promise and Boundaries
 
-ExpBuild 帮助企业在不更换构建工具和 CI 系统的情况下，部署和管理共享构建缓存，减少重复工作，并逐步把重负载构建迁移到受控执行资源上。
+ExpBuild helps enterprises deploy and manage shared build caches without replacing their build tools or CI systems, reduce repeated work, and gradually move demanding builds onto controlled execution resources.
 
-长期产品由四层组成：
+The long-term product consists of four layers:
 
-| 层 | 对用户的价值 | 交付边界 |
+| Layer | User value | Delivery boundary |
 |---|---|---|
-| Cache | 多语言、多工具共享缓存服务 | 协议兼容、可信读写、存储分层、生命周期与成本 |
-| Connect | 降低接入和诊断成本 | 原生工具配置、CI 插件、身份联邦、可选本地/边缘代理 |
-| Insight & Govern | 让平台团队能管理、解释、控制 | 组织权限、预算、审计、真实指标、构建关联、缓存问题定位 |
-| Execute | 加速无法通过缓存消除的构建 | REAPI 执行、隔离 worker、调度、容量和执行成本 |
+| Cache | Shared cache service for multiple languages and tools | Protocol compatibility, trusted reads/writes, storage tiers, lifecycle, and cost |
+| Connect | Lower integration and diagnostic costs | Native tool configuration, CI plugins, identity federation, optional local/edge proxies |
+| Insight & Govern | Enable platform teams to manage, explain, and control | Organizational permissions, budgets, auditing, real metrics, build correlation, cache troubleshooting |
+| Execute | Accelerate builds that caching cannot eliminate | REAPI execution, isolated workers, scheduling, capacity, and execution costs |
 
-这些是能力模块，不建议立即拆成四个独立商业 SKU。首个可用产品是 Cache + 基础 Connect + Govern；已有 worker 保留为实验能力。
+These are capability modules; immediately separating them into four commercial SKUs is not recommended. The first usable product is Cache + basic Connect + Govern; existing workers remain experimental.
 
-以下能力单独评估：依赖包代理、镜像仓库、发布制品管理、完整 CI 编排。优先对接 Harbor/现有 registry、企业包仓库、Jenkins/GitLab/GitHub Actions。构建缓存是可重建的数据；发布制品通常有更强的长期保留、版本和供应链要求，不应共享默认删除策略。
+Evaluate dependency package proxies, image registries, release artifact management, and full CI orchestration separately. Prioritize integration with Harbor/existing registries, enterprise package repositories, and Jenkins/GitLab/GitHub Actions. Build caches contain rebuildable data; release artifacts usually have stronger long-term retention, versioning, and supply-chain requirements and should not share the same default deletion policy.
 
-## 2. 首批用户与需验证的假设
+## 2. Initial Users and Hypotheses to Validate
 
-| 角色 | 当前痛点假设 | 应交付的结果 |
+| Role | Current pain-point hypothesis | Outcome to deliver |
 |---|---|---|
-| 企业平台工程师 | 不同工具各有缓存服务器、权限和指标 | 一套身份、项目、存储、运维和接入文档 |
-| 开发者 | 接入难、无法知道缓存为什么无效 | 复制可用配置、诊断连通性、查看本次构建的缓存行为 |
-| CI/构建工程师 | 临时 runner 缓存丢失、重复构建、热点下载 | 可信 CI 预热；对比冷/热/增量构建；确定资源瓶颈 |
-| 安全与运维 | 缓存可被投毒，跨项目权限不清，容量失控 | 写入来源可查、隔离可测、配额/清理可控、故障可恢复 |
-| 工程管理者 | 只有命中率，无法解释成本与收益 | 有统计口径的时间与资源对比、按项目归属的用量 |
+| Enterprise platform engineer | Different tools have separate cache servers, permissions, and metrics | One set of identity, project, storage, operations, and onboarding documentation |
+| Developer | Difficult onboarding and no explanation for ineffective caching | Copy working configuration, diagnose connectivity, inspect cache behavior for this build |
+| CI/build engineer | Ephemeral runners lose caches; repeated builds and hot downloads | Trusted CI warmup; compare cold/warm/incremental builds; identify resource bottlenecks |
+| Security and operations | Cache poisoning, unclear cross-project permissions, uncontrolled capacity | Traceable write sources, testable isolation, controlled quotas/cleanup, recoverable failures |
+| Engineering manager | Hit rates alone cannot explain costs and benefits | Time/resource comparisons with defined methodology, usage attributed to projects |
 
-建议访谈 3–5 家或团队，覆盖至少两种生态。采集：工具与版本、可缓存步骤、流水线 P50/P95、缓存命中/下载时间、每日构建量、对象大小与数量、网络 RTT、存储预算、SSO/离线部署要求。不把这些假设直接转换成市场规模或性能承诺。
+Interview 3–5 companies or teams covering at least two ecosystems. Collect tools and versions, cacheable steps, pipeline P50/P95, cache-hit/download time, daily build volume, object sizes and counts, network RTT, storage budgets, and SSO/offline deployment requirements. Do not directly turn these hypotheses into market-size estimates or performance commitments.
 
-最初采用人群应是已有较确定构建流程、平台团队能控制 CI 身份和配置的组织。对不声明输入、依赖不稳定、产物含时间戳的任务，先诊断可缓存性；服务器不能修复所有非确定构建。
+Initial adopters should have reasonably established build workflows and platform teams that control CI identity and configuration. For tasks with undeclared inputs, unstable dependencies, or timestamps in outputs, diagnose cacheability first; a server cannot fix every nondeterministic build.
 
-## 3. 管理层级与信任模型
+## 3. Management Hierarchy and Trust Model
 
 ```text
-Deployment / Cluster（一次安装，可托管一个或多个租户）
-  Tenant（企业或隔离组织；数据、计量、密钥和策略边界）
-    Team / Membership（用户可加入多个团队）
-    Project（归属仓库、预算和维护者）
-      Namespace（协议、环境、缓存生命周期和读写策略）
-        trust_domain 属性（唯一绑定 trusted-ci / internal-dev / isolated-pr 之一）
+Deployment / Cluster (one installation hosting one or more tenants)
+  Tenant (enterprise or isolated organization; boundary for data, metering, keys, and policies)
+    Team / Membership (users may join multiple teams)
+    Project (associated repository, budget, and maintainers)
+      Namespace (protocol, environment, cache lifecycle, and read/write policies)
+        trust_domain attribute (bound exclusively to one of trusted-ci / internal-dev / isolated-pr)
 ```
 
-Tenant 和 Project 分开。即使首个企业部署只有一个 tenant，也必须把 tenant_id 带入查询、缓存索引、对象可见性、配额、事件和审计。
+Tenant and Project are separate. Even when the first enterprise deployment has only one tenant, tenant_id must be included in queries, cache indexes, object visibility, quotas, events, and audits.
 
-每个 namespace 唯一绑定一个 trust_domain；同一 key 空间不能同时容纳 trusted 与 untrusted 写入。同协议需要两种信任级别时创建两个 namespace。Namespace 不是每个分支永久独占一个缓存：可信分支在满足工具 key 正确性时可共享结果；不可信 PR 使用隔离写区和短生命周期。可以显式授予读取某个可信上游缓存的权限，但不能让 PR 写入自动晋升到受信命名空间。
+Each namespace is bound to exactly one trust_domain; the same key space must not contain both trusted and untrusted writes. Create two namespaces when the same protocol needs two trust levels. A namespace does not mean a permanently dedicated cache for every branch: trusted branches may share results when tool keys are correct; untrusted PRs use isolated write areas and short lifecycles. Reading a specific trusted upstream cache may be explicitly authorized, but PR writes must not automatically be promoted into a trusted namespace.
 
-服务账号代表 CI/机器，用户身份代表人。授权从账号与策略得出，不依赖客户端自己传入的 tenant/project 字符串。原生协议中的 instance_name、teamId、路径前缀都只是待验证的路由标识。
+Service accounts represent CI/machines; user identities represent people. Authorization derives from accounts and policies, not client-supplied tenant/project strings. Native protocol instance_name, teamId, and path prefixes are only routing identifiers that require validation.
 
-## 4. 控制台信息架构
+## 4. Console Information Architecture
 
-| 模块 | P0 首版闭环 | 后续能力 |
+| Module | Complete P0 workflow | Later capabilities |
 |---|---|---|
-| 总览 | 请求命中、字节、错误、延迟、容量、各协议健康；明确时间范围/样本数 | 构建收益、项目对比、预算趋势 |
-| 项目与接入 | 创建项目/namespace；选择工具；生成版本明确的配置；连通性与首次读写验证 | 导入仓库、CI 身份联邦、多环境模板 |
-| 缓存 | 协议/项目/大小/创建时间检索；元数据；过期与配额；清理预览 | 热度、保留策略、受控回源、单次命中关联 |
-| 身份与访问 | 用户/团队/成员；服务账号；角色；令牌创建/撤销/轮换 | OIDC、SCIM、企业目录、细粒度条件策略 |
-| 存储与节点 | 后端连接状态、使用量、数据面节点、磁盘水位 | Edge 节点、跨站点拓扑、后端迁移 |
-| 审计与运维 | 登录/权限/令牌/策略/清理操作记录；告警配置；备份状态 | 审计导出、外部 SIEM、策略审批 |
-| 构建记录 | 暂不承诺所有工具原生获取；先支持 CI 显式上报 | Bazel BES/BEP、sccache 统计、工具插件、构建比较 |
-| 执行资源 | 实验入口默认关闭 | worker pool、队列、资源利用、排空、伸缩、失败诊断 |
+| Overview | Request hits, bytes, errors, latency, capacity, health per protocol; explicit time range/sample count | Build benefits, project comparisons, budget trends |
+| Projects and onboarding | Create project/namespace; choose tool; generate version-specific configuration; verify connectivity and first read/write | Repository import, CI identity federation, multi-environment templates |
+| Cache | Search by protocol/project/size/creation time; metadata; expiry and quotas; cleanup preview | Popularity, retention policies, controlled upstream fetching, individual-hit correlation |
+| Identity and access | Users/teams/members; service accounts; roles; token creation/revocation/rotation | OIDC, SCIM, enterprise directories, fine-grained conditional policies |
+| Storage and nodes | Backend connection status, usage, data-plane nodes, disk watermarks | Edge nodes, cross-site topology, backend migration |
+| Audit and operations | Login/permission/token/policy/cleanup operation records; alert configuration; backup status | Audit export, external SIEM, policy approvals |
+| Build records | No promise of native collection from every tool yet; support explicit CI reporting first | Bazel BES/BEP, sccache statistics, tool plugins, build comparisons |
+| Execution resources | Experimental entry point disabled by default | worker pool, queues, resource utilization, draining, scaling, failure diagnosis |
 
-现有 SaaS 页面应改为“组织与项目”；现有 Build Farm 下移到“执行资源”。企业管理员最常用的接入、权限、缓存策略和存储不应隐藏在 SaaS 或节点监控页面里。
+Rename the current SaaS pages to “Organizations and Projects”; move the existing Build Farm under “Execution Resources.” Enterprise administrators' frequent onboarding, permission, cache-policy, and storage tasks should not be hidden in SaaS or node-monitoring pages.
 
-产品状态必须区分：未接入、无样本、采集中、数据过期、请求失败。生产 API 失败时不能回退到 mock，也不能用 0 伪装未知。演示模式应是显式、独立、可识别的数据源。
+Product states must distinguish not connected, no samples, collecting, stale data, and request failure. Production API failures must not fall back to mocks or disguise unknown values as 0. Demo mode should be an explicit, separate, identifiable data source.
 
-## 5. 权限与凭据
+## 5. Permissions and Credentials
 
-建议首版固定角色，后续开放自定义组合：
+Use fixed roles in the first release and allow custom combinations later:
 
-| 角色 | 可用权限 | 默认禁止 |
+| Role | Available permissions | Denied by default |
 |---|---|---|
-| 平台管理员 | 安装配置、存储与数据面运维 | 默认不直接读取所有租户产物；紧急访问需显式授权和审计 |
-| 租户管理员 | 成员、项目、策略、预算、服务账号 | 其他租户数据 |
-| 项目维护者 | 本项目 namespace、令牌、保留策略、诊断 | 全局 IAM、跨项目读取 |
-| 开发者 | 获准 namespace 的读缓存、查看构建记录 | trusted-ci 写入与删除 |
-| 观察者 | 获准范围内的指标和元数据 | 产物下载、凭据、修改策略 |
-| CI 服务账号 | 明确授予的 cache.read/cache.write/event.write | 组织管理、任意 namespace、任意删除 |
+| Platform administrator | Installation configuration, storage and data-plane operations | No direct access to all tenant artifacts by default; emergency access requires explicit authorization and auditing |
+| Tenant administrator | Members, projects, policies, budgets, service accounts | Other tenants' data |
+| Project maintainer | This project's namespaces, tokens, retention policies, diagnostics | Global IAM, cross-project reads |
+| Developer | Cache reads and build-record access in authorized namespaces | trusted-ci writes and deletion |
+| Observer | Metrics and metadata within authorized scope | Artifact downloads, credentials, policy changes |
+| CI service account | Explicitly granted cache.read/cache.write/event.write | Organization management, arbitrary namespaces, arbitrary deletion |
 
-权限动作至少分为 cache.read、blob.write、result.publish、cache.invalidate、artifact.download、metadata.read、event.write、execution.submit、worker.register、admin.manage。产品中的 cache.write 是相关写权限的便捷组合，内部必须区分“上传内容”和“发布可供别人信任的结果”：REAPI CAS 写入并不自动授权 AC 更新；opaque 协议的完整条目写入视为 result.publish。UI 菜单隐藏不构成权限检查；每个 API、gRPC 请求、对象下载路径都需授权。
+Permission actions should include at least cache.read, blob.write, result.publish, cache.invalidate, artifact.download, metadata.read, event.write, execution.submit, worker.register, and admin.manage. Product-level cache.write is a convenient grouping of related write permissions; internally, “uploading content” must be distinct from “publishing results others can trust.” REAPI CAS writes do not automatically authorize AC updates; writing a complete opaque-protocol entry counts as result.publish. Hiding a UI menu is not authorization; every API, gRPC request, and object-download path requires authorization.
 
-API key 使用高熵随机值，仅创建时展示；数据库保存可检索标识和带服务端保护的校验值，避免保存可直接使用的明文。记录主体、范围、过期、最近使用、创建者和撤销时间；提供短暂重叠的轮换窗口。浏览器会话和 CI token 生命周期分开。生产缺失 JWT/会话密钥时拒绝启动。
+API keys use high-entropy random values and are displayed only on creation. Store a searchable identifier and a server-protected verification value in the database, avoiding directly usable plaintext. Record the principal, scope, expiry, last use, creator, and revocation time; provide a short overlapping rotation window. Browser sessions and CI tokens have separate lifecycles. Refuse startup in production if JWT/session secrets are missing.
 
-撤销 token 不会自动撤销它过去发布的结果。缓存条目保留发布主体、token 的非秘密标识、namespace、信任域、发布时间和可选 invocation。管理端提供按来源检索→预览→隔离/失效→审计→可信 CI 重新预热的处置流程。来源元数据应从 P0 保存，P0 至少提供审计式批量失效 API/CLI，P1 完善页面；优先失效结果映射，不盲目删除其他可信条目仍引用的共享 CAS。
+Revoking a token does not automatically revoke results it previously published. Cache entries retain the publishing principal, a non-secret token identifier, namespace, trust domain, publication time, and optional invocation. The management application provides a response workflow: search by source → preview → quarantine/invalidate → audit → rewarm with trusted CI. Preserve source metadata from P0; P0 must at least provide an audited bulk-invalidation API/CLI, with fuller UI in P1. Invalidate result mappings first rather than blindly deleting shared CAS still referenced by other trusted entries.
 
-OIDC 应进入 P1；若试点将 SSO 作为上线硬条件，移动到 P0 并替换其他非关键工作。CI OIDC 联邦换短期凭据后续再做，不假定所有构建工具都能直接使用 OIDC。
+OIDC should be included in P1; if SSO is a hard launch requirement for a pilot, move it to P0 and replace other noncritical work. Exchanging CI OIDC federation for short-lived credentials comes later; do not assume all build tools can directly use OIDC.
 
-## 6. 配额与生命周期
+## 6. Quotas and Lifecycle
 
-至少支持：存储逻辑字节、对象数量、单对象最大值、并发上传、请求速率、下载流量；执行上线后再加 CPU/内存时长。当前按“流水线上报次数”限制缓存使用没有足够约束力。
+Support at least logical storage bytes, object count, maximum object size, concurrent uploads, request rate, and download traffic; add CPU/memory duration after execution launches. The current limit based on “pipeline report count” does not adequately constrain cache use.
 
-配额同时出现在 UI、准入检查和后台对账：上传前预留，未知大小流式限额；取消释放，成功提交结算；跨节点额度使用持久租约/原子账本，不能靠每台节点独立计数。超额先禁新写、保留允许的读，不直接破坏正在使用的对象；具体协议错误码与客户端降级行为需实测。
+Quotas appear in the UI, admission checks, and background reconciliation: reserve before upload, enforce streaming limits for unknown sizes, release on cancellation, and settle on successful commit. Cross-node allocations use persistent leases/atomic ledgers, not independent per-node counters. When over quota, block new writes first and preserve allowed reads without directly disrupting objects in use. Actual protocol error codes and client fallback behavior require testing.
 
-空间口径分开：逻辑存储（namespace 记账、项目聚合）、物理存储（后端实际占用）、SSD 热缓存、暂存/待清理空间、对象版本。P0 仅 namespace 内去重；跨 namespace 相同字节独立存储和计量。未来若引入共享 blob，须同时明确各项目逻辑配额归属，不按物理占比随机摊账。
+Separate capacity measures: logical storage (accounted per namespace, aggregated by project), physical storage (actual backend usage), SSD hot cache, staging/pending-cleanup space, and object versions. P0 deduplicates only within namespaces; identical bytes in different namespaces are stored and metered independently. If shared blobs are introduced later, explicitly define each project's logical quota attribution rather than randomly allocating charges by physical proportion.
 
-生命周期支持 TTL、最近访问、空间水位、最短保护期、上传/下载租约、受保护根引用。保留结果条目时不能清掉它引用的必要 blob。管理员先预览清理范围，再执行可审计任务；删除租户先撤销授权，再异步清理所属引用与对象。
+Lifecycle management supports TTL, last access, storage watermarks, minimum protection periods, upload/download leases, and protected root references. Necessary blobs referenced by retained result entries must not be removed. Administrators preview cleanup scope before running an auditable task. Tenant deletion first revokes authorization, then asynchronously cleans up its references and objects.
 
-## 7. 指标定义与真实收益
+## 7. Metric Definitions and Actual Benefits
 
-| 指标 | 定义 | 不能据此直接推导 |
+| Metric | Definition | Cannot directly establish |
 |---|---|---|
-| Entry lookup hit rate | 命中的结果条目查询 / 成功判定 hit 或 miss 的条目查询 | 任务节省时间、Bazel CAS 请求命中率 |
-| CAS blob hit rate | blob 查询命中 / blob 查询数；批量请求按对象计 | action 命中率；一个 action 可引用很多 blob |
-| Task cache hit rate | 工具事件报告的命中任务 / 可缓存任务 | 服务端单次 GET 命中率 |
-| Bytes served / uploaded | 实际发送/接收的字节，分别标明线传与逻辑口径 | 编译 CPU 节省 |
-| Avoided compute estimate | 匹配任务历史执行中位数 × 命中任务数，标明样本与估计 | 整条流水线墙钟收益；任务可能并行 |
-| CI wall-time change | 可比基线与缓存启用组的构建完成时长差 | 全部变化都由缓存造成 |
-| Storage efficiency | 同一隔离域内逻辑字节 / 物理字节 | 不同租户可以跨域共享权限 |
+| Entry lookup hit rate | Successful result-entry hits / entry lookups successfully classified as hit or miss | Task time saved, Bazel CAS request hit rate |
+| CAS blob hit rate | Blob lookup hits / blob lookups; count batch requests per object | Action hit rate; one action may reference many blobs |
+| Task cache hit rate | Hit tasks reported by tool events / cacheable tasks | Server hit rate for individual GETs |
+| Bytes served / uploaded | Actual bytes sent/received, distinguishing wire and logical measures | Compilation CPU savings |
+| Avoided compute estimate | Median historical execution time for matching tasks × hit-task count, with samples and estimate clearly identified | Entire pipeline wall-time benefit; tasks may run in parallel |
+| CI wall-time change | Difference in build completion time between a comparable baseline and a cache-enabled group | That caching caused all changes |
+| Storage efficiency | Logical bytes / physical bytes within the same isolation domain | Permission to share across domains between tenants |
 
-错误和超时从命中率分母中独立报告，另显示服务可用性；否则大量错误会伪装成正常 miss。统计端必须明确重试是否去重、批量对象还是 HTTP 请求计数、时间窗口和数据新鲜度。
+Report errors and timeouts separately from the hit-rate denominator, alongside service availability; otherwise many errors may masquerade as normal misses. The statistics system must state whether retries are deduplicated, whether it counts batch objects or HTTP requests, the time window, and data freshness.
 
-净资源收益估计 = 避免的计算费用 − 缓存服务计算费用 − 对象存储容量费用 − 存储请求费用 − 网络费用。开发者等待时间单独报告，不能把避免的并行 CPU 时间当成人工等待时间。成本参数由企业填写，规划不使用未核验的云价格。
+Estimated net resource benefit = avoided compute cost − cache-service compute cost − object-storage capacity cost − storage request cost − network cost. Report developer waiting time separately; avoided parallel CPU time is not human waiting time. Enterprises supply cost parameters; the plan does not use unverified cloud prices.
 
-“为什么没命中”分层展示：
+Present “why was this a miss?” in layers:
 
-1. 服务端确定事实：key 未存在、已过期/淘汰、被权限拒绝、限额、损坏、后端失败。
-2. 客户端证据：输入/工具链/环境/参数变化、不可缓存任务、签名校验失败、客户端本地命中。
-3. 推断：缺少输入指纹时只能提示可能原因，不能声称某个源码文件确定导致失效。
+1. Server-confirmed facts: key absent, expired/evicted, permission denied, rate/quota limited, corrupted, or backend failed.
+2. Client evidence: changed inputs/toolchain/environment/arguments, uncacheable tasks, failed signature verification, or client-local hits.
+3. Inference: without input fingerprints, suggest only possible causes; do not claim that a particular source file definitively caused invalidation.
 
-Bazel 的构建事件可用于构建结果与配置关联，但深入分析还需按版本获取执行日志或其他指纹信息；BES 是承载事件的服务协议，BEP 是事件格式，不能当作缓存协议。[Bazel BEP/BES](https://bazel.build/remote/bep)。
+Bazel build events can correlate build results with configuration, but deeper analysis also requires version-specific execution logs or other fingerprint information. BES is the service protocol carrying events; BEP is the event format. Neither should be treated as a cache protocol. [Bazel BEP/BES](https://bazel.build/remote/bep).
 
-## 8. 企业交付形态
+## 8. Enterprise Delivery Options
 
-- 开发/评估：Compose，单数据面节点，PostgreSQL，文件存储；同一领域模型，不维护一套不兼容的简化产品。
-- 企业生产：容器或 systemd + 企业 PostgreSQL + 企业对象存储 + TLS；提供容量、备份、监控与升级文档。Kubernetes 是选项。
-- P1 高可用：多个数据面节点、共享持久索引/对象存储、各自热缓存；管理服务可独立升级。
-- 离线环境：镜像与依赖可镜像化，UI 不运行时依赖公网 CDN；给离线安装清单、版本清单、升级和回滚步骤。
-- 未来 SaaS：复用 tenant/project/namespace、配额与服务账号模型；新增账户开通、订阅、区域和企业专属数据面。
+- Development/evaluation: Compose, one data-plane node, PostgreSQL, file storage; the same domain model, without maintaining an incompatible simplified product.
+- Enterprise production: containers or systemd + enterprise PostgreSQL + enterprise object storage + TLS; capacity, backup, monitoring, and upgrade documentation. Kubernetes is optional.
+- P1 high availability: multiple data-plane nodes, shared persistent index/object storage, independent hot caches; management services can be upgraded separately.
+- Offline environments: images and dependencies can be mirrored; the UI has no runtime dependency on public CDNs; provide offline installation and version inventories, upgrade steps, and rollback steps.
+- Future SaaS: reuse tenant/project/namespace, quota, and service-account models; add account provisioning, subscriptions, regions, and dedicated enterprise data planes.
 
-开源产品本身应能完成安全的自托管闭环。SSO、治理或部署能力如何划分商业版，需要基于客户购买理由和维护投入另立决策；不为了商业分层削弱基本隔离、认证或修复能力。
+The open-source product itself should support a complete, secure self-hosted workflow. Commercial-edition boundaries for SSO, governance, or deployment require a separate decision based on customer buying reasons and maintenance investment; basic isolation, authentication, and repair capabilities must not be weakened to create commercial tiers.
