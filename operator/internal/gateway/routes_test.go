@@ -48,7 +48,7 @@ func TestRoutesAndStatus(t *testing.T) {
 	}
 	c.Spec.TemplateRef.Name = "turborepo-http"
 	turbo, err := cfg.Render(c)
-	if err != nil || len(turbo) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http") || cfg.Endpoints(c)[0].Protocol != "turborepo-http" {
+	if err != nil || len(turbo) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http")+"/" || cfg.Endpoints(c)[0].Protocol != "turborepo-http" {
 		t.Fatal("Turborepo HTTPS must expose a root HTTP API only", err)
 	}
 	if len(turbo[1].(*networkingv1.NetworkPolicy).Spec.Ingress[0].Ports) != 1 {
