@@ -1,3 +1,4 @@
+import { clientProfileExample } from "./client-profiles";
 import { t } from "./i18n";
 import type { Detail } from "./api";
 
@@ -99,6 +100,16 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
         return text ? [{ ...endpoint, text }] : [];
       })
     : [];
+  const profiles = available
+    ? (detail.clientProfiles ?? []).flatMap((profile) => {
+        if (profile.status !== "experimental") return [];
+        return (detail.status?.endpoints ?? []).flatMap((endpoint) => {
+          if (endpoint.protocol !== profile.protocol) return [];
+          const text = clientProfileExample(profile.id, endpoint, profile.version);
+          return text ? [{ ...profile, text }] : [];
+        });
+      })
+    : [];
   return (
     <details>
       <summary>{t("客户端连接指引")}</summary>
@@ -118,6 +129,13 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
               ? t("客户端需要能够解析实例域名，并信任入口 TLS 证书。")
               : t("这些地址仅供集群内部访问，请在可访问该服务的构建环境执行。")}
           </p>
+          {profiles.map((profile, index) => (
+            <details key={`${profile.id}-${index}`}>
+              <summary>{profile.id} {profile.version} — {t("实验性配置")}</summary>
+              <p>{t("这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。")}</p>
+              <pre style={{ overflowX: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><code>{profile.text}</code></pre>
+            </details>
+          ))}
           {examples.map((example, index) => (
             <div key={`${example.protocol}-${index}`}>
               <h4>{example.protocol}</h4>

@@ -3449,6 +3449,12 @@
                               "type": "string"
                             }
                           },
+                          "clientProfiles": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/ClientProfile"
+                            }
+                          },
                           "exposures": {
                             "type": "array",
                             "items": {
@@ -3470,6 +3476,7 @@
                           "name",
                           "version",
                           "protocols",
+                          "clientProfiles",
                           "exposures",
                           "capabilities",
                           "inputSchema"
@@ -8605,9 +8612,41 @@
           "policyCondition"
         ]
       },
+      "ClientProfile": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "protocol": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "experimental"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "protocol",
+          "version",
+          "status"
+        ]
+      },
       "InstanceDetail": {
         "type": "object",
         "properties": {
+          "clientProfiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientProfile"
+            }
+          },
           "templateVersion": {
             "anyOf": [
               {
@@ -8684,6 +8723,7 @@
           }
         },
         "required": [
+          "clientProfiles",
           "templateVersion",
           "capabilities",
           "template",

@@ -379,3 +379,7 @@ See the [implementation plan](implementation-plan.md) and [Go module guide](../.
 
 - [Project quotas and Kubernetes hard limits](quotas.md)
 - [Read-only resource reconciliation for instances and storage volumes](inventory.md)
+
+## Experimental client recipes
+
+See [sccache and Pants configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.

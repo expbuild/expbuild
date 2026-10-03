@@ -49,7 +49,11 @@ export type Project = {
   role?: string;
 };
 export type TemplateName = string;
+export type ClientProfile = {
+  id: string; protocol: string; version: string; status: "experimental";
+};
 export type Template = {
+  clientProfiles?: ClientProfile[];
   name: TemplateName;
   version: string;
   protocols: string[];
@@ -103,6 +107,7 @@ export type Input = {
   deletionPolicy: "Retain" | "Delete";
 };
 export type Detail = {
+  clientProfiles?: ClientProfile[];
   id: string;
   name: string;
   lifecycle: string;
