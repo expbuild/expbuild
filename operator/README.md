@@ -7,6 +7,7 @@ Implementation of the [platform plan](../docs/k8s-platform/implementation-plan.m
 - CacheInstance API, generated structural CRD and deepcopy methods.
 - Multi-project controller-runtime manager with leader election and namespace ownership checks; optional single-namespace scope.
 - Validated, digest-pinned bazel-remote rendering and idempotent reconciliation.
+- Write-once complete instance image bindings, strict legacy adoption, and retained-volume image recovery records; see [migration and rollout](../docs/k8s-platform/image-upgrade-risk.md).
 - Exact CR UID ownership checks; foreign resources are never adopted.
 - Instance/project-bound auth Secret validation and credential revision rollouts.
 - Immutable ConfigMaps, separate retained PVC, Services and StatefulSet.

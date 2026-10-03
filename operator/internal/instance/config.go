@@ -29,6 +29,13 @@ type Config struct {
 
 var pinnedImage = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$`)
 
+func ValidateImage(image string) error {
+	if len(image) > 512 || !pinnedImage.MatchString(image) {
+		return fmt.Errorf("image must be pinned to a lowercase sha256 digest")
+	}
+	return nil
+}
+
 func (c Config) ValidateCommon() error {
 	// Leave space for resource suffixes and StatefulSet ordinal names.
 	if len(c.Name) > 40 || len(validation.IsDNS1123Label(c.Name)) != 0 {
@@ -42,8 +49,8 @@ func (c Config) ValidateCommon() error {
 			return fmt.Errorf("invalid %s", key)
 		}
 	}
-	if !pinnedImage.MatchString(c.Image) {
-		return fmt.Errorf("image must be pinned to a lowercase sha256 digest")
+	if err := ValidateImage(c.Image); err != nil {
+		return err
 	}
 	if len(validation.IsDNS1123Subdomain(c.CredentialsSecret)) != 0 {
 		return fmt.Errorf("credentialsSecret is required and must be a valid Secret name")

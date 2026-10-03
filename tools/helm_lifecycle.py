@@ -60,6 +60,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 network = NetworkFixture(kubectl, apply, directory, config, 'kind-' + name)
                 network.install()
             run('kind', 'load', 'docker-image', 'expbuild/operator:test', 'expbuild/admin-api:test', 'expbuild/admin-web:test', '--name', name)
+            stats_image = pin_loaded_image(name, 'expbuild/operator:test')
             gradle_image = ''
             if not isolation_enabled:
                 run('kind', 'load', 'docker-image', 'expbuild/gradle-cache:test', '--name', name)
@@ -77,7 +78,7 @@ def main(gateway_enabled=False, isolation_enabled=False):
                 monitoring = MonitoringFixture(kubectl, apply, config, 'kind-' + name)
                 monitoring.install()
             values = pathlib.Path(directory) / 'values.json'
-            values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512', 'webdav': APACHE, 'gradle': gradle_image}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
+            values.write_text(json.dumps({'images': {'api': 'expbuild/admin-api:test', 'web': 'expbuild/admin-web:test', 'operator': 'expbuild/operator:test', 'bazelRemote': 'buchgr/bazel-remote-cache:v2.6.2@sha256:8109f1f39eb17d898cf51e08b41e4eabaaaeb1f584c2f22c1be45b7568fcc512', 'webdav': APACHE, 'webdavStats': stats_image, 'gradle': gradle_image}, 'appOrigin': origin, 'storageClass': 'standard', 'secrets': {'database': 'database', 'operationEncryption': 'encryption', 'bootstrap': 'bootstrap'}, 'bootstrap': {'enabled': True}, 'ingress': {'enabled': False}}))
             if gateway:
                 settings = json.loads(values.read_text())
                 settings['gateway'] = gateway.values

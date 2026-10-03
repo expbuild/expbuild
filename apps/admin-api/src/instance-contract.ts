@@ -7,6 +7,7 @@ export type CacheObject = {
   metadata: { name: string; namespace: string; uid?: string; generation?: number; resourceVersion?: string; labels?: Record<string, string>; annotations?: Record<string, string>; deletionTimestamp?: string };
   spec: {
     instanceId: string; projectId: string;
+    imageBindingMode?: 'PinnedV1';
     templateRef: { name: string; version: string };
     desiredState: string;
     storage: { className: string; capacity: string; deletionPolicy: string; reclaim?: { previousInstanceUID: string; volumeUID: string } };
@@ -32,7 +33,7 @@ export function desiredObject(input: InstanceInput, projectId: string, namespace
     apiVersion: 'cache.expbuild.io/v1alpha1', kind: 'CacheInstance',
     metadata: { name: `c-${id}`, namespace, labels: labels(projectId, id), annotations: { 'cache.expbuild.io/operation-id': operationId, 'cache.expbuild.io/request-hash': requestHash, 'cache.expbuild.io/display-name': input.name } },
     spec: {
-      instanceId: id, projectId, templateRef: { name: template.name, version: template.version }, desiredState: input.desiredState,
+      imageBindingMode: 'PinnedV1', instanceId: id, projectId, templateRef: { name: template.name, version: template.version }, desiredState: input.desiredState,
       storage: { className: storageClass, capacity: `${input.storageGiB}Gi`, deletionPolicy: input.deletionPolicy },
       access: { exposure: input.exposure, credentialsSecretRef: `c-${id}-auth` },
       eviction: { maxCacheGiB: input.cacheGiB, enginePolicy: template.enginePolicy }, resources: { requests: resources, limits: { ...resources } },

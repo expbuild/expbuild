@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -37,7 +38,8 @@ var errReclaimBindingPending = errors.New("retained volume transfer awaits durab
 type Reconciler struct {
 	client.Client
 	// Reader must bypass informer caches for rollout observations.
-	Reader client.Reader
+	Reader   client.Reader
+	Recorder record.EventRecorder
 	// Image is an administrator-supplied digest, not an instance spec field.
 	Image       string
 	WebDAVImage string
@@ -49,6 +51,9 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
+	if r.Recorder == nil {
+		r.Recorder = m.GetEventRecorderFor("expbuild-images")
+	}
 	builder := ctrl.NewControllerManagedBy(m).For(&cachev1.CacheInstance{}).
 		Owns(&appsv1.StatefulSet{}).Owns(&corev1.Service{}).Owns(&corev1.ConfigMap{})
 	if r.Gateway != nil {
@@ -71,7 +76,7 @@ func config(c *cachev1.CacheInstance, image string) instance.Config {
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	var c cachev1.CacheInstance
-	if err := r.Get(ctx, req.NamespacedName, &c); err != nil {
+	if err := r.Reader.Get(ctx, req.NamespacedName, &c); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	// The platform creates project namespaces. Cluster-wide watch permissions
@@ -140,9 +145,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		controllerutil.RemoveFinalizer(&c, GatewayFinalizer)
 		return ctrl.Result{Requeue: true}, r.Patch(ctx, &c, client.MergeFrom(base))
 	}
-	adapter, err := templates.Resolve(c.Spec.TemplateRef, r.Image, r.WebDAVImage, r.StatsImage, r.GradleImage)
+	adapter, pendingBinding, err := r.resolveImageBinding(ctx, &c)
 	if err != nil {
-		return r.report(ctx, &c, false, "InvalidConfiguration", err.Error())
+		var rejected *imageBindingRejected
+		if !errors.As(err, &rejected) {
+			return ctrl.Result{}, err
+		}
+		r.bindingCondition(&c, false, rejected.reason, rejected.message)
+		if c.Spec.DesiredState == "Suspended" {
+			return r.suspendBoundWorkload(ctx, &c, rejected.reason, rejected.message)
+		}
+		return r.report(ctx, &c, false, rejected.reason, rejected.message)
+	}
+	if pendingBinding {
+		return ctrl.Result{Requeue: true}, nil
+	}
+	r.bindingCondition(&c, true, "Pinned", "Complete image set is durably bound to this instance and template")
+	if c.Spec.DesiredState == "Suspended" {
+		return r.suspendBoundWorkload(ctx, &c, "Suspended", "Workload stopped; persistent data and image binding retained")
 	}
 	objects, err := adapter.Render(config(&c, ""), c.Spec.Eviction.EnginePolicy)
 	if err != nil {
@@ -204,19 +224,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	var pvc corev1.PersistentVolumeClaim
 	if err = r.Reader.Get(ctx, types.NamespacedName{Namespace: c.Namespace, Name: c.Name + "-data"}, &pvc); err != nil {
 		return ctrl.Result{}, err
-	}
-	if c.Spec.DesiredState == "Suspended" {
-		pods, err := r.pods(ctx, &c)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		if len(pods.Items) > 0 {
-			return r.report(ctx, &c, false, "Suspending", "Waiting for cache Pods to stop")
-		}
-		if err := r.cleanupConfigs(ctx, &c, &sts); err != nil {
-			return ctrl.Result{}, err
-		}
-		return r.report(ctx, &c, false, "Suspended", "Workload stopped; persistent data retained")
 	}
 	if pvc.Status.Phase != corev1.ClaimBound {
 		return r.report(ctx, &c, false, "StoragePending", "Waiting for volume binding")
@@ -329,7 +336,7 @@ func (r *Reconciler) apply(ctx context.Context, desired client.Object) error {
 	}
 	if _, isPVC := desired.(*corev1.PersistentVolumeClaim); !isPVC {
 		owner, expected := metav1.GetControllerOf(current), metav1.GetControllerOf(desired)
-		if owner == nil || expected == nil || owner.UID != expected.UID {
+		if owner == nil || expected == nil || owner.UID != expected.UID || owner.Name != expected.Name || owner.Kind != expected.Kind || owner.APIVersion != expected.APIVersion {
 			return fmt.Errorf("resource %s has a conflicting controller owner", desired.GetName())
 		}
 	}
@@ -378,6 +385,15 @@ func (r *Reconciler) apply(ctx context.Context, desired client.Object) error {
 		current.(*networkingv1.NetworkPolicy).Spec = d.Spec
 	case *appsv1.StatefulSet:
 		p := current.(*appsv1.StatefulSet)
+		// Repeat the image check at the optimistic write boundary: a concurrent
+		// external edit after binding verification must not be overwritten.
+		images, err := podImages(d.Spec.Template.Spec)
+		if err != nil {
+			return err
+		}
+		if err := matchesImages(p, images); err != nil {
+			return err
+		}
 		p.Spec.Replicas = d.Spec.Replicas
 		p.Spec.Template = d.Spec.Template
 	default:
@@ -401,6 +417,8 @@ func (r *Reconciler) report(ctx context.Context, c *cachev1.CacheInstance, ready
 	}
 	base := current.DeepCopy()
 	current.Status = c.Status
+	// A concurrent successful binding cannot be cleared by a stale report.
+	current.Status.ImageBinding = base.Status.ImageBinding
 	current.Status.ObservedGeneration = c.Generation
 	value := metav1.ConditionFalse
 	if ready {
@@ -481,10 +499,12 @@ func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ct
 		}
 	}
 	var sts appsv1.StatefulSet
+	var retainedWorkload *appsv1.StatefulSet
 	if err := r.Reader.Get(ctx, client.ObjectKeyFromObject(c), &sts); err == nil {
-		if sts.Labels[UIDLabel] != string(c.UID) {
-			return ctrl.Result{}, fmt.Errorf("workload ownership conflict during deletion")
+		if err := ownedWorkload(c, &sts); err != nil {
+			return ctrl.Result{}, err
 		}
+		retainedWorkload = &sts
 		if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 0 {
 			base := sts.DeepCopy()
 			zero := int32(0)
@@ -515,6 +535,9 @@ func (r *Reconciler) finalize(ctx context.Context, c *cachev1.CacheInstance) (ct
 		}
 		if c.Spec.Storage.DeletionPolicy != "Retain" {
 			return ctrl.Result{}, fmt.Errorf("unknown volume deletion policy")
+		}
+		if err := r.retainImages(ctx, c, &pvc, retainedWorkload); err != nil {
+			return ctrl.Result{}, err
 		}
 	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err

@@ -66,8 +66,8 @@ func Render(c instance.Config) ([]runtime.Object, error) {
 // RenderWithStats is a new template version. The original renderer remains
 // available for instances pinned to webdav-apache@0.1.0.
 func RenderWithStats(c instance.Config) ([]runtime.Object, error) {
-	if c.StatsImage == "" {
-		return nil, fmt.Errorf("WebDAV statistics image is not configured")
+	if err := instance.ValidateImage(c.StatsImage); err != nil {
+		return nil, fmt.Errorf("statistics: %w", err)
 	}
 	objects, err := Render(c)
 	if err != nil {

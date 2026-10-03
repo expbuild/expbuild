@@ -99,11 +99,50 @@ func TestAPIServerContract(t *testing.T) {
 	r := &Reconciler{Client: cl, Reader: cl, Image: local.Image}
 	reconcile(t, r, c)
 	var sts appsv1.StatefulSet
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(c), &sts); !apierrors.IsNotFound(err) {
+		t.Fatal("new suspended instance created a workload")
+	}
+	if err = cl.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("image binding is immutable through the API", func(t *testing.T) {
+		for _, clear := range []bool{false, true} {
+			changed := c.DeepCopy()
+			if clear {
+				changed.Status = cachev1.CacheInstanceStatus{}
+			} else {
+				changed.Status.ImageBinding.Images["cache"] = cachev1.ImageDigest(newImage)
+			}
+			if err := cl.Status().Update(ctx, changed); !apierrors.IsInvalid(err) {
+				t.Fatalf("binding mutation accepted: %v", err)
+			}
+		}
+		legacy := c.DeepCopy()
+		legacy.Name = "legacy-mode"
+		legacy.UID = ""
+		legacy.ResourceVersion = ""
+		legacy.Generation = 0
+		legacy.Finalizers = nil
+		legacy.Status = cachev1.CacheInstanceStatus{}
+		legacy.Spec.ImageBindingMode = ""
+		if err := cl.Create(ctx, legacy); err != nil {
+			t.Fatal(err)
+		}
+		legacy.Spec.ImageBindingMode = ImageBindingMode
+		if err := cl.Update(ctx, legacy); !apierrors.IsInvalid(err) {
+			t.Fatalf("legacy creation marker mutation accepted: %v", err)
+		}
+	})
+	c.Spec.DesiredState = "Running"
+	if err = cl.Update(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	reconcile(t, r, c)
 	if err = cl.Get(ctx, client.ObjectKeyFromObject(c), &sts); err != nil {
 		t.Fatal(err)
 	}
-	if *sts.Spec.Replicas != 0 || !metav1.IsControlledBy(&sts, c) {
-		t.Fatal("unexpected reconciled workload")
+	if *sts.Spec.Replicas != 1 || !metav1.IsControlledBy(&sts, c) {
+		t.Fatal("unexpected resumed workload")
 	}
 	t.Run("WebDAV capability validation", func(t *testing.T) {
 		dav := c.DeepCopy()

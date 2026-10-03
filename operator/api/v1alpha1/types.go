@@ -19,8 +19,10 @@ func AddToScheme(s *runtime.Scheme) error {
 
 type TemplateRef struct {
 	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache;gradle-http
+	// +kubebuilder:validation:MaxLength=32
 	Name string `json:"name"`
 	// +kubebuilder:validation:Enum="0.1.0";"0.2.0"
+	// +kubebuilder:validation:MaxLength=16
 	Version string `json:"version"`
 }
 
@@ -58,12 +60,16 @@ type EvictionSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.instanceId == oldSelf.instanceId",message="instanceId is immutable"
 // +kubebuilder:validation:XValidation:rule="self.projectId == oldSelf.projectId",message="projectId is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef == oldSelf.templateRef",message="template changes require a supported upgrade operation"
+// +kubebuilder:validation:XValidation:rule="has(self.imageBindingMode) == has(oldSelf.imageBindingMode) && (!has(self.imageBindingMode) || self.imageBindingMode == oldSelf.imageBindingMode)",message="image binding creation mode is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'bazel-remote' || self.templateRef.version == '0.1.0'",message="unsupported bazel-remote template version"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'gradle-http' || self.templateRef.version in ['0.1.0','0.2.0']",message="unsupported gradle-http template version"
 // +kubebuilder:validation:XValidation:rule="self.storage.className == oldSelf.storage.className",message="storage class is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim) || self.storage.reclaim == oldSelf.storage.reclaim)",message="retained volume identity is immutable"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' || self.templateRef.name == 'gradle-http' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
 type CacheInstanceSpec struct {
+	// No default: absence identifies pre-binding instances. Creation-only opt-in.
+	// +kubebuilder:validation:Enum=PinnedV1
+	ImageBindingMode string `json:"imageBindingMode,omitempty"`
 	// +kubebuilder:validation:MinLength=1
 	InstanceID string `json:"instanceId"`
 	// +kubebuilder:validation:MinLength=1
@@ -84,18 +90,37 @@ type Endpoint struct {
 }
 
 type CacheInstanceStatus struct {
-	ObservedGeneration     int64      `json:"observedGeneration,omitempty"`
-	AppliedConfigHash      string     `json:"appliedConfigHash,omitempty"`
-	CredentialRevision     string     `json:"credentialRevision,omitempty"`
-	AppliedTemplateVersion string     `json:"appliedTemplateVersion,omitempty"`
-	Endpoints              []Endpoint `json:"endpoints,omitempty"`
+	ImageBinding           *ImageBinding `json:"imageBinding,omitempty"`
+	ObservedGeneration     int64         `json:"observedGeneration,omitempty"`
+	AppliedConfigHash      string        `json:"appliedConfigHash,omitempty"`
+	CredentialRevision     string        `json:"credentialRevision,omitempty"`
+	AppliedTemplateVersion string        `json:"appliedTemplateVersion,omitempty"`
+	Endpoints              []Endpoint    `json:"endpoints,omitempty"`
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// +kubebuilder:validation:MaxLength=512
+// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9._:/-]*@sha256:[a-f0-9]{64}$`
+type ImageDigest string
+
+// ImageBinding is operator-owned trust, never end-user image selection.
+type ImageBinding struct {
+	// +kubebuilder:validation:Enum=v1
+	Format string `json:"format"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	InstanceUID string      `json:"instanceUID"`
+	TemplateRef TemplateRef `json:"templateRef"`
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:validation:MaxProperties=2
+	Images map[string]ImageDigest `json:"images"`
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.imageBinding) || (has(self.status) && has(self.status.imageBinding) && self.status.imageBinding == oldSelf.status.imageBinding)",message="image binding is immutable, including removal"
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.spec.desiredState`
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 type CacheInstance struct {

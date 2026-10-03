@@ -4,6 +4,7 @@ metadata:
   name: webdav-demo
   namespace: expbuild-demo
 spec:
+  imageBindingMode: PinnedV1
   instanceId: webdav-demo
   projectId: demo
   templateRef: {name: webdav-apache, version: 0.2.0}

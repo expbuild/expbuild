@@ -454,6 +454,8 @@ export async function registerInstanceRoutes(
       desired.spec.access.credentialsSecretRef =
         current.spec.access.credentialsSecretRef;
       desired.spec.templateRef = structuredClone(current.spec.templateRef);
+      if (current.spec.imageBindingMode) desired.spec.imageBindingMode = current.spec.imageBindingMode;
+      else delete desired.spec.imageBindingMode;
       if (current.spec.storage.reclaim)
         desired.spec.storage.reclaim = structuredClone(current.spec.storage.reclaim);
       const accepted = await transaction(pool, async (client) => {

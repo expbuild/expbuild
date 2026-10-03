@@ -4,6 +4,7 @@ images:
   web: ''
   operator: ''
   bazelRemote: '' # Required repository@sha256:digest; no mutable engine tags.
+  webdavStats: '' # Required digest when WebDAV is enabled; independent of operator upgrades.
   webdav: '' # Optional Apache WebDAV image; digest required when enabled.
   gradle: '' # Optional Gradle HTTP cache image; digest required when enabled.
 imagePullPolicy: IfNotPresent
