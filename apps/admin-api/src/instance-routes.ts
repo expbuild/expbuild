@@ -36,6 +36,8 @@ export type InstanceOptions = {
   storageClass?: string;
   webdavEnabled?: boolean;
   gradleEnabled?: boolean;
+  turborepoEnabled?: boolean;
+  nxEnabled?: boolean;
   gatewayEnabled?: boolean;
   history?: HistoryReader;
   statistics?: {readStatistics(object: CacheObject): Promise<InstanceStatistics>};

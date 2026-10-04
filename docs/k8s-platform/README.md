@@ -382,4 +382,12 @@ See the [implementation plan](implementation-plan.md) and [Go module guide](../.
 
 ## Experimental client recipes
 
-See [sccache and Pants configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+See [sccache, Pants and moonrepo configurations](client-profiles.md) for pinned client profiles, credential limits and the pending real-client acceptance gate.
+
+The experimental [moonrepo REAPI recipe](moonrepo.md) requires a dedicated JSON workspace and explicit opt-in for CI writes.
+
+See the [experimental Turborepo HTTP engine](turborepo-http.md) for its separate artifact protocol, scoped token configuration and pending real-client gate.
+
+See the [experimental Nx HTTP engine](nx-http.md) for its separate artifact protocol, scoped token configuration and pending real-client gate.
+
+The [experimental Maven Build Cache profile](maven-build-cache.md) reuses WebDAV and requires separate real-extension acceptance.

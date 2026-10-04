@@ -105,7 +105,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
         if (profile.status !== "experimental") return [];
         return (detail.status?.endpoints ?? []).flatMap((endpoint) => {
           if (endpoint.protocol !== profile.protocol) return [];
-          const text = clientProfileExample(profile.id, endpoint, profile.version);
+          const text = clientProfileExample(profile.id, endpoint, profile.version, detail.id);
           return text ? [{ ...profile, text }] : [];
         });
       })
@@ -115,7 +115,7 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
       <summary>{t("客户端连接指引")}</summary>
       {!available ? (
         <p>{t("当前配置尚未确认就绪，恢复运行并就绪后显示连接示例。")}</p>
-      ) : !examples.length ? (
+      ) : !examples.length && !profiles.length ? (
         <p>{t("当前端点尚无匹配的客户端示例。")}</p>
       ) : (
         <>
@@ -132,7 +132,9 @@ export function ConnectionInfo({ detail }: { detail: Detail }) {
           {profiles.map((profile, index) => (
             <details key={`${profile.id}-${index}`}>
               <summary>{profile.id} {profile.version} — {t("实验性配置")}</summary>
-              <p>{t("这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。")}</p>
+              <p>{t(profile.id === "nx" ? "此配置尚未通过真实 Nx 客户端验收。实例令牌具有读写权限，仅限可信构建环境；不要提供给不受信任的任务。" : "这些配置尚未通过真实客户端完整验收。只读设置由客户端执行，实例凭据仍具备写入权限。请使用独立实例进行验证。")}</p>
+              {profile.id === "maven-build-cache" && <p>{t("仅用于新的验证项目：预先配置 Maven 3.9.16、扩展 1.3.0、Python 3，以及 settings.xml 中的 expbuild-maven 凭据引用。已有缓存配置需人工合并。此功能不是依赖镜像仓库。")}</p>}
+              {profile.id === "moonrepo" && <p>{t("moonrepo 示例仅用于文档中的独立 JSON 验证工作区。默认只读；写入需显式开启并设置 CI=true。")}</p>}
               <pre style={{ overflowX: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><code>{profile.text}</code></pre>
             </details>
           ))}

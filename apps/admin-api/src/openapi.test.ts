@@ -69,13 +69,16 @@ test("instance request schema retains input defaults and password fields are wri
     required: string[];
     properties: Record<string, { default?: unknown; const?: unknown }>;
   }[] }).anyOf;
-  assert.equal(variants.length, 3);
+  assert.deepEqual(variants.map(x => x.properties.template.const).sort(),
+    ['bazel-remote', 'gradle-http', 'nx-http', 'turborepo-http', 'webdav-apache']);
   const input = variants.find(x => x.properties.template.const === 'bazel-remote')!;
   const webdav = variants.find(x => x.properties.template.const === 'webdav-apache')!;
   const gradle = variants.find(x => x.properties.template.const === 'gradle-http')!;
   assert.ok(webdav.required.includes('template'));
   assert.equal(webdav.properties.cacheGiB.const, 0);
   assert.ok(gradle.required.includes('template'));
+  assert.ok(variants.find(x => x.properties.template.const === 'turborepo-http')!.required.includes('template'));
+  assert.ok(variants.find(x => x.properties.template.const === 'nx-http')!.required.includes('template'));
   assert.ok(!input.required.includes('template'));
   assert.ok(input.required.includes("storageGiB"));
   assert.ok(!input.required.includes("cpuMillis"));

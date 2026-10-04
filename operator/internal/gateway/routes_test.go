@@ -46,6 +46,22 @@ func TestRoutesAndStatus(t *testing.T) {
 	if err != nil || len(gradle) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http")+"/cache/" {
 		t.Fatal("Gradle HTTPS endpoint must include the cache base path", err)
 	}
+	c.Spec.TemplateRef.Name = "turborepo-http"
+	turbo, err := cfg.Render(c)
+	if err != nil || len(turbo) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http")+"/" || cfg.Endpoints(c)[0].Protocol != "turborepo-http" {
+		t.Fatal("Turborepo HTTPS must expose a root HTTP API only", err)
+	}
+	if len(turbo[1].(*networkingv1.NetworkPolicy).Spec.Ingress[0].Ports) != 1 {
+		t.Fatal("Turborepo exposed extra ports")
+	}
+	c.Spec.TemplateRef.Name = "nx-http"
+	nx, err := cfg.Render(c)
+	if err != nil || len(nx) != 2 || cfg.Endpoints(c)[0].URL != "https://"+cfg.Host(c, "http")+"/" || cfg.Endpoints(c)[0].Protocol != "nx-http" {
+		t.Fatal("Nx HTTPS must expose a root HTTP API only", err)
+	}
+	if len(nx[1].(*networkingv1.NetworkPolicy).Spec.Ingress[0].Ports) != 1 {
+		t.Fatal("Nx exposed extra ports")
+	}
 	conditions := []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue, ObservedGeneration: 2}, {Type: "ResolvedRefs", Status: metav1.ConditionTrue, ObservedGeneration: 2}}
 	parents := []gatewayv1.RouteParentStatus{{ParentRef: cfg.Parent(), ControllerName: gatewayv1.GatewayController(cfg.ControllerName), Conditions: conditions}}
 	if !cfg.Accepted(parents, 2) || cfg.Accepted(parents, 3) {

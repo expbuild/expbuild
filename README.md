@@ -34,6 +34,14 @@ These versioned templates are available for new instances when their engines are
 
 Observations vary by engine: Bazel exposes capacity and AC/CAS lookup history; Gradle adds hits/misses, latency, traffic, and eviction metrics; WebDAV reports approximate size and file count from a bounded scan. Time series require Prometheus-compatible storage, logs require Loki with ingestion, and alerts require Alertmanager with rules. Missing data is shown as unavailable. [Full capability matrix →](docs/k8s-platform/observability.md)
 
+**Experimental, opt-in:** [Turborepo HTTP artifact cache](docs/k8s-platform/turborepo-http.md) has its own engine and pinned connection profile; real-client acceptance is pending.
+
+**Experimental, opt-in:** [Nx HTTP artifact cache](docs/k8s-platform/nx-http.md) has its own engine and pinned connection profile; real-client acceptance is pending.
+
+The [experimental Maven Build Cache Extension profile](docs/k8s-platform/maven-build-cache.md) reuses WebDAV for build outputs; real-client acceptance is pending.
+
+**Experimental client recipes:** sccache, Pants and [moonrepo 2.5.6](docs/k8s-platform/moonrepo.md) reuse existing engines. Real-client acceptance remains pending; recipes are not certified client support.
+
 ## How it works
 
 ```mermaid

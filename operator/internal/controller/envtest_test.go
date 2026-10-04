@@ -252,6 +252,90 @@ func TestAPIServerContract(t *testing.T) {
 			t.Fatalf("unsupported Gradle version accepted: %v", err)
 		}
 	})
+	t.Run("Turborepo HTTP admission and isolated Service", func(t *testing.T) {
+		turborepo := c.DeepCopy()
+		turborepo.Name, turborepo.ResourceVersion, turborepo.UID = "turborepo-cache", "", ""
+		turborepo.Generation = 0
+		turborepo.Finalizers = nil
+		turborepo.Status = cachev1.CacheInstanceStatus{}
+		turborepo.Spec.InstanceID = "turborepo-cache"
+		turborepo.Spec.TemplateRef = cachev1.TemplateRef{Name: "turborepo-http", Version: "0.1.0"}
+		if err := cl.Create(ctx, turborepo); err != nil {
+			t.Fatalf("Turborepo 0.1.0 rejected: %v", err)
+		}
+		credential := secret.DeepCopy()
+		credential.ResourceVersion, credential.UID = "", ""
+		credential.Name = "turborepo-auth"
+		credential.Labels[InstanceLabel] = turborepo.Spec.InstanceID
+		if err := cl.Create(ctx, credential); err != nil {
+			t.Fatal(err)
+		}
+		turborepo.Spec.Access.CredentialsSecretRef = credential.Name
+		if err := cl.Update(ctx, turborepo); err != nil {
+			t.Fatal(err)
+		}
+		r.TurborepoImage = local.Image
+		reconcile(t, r, turborepo)
+		var service corev1.Service
+		if err := cl.Get(ctx, client.ObjectKeyFromObject(turborepo), &service); err != nil {
+			t.Fatal(err)
+		}
+		if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Name != "http" {
+			t.Fatal("Turborepo exposed unexpected ports")
+		}
+		invalid := turborepo.DeepCopy()
+		invalid.Name, invalid.ResourceVersion, invalid.UID = "invalid-turborepo-version", "", ""
+		invalid.Generation = 0
+		invalid.Finalizers = nil
+		invalid.Status = cachev1.CacheInstanceStatus{}
+		invalid.Spec.InstanceID = "invalid-turborepo-version"
+		invalid.Spec.TemplateRef.Version = "0.3.0"
+		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+			t.Fatalf("unsupported Turborepo version accepted: %v", err)
+		}
+	})
+	t.Run("Nx HTTP admission and isolated Service", func(t *testing.T) {
+		nx := c.DeepCopy()
+		nx.Name, nx.ResourceVersion, nx.UID = "nx-cache", "", ""
+		nx.Generation = 0
+		nx.Finalizers = nil
+		nx.Status = cachev1.CacheInstanceStatus{}
+		nx.Spec.InstanceID = "nx-cache"
+		nx.Spec.TemplateRef = cachev1.TemplateRef{Name: "nx-http", Version: "0.1.0"}
+		if err := cl.Create(ctx, nx); err != nil {
+			t.Fatalf("Nx 0.1.0 rejected: %v", err)
+		}
+		credential := secret.DeepCopy()
+		credential.ResourceVersion, credential.UID = "", ""
+		credential.Name = "nx-auth"
+		credential.Labels[InstanceLabel] = nx.Spec.InstanceID
+		if err := cl.Create(ctx, credential); err != nil {
+			t.Fatal(err)
+		}
+		nx.Spec.Access.CredentialsSecretRef = credential.Name
+		if err := cl.Update(ctx, nx); err != nil {
+			t.Fatal(err)
+		}
+		r.NxImage = local.Image
+		reconcile(t, r, nx)
+		var service corev1.Service
+		if err := cl.Get(ctx, client.ObjectKeyFromObject(nx), &service); err != nil {
+			t.Fatal(err)
+		}
+		if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Name != "http" {
+			t.Fatal("Nx exposed unexpected ports")
+		}
+		invalid := nx.DeepCopy()
+		invalid.Name, invalid.ResourceVersion, invalid.UID = "invalid-nx-version", "", ""
+		invalid.Generation = 0
+		invalid.Finalizers = nil
+		invalid.Status = cachev1.CacheInstanceStatus{}
+		invalid.Spec.InstanceID = "invalid-nx-version"
+		invalid.Spec.TemplateRef.Version = "0.3.0"
+		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+			t.Fatalf("unsupported Nx version accepted: %v", err)
+		}
+	})
 }
 
 func checkRBAC(t *testing.T, ctx context.Context, cl client.Client) {
