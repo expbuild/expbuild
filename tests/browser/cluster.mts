@@ -26,11 +26,16 @@ export class BrowserCluster implements KubernetesPort {
     object.status = {
       observedGeneration: generation,
       credentialRevision: object.spec.access.credentialsSecretRef,
-      endpoints: object.spec.desiredState === 'Running' ? [object.spec.templateRef.name === 'gradle-http'
-        ? { protocol: 'gradle-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080/cache/` }
+      endpoints: object.spec.desiredState === 'Running' ? (object.spec.templateRef.name === 'gradle-http'
+        ? [{ protocol: 'gradle-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080/cache/` }]
         : object.spec.templateRef.name === 'turborepo-http'
-          ? { protocol: 'turborepo-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }
-          : { protocol: 'bazel-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }] : [],
+          ? [{ protocol: 'turborepo-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }]
+          : object.spec.templateRef.name === 'nx-http'
+          ? [{ protocol: 'nx-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }]
+          : object.spec.templateRef.name === 'webdav-apache'
+          ? [{ protocol: 'webdav', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080/` }]
+          : [{ protocol: 'bazel-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` },
+          { protocol: 'reapi', url: `grpc://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:9092` }]) : [],
       conditions: [{ type: 'Ready', status: object.spec.desiredState === 'Running' ? 'True' : 'False', reason: object.spec.desiredState === 'Running' ? 'Ready' : 'Suspended', observedGeneration: generation }],
     };
     return object;

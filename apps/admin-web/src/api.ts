@@ -79,6 +79,8 @@ export const templateLabel = (name: string) =>
         ? "Gradle HTTP"
         : name === "turborepo-http"
           ? t("Turborepo HTTP（实验性）")
+          : name === "nx-http"
+          ? t("Nx HTTP（实验性）")
           : name;
 export type Instance = {
   template_name: string;

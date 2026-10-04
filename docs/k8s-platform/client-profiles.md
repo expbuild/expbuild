@@ -1,19 +1,21 @@
 # Experimental client configurations
 
-The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0 and Pants 2.33.1. Real-client cache acceptance is still pending. Existing Bazel, Gradle and WebDAV examples remain available.
+The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0, Pants 2.33.1, Maven Build Cache Extension 1.3.0 and moonrepo 2.5.6. Real-client cache acceptance is still pending. Existing Bazel, Gradle and WebDAV examples remain available.
 
 | Client | Existing template | Transport | Configuration status |
 | --- | --- | --- | --- |
 | sccache 0.18.0, compiled with WebDAV | `webdav-apache@0.1.0` or `@0.2.0` | HTTP(S) WebDAV, Basic authentication | Experimental; unvalidated with real compiler workloads |
 | Pants 2.33.1 | `bazel-remote@0.1.0` | REAPI over `grpc://` or `grpcs://`, Basic authorization metadata | Experimental; unvalidated with real Pants workloads |
+| Maven Build Cache Extension 1.3.0 / Maven 3.9.16 | `webdav-apache@0.1.0` or `@0.2.0` | Native Resolver HTTP/WebDAV, Basic | Experimental; real extension acceptance pending |
+| moonrepo 2.5.6 | `bazel-remote@0.1.0` | REAPI over gRPC(S), Basic authorization metadata | Experimental; dedicated JSON workspace, real-client acceptance pending |
 
 No new storage engine or custom client fork is required for these recipes. The API returns `clientProfiles` separately from engine `capabilities`, on both template catalog entries and instance details. Each profile has `id`, `protocol`, pinned `version` and `status: experimental`. Unknown template versions expose no profiles. The UI offers matching recipes only after the current generation is Ready, using validated root endpoints. This metadata does not change the CacheInstance spec, storage layout or approved image binding.
 
 ## Credentials, isolation and TLS
 
-Use a dedicated instance for each acceptance workload. Current instance credentials can read and write. The sample defaults to client-side reads and enables writes only for `CI=true`; a user holding those credentials can change that setting. This is not a server-enforced read-only role. Adding a true read-only role requires separate credentials and engine authorization, with write-denial tests, before advertising it.
+Use a dedicated instance for each acceptance workload. Current instance credentials can read and write. The sccache/Pants samples default to client-side reads and enable writes only for `CI=true`; the moonrepo recipe additionally requires explicit `EXPBUILD_MOON_WRITE=true`; the Maven example always disables remote uploads; a user holding those credentials can change that setting. This is not a server-enforced read-only role. Adding a true read-only role requires separate credentials and engine authorization, with write-denial tests, before advertising it.
 
-The existing instance, credentials and PVC are the isolation boundary. WebDAV prefixes, Pants `remote_instance_name`, and `process_execution_cache_namespace` are not tenant security boundaries. bazel-remote does not isolate CAS by instance name; action-key instance mangling is not currently enabled. Do not share an instance between untrusted tenants or claim cross-tool cache reuse.
+The existing instance, credentials and PVC are the isolation boundary. WebDAV prefixes, moon `instanceName`, Pants `remote_instance_name`, and `process_execution_cache_namespace` are not tenant security boundaries. bazel-remote does not isolate CAS by instance name; action-key instance mangling is not currently enabled. Do not share an instance between untrusted tenants or claim cross-tool cache reuse.
 
 Gateway clients must resolve their instance domain and trust the gateway certificate. Internal plain HTTP/gRPC endpoints require a trusted network path. Recipes never disable certificate verification. Do not put credentials into repository files, URLs or shell history; the examples prompt for them and limit their environment to a subshell. Avoid shell tracing and verify that other inherited backend/authentication settings are absent in the dedicated test environment.
 
@@ -37,6 +39,10 @@ Keep bazel-remote's default ActionCache dependency validation enabled. The offic
 
 Sources: [Pants 2.33.1 release](https://github.com/pantsbuild/pants/releases/tag/release_2.33.1), [remote cache setup](https://www.pantsbuild.org/stable/docs/using-pants/remote-caching-and-execution/remote-caching), [server compatibility](https://www.pantsbuild.org/stable/docs/using-pants/remote-caching-and-execution#server-compatibility), [global option reference](https://www.pantsbuild.org/stable/reference/global-options).
 
+## moonrepo
+
+See the [moonrepo 2.5.6 recipe](moonrepo.md) for the required JSON workspace, Basic header substitution, TLS behavior and explicit write opt-in. It reuses REAPI without remote execution, retains CAS dependency checks and defaults to global read mode even in CI. No new client is downloaded or executed by the configuration tests.
+
 ## Acceptance gate
 
 Configuration tests run with `npm run test:client-profiles` on Node 24, with stub clients and real Bash argument/environment handling. API, schema and React tests remain part of the management workflow. These tests do not count as real-client cache acceptance.
@@ -57,3 +63,11 @@ No new client downloader or real-client workflow is enabled by this configuratio
 ## Turborepo artifact engine
 
 [Turborepo 2.11.7](turborepo-http.md) now has a separate experimental engine and configuration profile. It does not reuse the WebDAV or REAPI wire protocol. Real-client acceptance remains pending.
+
+## Nx artifact engine
+
+[Nx 22.7.12](nx-http.md) now has a separate experimental engine and configuration profile. It does not reuse the WebDAV or REAPI wire protocol. Real-client acceptance remains pending.
+
+## Maven Build Cache Extension
+
+See the [Maven profile](maven-build-cache.md) for prerequisites, nested WebDAV layout, strict test-parameter reconciliation and the pending acceptance gate. Its upload flag remains false even in CI. This caches build outputs, not dependency downloads.

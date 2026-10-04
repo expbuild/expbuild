@@ -104,5 +104,22 @@
     "grpcPort": 0,
     "statistics": false,
     "prometheusMetrics": false
+  },
+  {
+    "name": "nx-http",
+    "version": "0.1.0",
+    "enginePolicy": "lru",
+    "storageGiB": 3,
+    "cacheGiB": 1,
+    "protocols": [
+      "nx-http"
+    ],
+    "endpointProtocols": [
+      "nx-http"
+    ],
+    "httpPort": 8080,
+    "grpcPort": 0,
+    "statistics": false,
+    "prometheusMetrics": false
   }
 ]

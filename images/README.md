@@ -32,3 +32,5 @@ where the component is admin-api, admin-web, operator, webdav, or gradle-cache. 
 postgres:18 and create a temporary database container and network, which are automatically cleaned up on exit.
 
 The opt-in experimental Turborepo artifact engine is built from `images/turborepo-cache/Dockerfile`. Configure its approved digest in `images.turborepo`; the CI build does not publish it. See [its protocol and validation limits](../docs/k8s-platform/turborepo-http.md).
+
+The opt-in experimental Nx artifact engine is built from `images/nx-cache/Dockerfile`. Configure its approved digest in `images.nx`; the CI build does not publish it. See [its protocol and validation limits](../docs/k8s-platform/nx-http.md).

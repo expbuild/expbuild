@@ -156,3 +156,47 @@ it("renders Turborepo as an experimental profile with an instance-bound token re
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/TURBO_TEAMID=/)).toBeNull();
 });
+
+it("renders Nx as an experimental profile with an instance-bound token recipe", () => {
+  const value = detail();
+  value.id = "d21dd71b-3710-4b47-b6a6-8b660a0811cb";
+  value.spec!.templateRef = { name: "nx-http", version: "0.1.0" };
+  value.clientProfiles = [{ id: "nx", protocol: "nx-http", version: "22.7.12", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "nx-http", url: "https://nx.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/nx 22.7.12/)).toBeTruthy();
+  expect(screen.getByText(/NX_SELF_HOSTED_REMOTE_CACHE_SERVER=/).textContent).toContain("export NX_SELF_HOSTED_REMOTE_CACHE_SERVER='https://nx.example.test'");
+  expect(screen.queryByText(/当前端点尚无/)).toBeNull();
+  value.spec!.desiredState = "Suspended";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/NX_SELF_HOSTED_REMOTE_CACHE_SERVER=/)).toBeNull();
+});
+
+
+it("shows Maven Build Cache separately on a ready WebDAV endpoint", () => {
+  const value = detail();
+  value.clientProfiles = [{ id: "maven-build-cache", protocol: "webdav", version: "1.3.0", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "webdav", url: "https://cache.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/maven-build-cache 1.3.0/)).toBeTruthy();
+  expect(screen.getByText(/仅用于新的验证项目/)).toBeTruthy();
+  expect(screen.getByText(/aether.connector.http.supportWebDav=true/).textContent).toContain("maven.build.cache.remote.save.enabled=false");
+  value.status!.conditions![0].observedGeneration = 1;
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/aether.connector.http.supportWebDav=true/)).toBeNull();
+});
+
+it("shows moonrepo only for the current ready REAPI generation", () => {
+  const value = detail();
+  value.clientProfiles = [{ id: "moonrepo", protocol: "reapi", version: "2.5.6", status: "experimental" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/moonrepo 2.5.6/)).toBeTruthy();
+  expect(screen.getByText(/MOON_REMOTE_HOST=/)).toBeTruthy();
+  value.clientProfiles[0].version = "2.5.5";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/MOON_REMOTE_HOST=/)).toBeNull();
+  value.clientProfiles[0].version = "2.5.6";
+  value.status!.conditions![0].observedGeneration = 1;
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/MOON_REMOTE_HOST=/)).toBeNull();
+});

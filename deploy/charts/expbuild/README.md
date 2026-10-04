@@ -144,3 +144,7 @@ The optional `gateway.enabled` setting connects instance routes to an existing G
 ### Experimental Turborepo image
 
 `images.turborepo` defaults to empty. Set an administrator-approved image digest to enable `turborepo-http@0.1.0` creation. Existing cache engines and defaults remain separate. See [Turborepo HTTP](../../../docs/k8s-platform/turborepo-http.md) for Bearer token scope, capacity limits and pending real-client acceptance.
+
+### Experimental Nx image
+
+`images.nx` defaults to empty. Set an administrator-approved image digest to enable `nx-http@0.1.0` creation. Existing cache engines and defaults remain separate. See [Nx HTTP](../../../docs/k8s-platform/nx-http.md) for Bearer token scope, capacity limits and pending real-client acceptance.

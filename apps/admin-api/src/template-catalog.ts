@@ -28,6 +28,11 @@ export const turborepoInput = commonInput.extend({
   cacheGiB: z.number().int().min(1).max(1048575),
 }).refine(x => x.cacheGiB < x.storageGiB, { message: 'Cache budget must leave space in the volume', path: ['cacheGiB'] });
 
+export const nxInput = commonInput.extend({
+  template: z.literal('nx-http'),
+  cacheGiB: z.number().int().min(1).max(1048575),
+}).refine(x => x.cacheGiB < x.storageGiB, { message: 'Cache budget must leave space in the volume', path: ['cacheGiB'] });
+
 
 // All creation schemas, public capabilities and CR policy mappings live together.
 // Disabled templates remain resolvable for existing-instance maintenance.
@@ -68,10 +73,16 @@ const templates = [
     capabilities: { capacity: true, statistics: false, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
     enabled: (options: TemplateOptions) => options.turborepoEnabled === true,
   },
+  {
+    name: 'nx-http', version: '0.1.0', enginePolicy: 'lru',
+    protocols: ['nx-http'], input: nxInput,
+    capabilities: { capacity: true, statistics: false, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
+    enabled: (options: TemplateOptions) => options.nxEnabled === true,
+  },
 ] as const;
 
-export type TemplateOptions = { webdavEnabled?: boolean; gradleEnabled?: boolean; turborepoEnabled?: boolean; gatewayEnabled?: boolean };
-export const instanceInput = z.union([bazelInput, webdavInput, gradleInput, turborepoInput]);
+export type TemplateOptions = { webdavEnabled?: boolean; gradleEnabled?: boolean; turborepoEnabled?: boolean; nxEnabled?: boolean; gatewayEnabled?: boolean };
+export const instanceInput = z.union([bazelInput, webdavInput, gradleInput, turborepoInput, nxInput]);
 export type InstanceInput = z.infer<typeof instanceInput>;
 
 export function templateDefinition(name: string, version?: string) {

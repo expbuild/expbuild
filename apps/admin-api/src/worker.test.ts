@@ -166,7 +166,7 @@ test('instance queue recovers a lost create response, serializes updates and ret
     const rotatedSecret=[...kube.objects.values()][0]!.spec.access.credentialsSecretRef;
     const detail = await app.inject({ url: `${path}/${instanceId}`, headers });
     assert.equal(detail.json().lifecycle, 'active');
-    assert.deepEqual(detail.json().clientProfiles, [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }]);
+    assert.deepEqual(detail.json().clientProfiles, [{ id: 'pants', protocol: 'reapi', version: '2.33.1', status: 'experimental' }, { id: 'moonrepo', protocol: 'reapi', version: '2.5.6', status: 'experimental' }]);
     const quota = async () => (await app.inject({url:`/v1/projects/${projectId}/quota`,headers})).json();
     const activeReservation = (await quota()).reserved;
     assert.equal(activeReservation.instances,1);
@@ -458,7 +458,7 @@ test('WebDAV provisioning is gated and preserves engine capabilities through upd
 
     const detail = await app.inject({ url: `${path}/${id}`, headers });
     assert.equal(detail.json().spec.templateRef.name, 'webdav-apache');
-    assert.deepEqual(detail.json().clientProfiles, [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }]);
+    assert.deepEqual(detail.json().clientProfiles, [{ id: 'sccache', protocol: 'webdav', version: '0.18.0', status: 'experimental' }, { id: 'maven-build-cache', protocol: 'webdav', version: '1.3.0', status: 'experimental' }]);
     assert.deepEqual(detail.json().spec.eviction, { enginePolicy: 'none', maxCacheGiB: 0 });
     const davStats=await app.inject({ url: `${path}/${id}/statistics`, headers });
     assert.equal(davStats.statusCode, 200, davStats.body);
@@ -544,6 +544,60 @@ test('Turborepo creation is gated and reuses protected one-time instance credent
     kube.ready(); await tick();
     const detail = await app.inject({ url: `${path}/${operation.instance_id}`, headers });
     assert.deepEqual(detail.json().clientProfiles, [{ id: 'turborepo', protocol: 'turborepo-http', version: '2.11.7', status: 'experimental' }]);
+    assert.equal(detail.json().capabilities.statistics, false);
+    assert.equal(detail.body.includes(credentials.password), false);
+    assert.equal((await pool.query('SELECT secret_payload FROM operations WHERE id=$1', [operation.id])).rows[0].secret_payload, null);
+  } finally {
+    await app.close(); await disabled.close(); await pool.end();
+    await root.query(`DROP DATABASE "${database}"`); await root.end();
+  }
+});
+
+test('Nx creation is gated and reuses protected one-time instance credentials', { skip: !process.env.TEST_DATABASE_URL }, async () => {
+  const root = createPool(process.env.TEST_DATABASE_URL!), database = `expbuild_test_${randomUUID().replaceAll('-', '')}`;
+  await root.query(`CREATE DATABASE "${database}"`);
+  const url = new URL(process.env.TEST_DATABASE_URL!); url.pathname = `/${database}`;
+  const pool = createPool(url.toString()), kube = new Cluster(), key = randomBytes(32);
+  kube.loseCreateResponse = false;
+  const origin = 'http://localhost:5173';
+  const options = { origin, secureCookies: false, kube, encryptionKey: key, storageClass: 'test' };
+  const disabled = await buildApp(pool, options), app = await buildApp(pool, { ...options, nxEnabled: true });
+  const worker = new OperationWorker(pool, kube, key);
+  const tick = async () => {
+    await pool.query("UPDATE operations SET next_attempt_at=now()-interval '1 second'");
+    assert.equal(await worker.tick(), true);
+  };
+  try {
+    await migrate(pool);
+    const password = 'integration-test-password';
+    await pool.query('INSERT INTO users(id,email,password_hash,platform_admin) VALUES($1,$2,$3,true)', [randomUUID(), 'admin@test.local', await hashPassword(password)]);
+    const login = await app.inject({ method: 'POST', url: '/v1/auth/login', headers: { origin }, payload: { email: 'admin@test.local', password } });
+    const headers = { origin, cookie: `expbuild_session=${login.cookies[0]!.value}`, 'x-csrf-token': login.json().csrfToken };
+    const project = await app.inject({ method: 'POST', url: '/v1/projects', headers, payload: { name: 'Nx team' } });
+    assert.equal(project.statusCode, 202, project.body);
+    await tick();
+    const path = `/v1/projects/${project.json().id}/instances`;
+    const input = { name: 'Nx', template: 'nx-http', storageGiB: 3, cacheGiB: 1 };
+    const create = (server: typeof app) => server.inject({ method: 'POST', url: path, headers: { ...headers, 'idempotency-key': 'nx-create' }, payload: input });
+    assert.equal((await create(disabled)).statusCode, 409);
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM instance_bindings')).rows[0].n, 0);
+    const accepted = await create(app);
+    assert.equal(accepted.statusCode, 202, accepted.body);
+    const { operation, credentials } = accepted.json();
+    assert.equal(credentials.username, 'cache');
+    assert.ok(credentials.password);
+    assert.equal((await create(app)).json().credentials, undefined);
+    await tick();
+    const desired = [...kube.objects.values()][0]!;
+    assert.deepEqual(desired.spec.templateRef, { name: 'nx-http', version: '0.1.0' });
+    const secret = [...kube.secrets.values()][0]!;
+    assert.deepEqual(Object.keys(secret).sort(), ['htpasswd', 'probe-password', 'probe-username']);
+    assert.equal(secret.htpasswd.includes(credentials.password), false);
+    const queued = (await pool.query('SELECT request FROM operations WHERE id=$1', [operation.id])).rows[0].request;
+    assert.equal(JSON.stringify(queued).includes(credentials.password), false);
+    kube.ready(); await tick();
+    const detail = await app.inject({ url: `${path}/${operation.instance_id}`, headers });
+    assert.deepEqual(detail.json().clientProfiles, [{ id: 'nx', protocol: 'nx-http', version: '22.7.12', status: 'experimental' }]);
     assert.equal(detail.json().capabilities.statistics, false);
     assert.equal(detail.body.includes(credentials.password), false);
     assert.equal((await pool.query('SELECT secret_payload FROM operations WHERE id=$1', [operation.id])).rows[0].secret_payload, null);
