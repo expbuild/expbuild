@@ -73,3 +73,6 @@
 {{- if and .Values.images.nx (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.nx)) -}}
 {{- fail "images.nx must be pinned to a SHA256 digest" -}}
 {{- end -}}
+{{- if and .Values.images.goCache (not (regexMatch "^[^[:space:]]+@sha256:[a-f0-9]{64}$" .Values.images.goCache)) -}}
+{{- fail "images.goCache must be pinned to a SHA256 digest" -}}
+{{- end -}}

@@ -34,3 +34,5 @@ postgres:18 and create a temporary database container and network, which are aut
 The opt-in experimental Turborepo artifact engine is built from `images/turborepo-cache/Dockerfile`. Configure its approved digest in `images.turborepo`; the CI build does not publish it. See [its protocol and validation limits](../docs/k8s-platform/turborepo-http.md).
 
 The opt-in experimental Nx artifact engine is built from `images/nx-cache/Dockerfile`. Configure its approved digest in `images.nx`; the CI build does not publish it. See [its protocol and validation limits](../docs/k8s-platform/nx-http.md).
+
+The opt-in Go cacheprog engine uses `images/go-cache/Dockerfile` and the approved `images.goCache` digest. CI builds and smoke-tests but does not publish it. See [protocol and acceptance limits](../docs/k8s-platform/go-cacheprog.md).

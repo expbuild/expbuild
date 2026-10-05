@@ -1014,6 +1014,7 @@ function InstanceForm({
           memoryMiB: parseInt(spec.resources.limits.memory),
           desiredState: spec.desiredState,
           deletionPolicy: spec.storage.deletionPolicy,
+          ...(spec.templateRef.name === "go-cacheprog" ? { readOnly: spec.access?.readOnly ?? false } : {}),
         }
       : reclaimInitial
         ? (() => {
@@ -1114,7 +1115,7 @@ function InstanceForm({
       return;
     }
     setBusy(true);
-    const body = JSON.stringify(input);
+    const body = JSON.stringify(input.template === "go-cacheprog" ? { ...input, readOnly: input.readOnly ?? true } : Object.fromEntries(Object.entries(input).filter(([key]) => key !== "readOnly")));
     if (last.current.body !== body)
       last.current = { body, key: crypto.randomUUID() };
     try {
@@ -1286,6 +1287,7 @@ function InstanceForm({
             <option value="Suspended">{t("暂停")}</option>
           </select>
         </label>
+        {input.template === "go-cacheprog" && <label><input type="checkbox" checked={input.readOnly ?? true} onChange={(e) => setInput({ ...input, readOnly: e.target.checked })} />{t("服务端只读（Go 缓存）")}</label>}
         <label>
           {t("删除实例时")}
           <select

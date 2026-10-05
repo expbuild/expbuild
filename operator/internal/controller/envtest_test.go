@@ -336,6 +336,49 @@ func TestAPIServerContract(t *testing.T) {
 			t.Fatalf("unsupported Nx version accepted: %v", err)
 		}
 	})
+	t.Run("GoCache HTTP admission and isolated Service", func(t *testing.T) {
+		goCache := c.DeepCopy()
+		goCache.Name, goCache.ResourceVersion, goCache.UID = "go-cache", "", ""
+		goCache.Generation = 0
+		goCache.Finalizers = nil
+		goCache.Status = cachev1.CacheInstanceStatus{}
+		goCache.Spec.InstanceID = "go-cache"
+		goCache.Spec.Access.ReadOnly = true
+		goCache.Spec.TemplateRef = cachev1.TemplateRef{Name: "go-cacheprog", Version: "0.1.0"}
+		if err := cl.Create(ctx, goCache); err != nil {
+			t.Fatalf("GoCache 0.1.0 rejected: %v", err)
+		}
+		credential := secret.DeepCopy()
+		credential.ResourceVersion, credential.UID = "", ""
+		credential.Name = "go-auth"
+		credential.Labels[InstanceLabel] = goCache.Spec.InstanceID
+		if err := cl.Create(ctx, credential); err != nil {
+			t.Fatal(err)
+		}
+		goCache.Spec.Access.CredentialsSecretRef = credential.Name
+		if err := cl.Update(ctx, goCache); err != nil {
+			t.Fatal(err)
+		}
+		r.GoCacheImage = local.Image
+		reconcile(t, r, goCache)
+		var service corev1.Service
+		if err := cl.Get(ctx, client.ObjectKeyFromObject(goCache), &service); err != nil {
+			t.Fatal(err)
+		}
+		if len(service.Spec.Ports) != 1 || service.Spec.Ports[0].Name != "http" {
+			t.Fatal("GoCache exposed unexpected ports")
+		}
+		invalid := goCache.DeepCopy()
+		invalid.Name, invalid.ResourceVersion, invalid.UID = "invalid-go-cache-version", "", ""
+		invalid.Generation = 0
+		invalid.Finalizers = nil
+		invalid.Status = cachev1.CacheInstanceStatus{}
+		invalid.Spec.InstanceID = "invalid-go-cache-version"
+		invalid.Spec.TemplateRef.Version = "0.3.0"
+		if err := cl.Create(ctx, invalid); !apierrors.IsInvalid(err) {
+			t.Fatalf("unsupported GoCache version accepted: %v", err)
+		}
+	})
 }
 
 func checkRBAC(t *testing.T, ctx context.Context, cl client.Client) {

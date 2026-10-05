@@ -79,6 +79,8 @@ export const templateLabel = (name: string) =>
         ? "Gradle HTTP"
         : name === "turborepo-http"
           ? t("Turborepo HTTP（实验性）")
+          : name === "go-cacheprog"
+          ? t("Go cacheprog（实验性）")
           : name === "nx-http"
           ? t("Nx HTTP（实验性）")
           : name;
@@ -105,6 +107,7 @@ export type Input = {
   name: string;
   storageGiB: number;
   cacheGiB: number;
+  readOnly?: boolean;
   cpuMillis: number;
   memoryMiB: number;
   desiredState: "Running" | "Suspended";
@@ -121,7 +124,7 @@ export type Detail = {
   capabilities?: Template["capabilities"] | null;
   spec: null | {
     templateRef: { name: TemplateName; version: string };
-    access?: { exposure: "ClusterInternal" | "Gateway" };
+    access?: { exposure: "ClusterInternal" | "Gateway"; readOnly?: boolean };
     desiredState: Input["desiredState"];
     storage: { capacity: string; deletionPolicy: Input["deletionPolicy"] };
     eviction: { maxCacheGiB: number };

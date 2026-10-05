@@ -32,6 +32,11 @@ export const nxInput = commonInput.extend({
   template: z.literal('nx-http'),
   cacheGiB: z.number().int().min(1).max(1048575),
 }).refine(x => x.cacheGiB < x.storageGiB, { message: 'Cache budget must leave space in the volume', path: ['cacheGiB'] });
+export const goCacheInput = commonInput.extend({
+  template: z.literal('go-cacheprog'),
+  readOnly: z.boolean().default(true),
+  cacheGiB: z.number().int().min(1).max(1048575),
+}).refine(x => x.cacheGiB < x.storageGiB, { message: 'Cache budget must leave space in the volume', path: ['cacheGiB'] });
 
 
 // All creation schemas, public capabilities and CR policy mappings live together.
@@ -79,10 +84,16 @@ const templates = [
     capabilities: { capacity: true, statistics: false, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
     enabled: (options: TemplateOptions) => options.nxEnabled === true,
   },
+  {
+    name: 'go-cacheprog', version: '0.1.0', enginePolicy: 'lru',
+    protocols: ['go-cacheprog'], input: goCacheInput,
+    capabilities: { capacity: true, statistics: false, lookupHistory: false, lru: true, ttl: false, replicas: 1, policyApplyMode: 'restart', policyCondition: 'PolicyApplied' },
+    enabled: (options: TemplateOptions) => options.goCacheEnabled === true,
+  },
 ] as const;
 
-export type TemplateOptions = { webdavEnabled?: boolean; gradleEnabled?: boolean; turborepoEnabled?: boolean; nxEnabled?: boolean; gatewayEnabled?: boolean };
-export const instanceInput = z.union([bazelInput, webdavInput, gradleInput, turborepoInput, nxInput]);
+export type TemplateOptions = { webdavEnabled?: boolean; gradleEnabled?: boolean; turborepoEnabled?: boolean; nxEnabled?: boolean; goCacheEnabled?: boolean; gatewayEnabled?: boolean };
+export const instanceInput = z.union([bazelInput, webdavInput, gradleInput, turborepoInput, nxInput, goCacheInput]);
 export type InstanceInput = z.infer<typeof instanceInput>;
 
 export function templateDefinition(name: string, version?: string) {

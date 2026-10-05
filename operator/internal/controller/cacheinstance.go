@@ -46,6 +46,7 @@ type Reconciler struct {
 	GradleImage    string
 	TurborepoImage string
 	NxImage        string
+	GoCacheImage   string
 	StatsImage     string
 	Probe          Probe
 	Gateway        *gateway.Config
@@ -73,7 +74,7 @@ func config(c *cachev1.CacheInstance, image string) instance.Config {
 	return instance.Config{Name: c.Name, Namespace: c.Namespace, InstanceID: c.Spec.InstanceID, ProjectID: c.Spec.ProjectID,
 		Image: image, StorageClass: c.Spec.Storage.ClassName, Capacity: c.Spec.Storage.Capacity,
 		MaxCacheGiB: c.Spec.Eviction.MaxCacheGiB, CredentialsSecret: c.Spec.Access.CredentialsSecretRef,
-		DesiredState: c.Spec.DesiredState, Resources: c.Spec.Resources}
+		DesiredState: c.Spec.DesiredState, Resources: c.Spec.Resources, ReadOnly: c.Spec.Access.ReadOnly}
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

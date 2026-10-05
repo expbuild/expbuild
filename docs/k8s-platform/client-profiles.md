@@ -71,3 +71,7 @@ No new client downloader or real-client workflow is enabled by this configuratio
 ## Maven Build Cache Extension
 
 See the [Maven profile](maven-build-cache.md) for prerequisites, nested WebDAV layout, strict test-parameter reconciliation and the pending acceptance gate. Its upload flag remains false even in CI. This caches build outputs, not dependency downloads.
+
+## Go build cache
+
+[Go 1.27.1 with cacheprog v1.3.0](go-cacheprog.md) has a separate experimental HTTP engine and Ready connection recipe. It retains local DiskPath files for the build lifetime and supports server-enforced instance read-only mode. Real-client acceptance is pending.

@@ -1,5 +1,9 @@
 // Chinese source messages and their English translations. Keep complete sentences together.
 export const messages: Record<string, string> = {
+  "Go cacheprog（实验性）": "Go cacheprog (experimental)",
+  "服务端只读（Go 缓存）": "Server read-only (Go cache)",
+  "Go 缓存尚未通过真实客户端验收。服务端只读在实例设置中生效；客户端禁用上传不能代替授权。请勿向不可信任务提供可写实例令牌。": "Go cache has not passed real-client acceptance. Server read-only is enforced by instance settings; disabling client uploads is not authorization. Never give a writable instance token to untrusted jobs.",
+
   "Turborepo HTTP（实验性）": "Turborepo HTTP (experimental)",
   "此配置尚未通过真实 Nx 客户端验收。实例令牌具有读写权限，仅限可信构建环境；不要提供给不受信任的任务。": "This profile has not passed real Nx client acceptance. The instance token grants read/write access; use it only in trusted build environments and never give it to untrusted jobs.",
   "Nx HTTP（实验性）": "Nx HTTP (experimental)",

@@ -32,6 +32,8 @@ export class BrowserCluster implements KubernetesPort {
           ? [{ protocol: 'turborepo-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }]
           : object.spec.templateRef.name === 'nx-http'
           ? [{ protocol: 'nx-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }]
+          : object.spec.templateRef.name === 'go-cacheprog'
+          ? [{ protocol: 'go-cacheprog', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` }]
           : object.spec.templateRef.name === 'webdav-apache'
           ? [{ protocol: 'webdav', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080/` }]
           : [{ protocol: 'bazel-http', url: `http://${object.metadata.name}.${object.metadata.namespace}.svc.cluster.local:8080` },

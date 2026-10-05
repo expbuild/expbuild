@@ -391,3 +391,5 @@ See the [experimental Turborepo HTTP engine](turborepo-http.md) for its separate
 See the [experimental Nx HTTP engine](nx-http.md) for its separate artifact protocol, scoped token configuration and pending real-client gate.
 
 The [experimental Maven Build Cache profile](maven-build-cache.md) reuses WebDAV and requires separate real-extension acceptance.
+
+See the [experimental Go cacheprog adapter](go-cacheprog.md) for a separate Go build-cache protocol, server read-only enforcement and the pending real-client acceptance gate.

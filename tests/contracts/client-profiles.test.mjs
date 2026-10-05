@@ -306,3 +306,43 @@ test('moonrepo preflight rejects config/auth ambiguity and overrides before invo
     assert.ok(!result.stdout.includes('args:'));
   }
 });
+
+test('Go cacheprog recipe pins versions, owns DiskPath lifetime and clears inherited settings', () => {
+  const endpoint = { protocol: 'go-cacheprog', url: 'https://go.example.test/' };
+  const profile = clientProfiles('go-cacheprog', '0.1.0')[0];
+  assert.deepEqual(profile, { id: 'go-cacheprog', protocol: 'go-cacheprog', version: '1.3.0', status: 'experimental' });
+  const recipe = clientProfileExample(profile.id, endpoint, profile.version);
+  assert.ok(recipe.includes('CACHEPROG_ROOT_DIRECTORY'));
+  assert.equal(clientProfileExample(profile.id, endpoint, '1.2.0'), null);
+  for (const url of ['https://user:secret@go.example.test/', 'https://go.example.test/cache/']) assert.equal(clientProfileExample(profile.id, {...endpoint,url}), null);
+  const dir = mkdtempSync(join(tmpdir(), 'go-recipe-'));
+  try {
+    writeFileSync(join(dir, 'cacheprog'), '#!/bin/bash\nprintf "cacheprog version v1.3.0 built with go1.25\\n"\n', { mode: 0o700 });
+    writeFileSync(join(dir, 'go'), `#!/bin/bash
+if [ "$1" = env ]; then printf 'go1.27.1\\n'; exit; fi
+[ "$GOTOOLCHAIN" = local ] || exit 71
+[ "$CACHEPROG_REMOTE_STORAGE_TYPE" = http ] || exit 72
+[ "$CACHEPROG_HTTP_STORAGE_BASE_URL" = https://go.example.test ] || exit 73
+[ "$CACHEPROG_HTTP_STORAGE_EXTRA_HEADERS" = 'Authorization:Bearer fixture_token' ] || exit 74
+[ -z "\${CACHEPROG_RESET-}" ] || exit 75
+[ "\${CACHEPROG_DISABLE_GET-}" != true ] || exit 76
+[ -d "$(dirname "$CACHEPROG_ROOT_DIRECTORY")" ] || exit 77
+case "$CACHEPROG_ROOT_DIRECTORY" in /*/helper) ;; *) exit 78;; esac
+printf 'root:%s\\nput:%s\\nhelper:%s\\n' "$CACHEPROG_ROOT_DIRECTORY" "$CACHEPROG_DISABLE_PUT" "$GOCACHEPROG"
+`, { mode: 0o700 });
+    for (const [write, ci, expected] of [['false', '', 'true'], ['true', 'true', 'false']]) {
+      const result = spawnSync('bash', ['-c', recipe + '\nresult=$?; test -z "${CACHEPROG_HTTP_STORAGE_EXTRA_HEADERS-}" || exit 99; exit "$result"'], {
+        encoding: 'utf8', input: 'fixture_token\n', env: { PATH: dir + ':' + process.env.PATH, CI: ci, EXPBUILD_GO_WRITE: write, CACHEPROG_RESET: 'true', CACHEPROG_DISABLE_GET: 'true' },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, new RegExp('put:' + expected));
+      const root = result.stdout.match(/root:(.*)\/helper/)[1];
+      assert.equal(existsSync(root), false, 'DiskPath cleaned only after Go exits');
+      assert.match(result.stdout, /cacheprog direct/);
+    }
+    for (const token of ['x,Authorization:other', "x'$(unexpected)"]) {
+      const result = spawnSync('bash', ['-c', recipe], { encoding: 'utf8', input: token + '\n', env: { PATH: dir + ':' + process.env.PATH } });
+      assert.notEqual(result.status, 0); assert.doesNotMatch(result.stdout, /root:/);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -18,7 +18,7 @@ func AddToScheme(s *runtime.Scheme) error {
 }
 
 type TemplateRef struct {
-	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache;gradle-http;turborepo-http;nx-http
+	// +kubebuilder:validation:Enum=bazel-remote;webdav-apache;gradle-http;turborepo-http;nx-http;go-cacheprog
 	// +kubebuilder:validation:MaxLength=32
 	Name string `json:"name"`
 	// +kubebuilder:validation:Enum="0.1.0";"0.2.0"
@@ -45,6 +45,8 @@ type ReclaimSpec struct {
 }
 
 type AccessSpec struct {
+	// ReadOnly is a server-enforced cacheprog policy; other templates reject true.
+	ReadOnly bool `json:"readOnly,omitempty"`
 	// +kubebuilder:validation:Enum=ClusterInternal;Gateway
 	Exposure             string `json:"exposure"`
 	CredentialsSecretRef string `json:"credentialsSecretRef"`
@@ -64,10 +66,12 @@ type EvictionSpec struct {
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'bazel-remote' || self.templateRef.version == '0.1.0'",message="unsupported bazel-remote template version"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'turborepo-http' || self.templateRef.version == '0.1.0'",message="unsupported turborepo-http template version"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'nx-http' || self.templateRef.version == '0.1.0'",message="unsupported nx-http template version"
+// +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'go-cacheprog' || self.templateRef.version == '0.1.0'",message="unsupported go-cacheprog template version"
 // +kubebuilder:validation:XValidation:rule="self.templateRef.name != 'gradle-http' || self.templateRef.version in ['0.1.0','0.2.0']",message="unsupported gradle-http template version"
 // +kubebuilder:validation:XValidation:rule="self.storage.className == oldSelf.storage.className",message="storage class is immutable"
 // +kubebuilder:validation:XValidation:rule="has(self.storage.reclaim) == has(oldSelf.storage.reclaim) && (!has(self.storage.reclaim) || self.storage.reclaim == oldSelf.storage.reclaim)",message="retained volume identity is immutable"
-// +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' || self.templateRef.name == 'gradle-http' || self.templateRef.name == 'turborepo-http' || self.templateRef.name == 'nx-http' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
+// +kubebuilder:validation:XValidation:rule="self.templateRef.name == 'bazel-remote' || self.templateRef.name == 'gradle-http' || self.templateRef.name == 'turborepo-http' || self.templateRef.name == 'nx-http' || self.templateRef.name == 'go-cacheprog' ? (self.eviction.enginePolicy == 'lru' && self.eviction.maxCacheGiB > 0) : (self.eviction.enginePolicy == 'none' && self.eviction.maxCacheGiB == 0)",message="eviction policy must match engine capabilities"
+// +kubebuilder:validation:XValidation:rule="!has(self.access.readOnly) || !self.access.readOnly || self.templateRef.name == 'go-cacheprog'",message="server readOnly is supported only by go-cacheprog"
 type CacheInstanceSpec struct {
 	// No default: absence identifies pre-binding instances. Creation-only opt-in.
 	// +kubebuilder:validation:Enum=PinnedV1

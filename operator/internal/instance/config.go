@@ -13,6 +13,7 @@ import (
 // Config is input to the renderer, not the future Kubernetes CRD.
 // Image is supplied by the trusted template registry, never by an end user.
 type Config struct {
+	ReadOnly          bool                        `json:"readOnly,omitempty"`
 	Name              string                      `json:"name"`
 	Namespace         string                      `json:"namespace"`
 	InstanceID        string                      `json:"instanceId"`

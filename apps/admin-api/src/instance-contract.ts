@@ -11,7 +11,7 @@ export type CacheObject = {
     templateRef: { name: string; version: string };
     desiredState: string;
     storage: { className: string; capacity: string; deletionPolicy: string; reclaim?: { previousInstanceUID: string; volumeUID: string } };
-    access: { exposure: string; credentialsSecretRef: string };
+    access: { exposure: string; credentialsSecretRef: string; readOnly?: boolean };
     eviction: { maxCacheGiB: number; enginePolicy: string };
     resources: { requests: Record<string, string>; limits: Record<string, string> };
   };
@@ -35,7 +35,7 @@ export function desiredObject(input: InstanceInput, projectId: string, namespace
     spec: {
       imageBindingMode: 'PinnedV1', instanceId: id, projectId, templateRef: { name: template.name, version: template.version }, desiredState: input.desiredState,
       storage: { className: storageClass, capacity: `${input.storageGiB}Gi`, deletionPolicy: input.deletionPolicy },
-      access: { exposure: input.exposure, credentialsSecretRef: `c-${id}-auth` },
+      access: { exposure: input.exposure, credentialsSecretRef: `c-${id}-auth`, ...(input.template === 'go-cacheprog' ? { readOnly: input.readOnly } : {}) },
       eviction: { maxCacheGiB: input.cacheGiB, enginePolicy: template.enginePolicy }, resources: { requests: resources, limits: { ...resources } },
     },
   };

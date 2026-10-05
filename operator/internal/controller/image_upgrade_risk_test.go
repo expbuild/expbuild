@@ -53,6 +53,7 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 		{name: "bazel-remote", version: "0.1.0", container: "cache"},
 		{name: "gradle-http", version: "0.1.0", container: "cache"},
 		{name: "turborepo-http", version: "0.1.0", container: "cache"},
+		{name: "go-cacheprog", version: "0.1.0", container: "cache"},
 		{name: "nx-http", version: "0.1.0", container: "cache"},
 		{name: "gradle-http", version: "0.2.0", container: "cache"},
 		{name: "webdav-apache", version: "0.1.0", container: "cache"},
@@ -71,7 +72,7 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 			}
 			oldImage := "example.invalid/cache@sha256:" + strings.Repeat("a", 64)
 			newImage := "example.invalid/cache@sha256:" + strings.Repeat("b", 64)
-			r.Image, r.WebDAVImage, r.GradleImage, r.StatsImage, r.TurborepoImage, r.NxImage = oldImage, oldImage, oldImage, oldImage, oldImage, oldImage
+			r.Image, r.WebDAVImage, r.GradleImage, r.StatsImage, r.TurborepoImage, r.NxImage, r.GoCacheImage = oldImage, oldImage, oldImage, oldImage, oldImage, oldImage, oldImage
 			reconcile(t, r, c)
 			var before appsv1.StatefulSet
 			key := client.ObjectKeyFromObject(c)
@@ -110,6 +111,8 @@ func TestInstallationImageChangeKeepsExistingWorkload(t *testing.T) {
 					r.GradleImage = newImage
 				case "turborepo-http":
 					r.TurborepoImage = newImage
+				case "go-cacheprog":
+					r.GoCacheImage = newImage
 				case "nx-http":
 					r.NxImage = newImage
 				case "webdav-apache":
@@ -215,6 +218,33 @@ func TestHelmNxImageRequiresExplicitApproval(t *testing.T) {
 			expectedFlag = `NX_ENABLED, value: "true"`
 		}
 		if tc.valid && (bytes.Contains(out, []byte("--nx-image=")) != tc.enabled || !bytes.Contains(out, []byte(expectedFlag))) {
+			t.Fatal("image approval and feature availability disagree")
+		}
+	}
+}
+
+func TestHelmGoCacheImageRequiresExplicitApproval(t *testing.T) {
+	helm := os.Getenv("HELM_BIN")
+	if helm == "" {
+		t.Skip("set HELM_BIN for chart approval checks")
+	}
+	chart := filepath.Join("..", "..", "..", "deploy", "charts", "expbuild")
+	args := []string{"template", "go-test", chart, "--kube-version", "1.32.0", "-f", filepath.Join(chart, "ci-values.yaml")}
+	for _, tc := range []struct {
+		image          string
+		valid, enabled bool
+	}{
+		{"", true, false}, {"example.invalid/go-cache:latest", false, false}, {"example.invalid/go-cache@sha256:" + strings.Repeat("a", 64), true, true},
+	} {
+		out, err := exec.Command(helm, append(append([]string{}, args...), "--set-string", "images.goCache="+tc.image)...).CombinedOutput()
+		if (err == nil) != tc.valid {
+			t.Fatalf("approval validation %q: %v %s", tc.image, err, out)
+		}
+		expectedFlag := `GO_CACHE_ENABLED, value: "false"`
+		if tc.enabled {
+			expectedFlag = `GO_CACHE_ENABLED, value: "true"`
+		}
+		if tc.valid && (bytes.Contains(out, []byte("--go-cache-image=")) != tc.enabled || !bytes.Contains(out, []byte(expectedFlag))) {
 			t.Fatal("image approval and feature availability disagree")
 		}
 	}

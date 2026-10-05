@@ -241,3 +241,32 @@ test('moonrepo profile is discoverable on a ready REAPI instance without storing
   const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(storage).not.toContain(password);
 });
+
+test('experimental Go cacheprog template keeps the token one-time and uses the instance endpoint', async ({ page }) => {
+  await login(page);
+  await createProject(page, 'Browser Go cacheprog cache');
+  await expect(page.getByRole('button', { name: '＋ 创建实例' })).toBeEnabled();
+  await page.getByRole('button', { name: '＋ 创建实例' }).click();
+  await page.getByLabel('协议模板').selectOption('go-cacheprog');
+  await expect(page.getByLabel('服务端只读（Go 缓存）')).toBeChecked();
+  await page.getByLabel('实例名称', { exact: true }).fill('Go cacheprog browser cache');
+  const creating = page.waitForResponse(r => r.url().endsWith('/instances') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: '创建实例', exact: true }).click();
+  const response = await creating;
+  expect(response.status()).toBe(202);
+  const created = await response.json();
+  const token = created.credentials.password;
+  await page.getByRole('button', { name: '已保存，关闭' }).click();
+  const row = page.getByRole('row').filter({ hasText: 'Go cacheprog browser cache' });
+  await expect(row).toContainText('Go cacheprog');
+  await row.getByRole('button', { name: '详情' }).click();
+  await expect(page.getByText('服务已就绪')).toBeVisible();
+  await page.getByText('客户端连接指引').click();
+  await page.getByText(/go-cacheprog 1.3.0/).click();
+  const recipe = page.getByText(/export CACHEPROG_HTTP_STORAGE_BASE_URL=/);
+  await expect(recipe).toBeVisible();
+  await expect(recipe).toContainText("CACHEPROG_ROOT_DIRECTORY");
+  await expect(recipe).not.toContainText(token);
+  const persisted = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  expect(persisted).not.toContain(token);
+});

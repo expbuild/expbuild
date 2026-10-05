@@ -35,7 +35,7 @@ try {
   }
   const kube = new BrowserCluster();
   const key = randomBytes(32);
-  app = await buildApp(pool, { origin: 'http://127.0.0.1:4173', secureCookies: false, kube, encryptionKey: key, storageClass: 'browser-test', gradleEnabled: true, turborepoEnabled: true, nxEnabled: true, webdavEnabled: true });
+  app = await buildApp(pool, { origin: 'http://127.0.0.1:4173', secureCookies: false, kube, encryptionKey: key, storageClass: 'browser-test', gradleEnabled: true, turborepoEnabled: true, nxEnabled: true, goCacheEnabled: true, webdavEnabled: true });
   const worker = new OperationWorker(pool, kube, key);
   work = (async () => {
     while (!closing) {
