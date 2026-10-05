@@ -27,6 +27,7 @@ func main() {
 	gradleImage := flag.String("gradle-image", "", "optional approved digest-pinned Gradle HTTP cache image")
 	turborepoImage := flag.String("turborepo-image", "", "optional approved digest-pinned experimental Turborepo HTTP cache image")
 	nxImage := flag.String("nx-image", "", "optional approved digest-pinned experimental Nx HTTP cache image")
+	goCacheImage := flag.String("go-cache-image", "", "optional approved digest-pinned experimental Go cacheprog image")
 	statsImage := flag.String("webdav-stats-image", "", "image containing the trusted WebDAV content statistics binary")
 	namespace := flag.String("namespace", "", "optional single project namespace; empty watches all managed projects")
 	leaderNamespace := flag.String("leader-election-namespace", "expbuild-system", "control plane namespace for leader election")
@@ -87,7 +88,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, GradleImage: *gradleImage, TurborepoImage: *turborepoImage, NxImage: *nxImage, StatsImage: *statsImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions, Monitoring: monitoringOptions}
+	r := &controller.Reconciler{Client: m.GetClient(), Reader: m.GetAPIReader(), Image: *image, WebDAVImage: *webdavImage, GradleImage: *gradleImage, TurborepoImage: *turborepoImage, NxImage: *nxImage, GoCacheImage: *goCacheImage, StatsImage: *statsImage, Probe: controller.ProtocolProbe{}, Gateway: gatewayOptions, Monitoring: monitoringOptions}
 	if err = r.SetupWithManager(m); err != nil {
 		panic(err)
 	}

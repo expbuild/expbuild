@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run built images locally without publishing images or contacting a K8S cluster."""
 import base64
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -11,7 +12,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-COMPONENTS = {'admin-api', 'admin-web', 'operator', 'webdav', 'gradle-cache', 'turborepo-cache', 'nx-cache'}
+COMPONENTS = {'admin-api', 'admin-web', 'operator', 'webdav', 'gradle-cache', 'turborepo-cache', 'nx-cache', 'go-cache'}
 
 
 def docker(*args):
@@ -63,12 +64,12 @@ def main(component):
                 args += ['--mount', f'type=bind,src={root / "httpd.conf"},dst=/config/httpd.conf,readonly',
                          '--mount', f'type=bind,src={root / "htpasswd"},dst=/auth/htpasswd,readonly',
                          '--tmpfs', '/data:rw,nosuid,nodev,uid=1000,gid=1000,mode=0750,size=64m']
-            elif component in ('gradle-cache', 'turborepo-cache', 'nx-cache'):
+            elif component in ('gradle-cache', 'turborepo-cache', 'nx-cache', 'go-cache'):
                 (root / 'htpasswd').write_text('cache:$2b$10$Z9RNLYUAIh7a19cBqRUKx.zSNfeY9lgPD3T6/fMX.JC82Or3o/5SW\n')
                 if component == 'turborepo-cache':
                     with (root / 'htpasswd').open('a') as credentials:
                         credentials.write('health:$2b$10$Z9RNLYUAIh7a19cBqRUKx.zSNfeY9lgPD3T6/fMX.JC82Or3o/5SW\n')
-                if component == 'nx-cache':
+                if component in ('nx-cache', 'go-cache'):
                     with (root / 'htpasswd').open('a') as credentials:
                         credentials.write('health:$2b$10$Z9RNLYUAIh7a19cBqRUKx.zSNfeY9lgPD3T6/fMX.JC82Or3o/5SW\n')
                 args += ['--mount', f'type=bind,src={root / "htpasswd"},dst=/auth/htpasswd,readonly',
@@ -92,11 +93,11 @@ def main(component):
                          '-e', 'OPERATION_ENCRYPTION_KEY=' + '11' * 32]
             name = prefix + '-app'
             containers.append(name)
-            docker('run', '-d', '--name', name, *flags, *args, '-p', f'127.0.0.1::{port}', image, *(['--team=team_smoke', '--max-entry-bytes=1024', '--max-total-bytes=65536'] if component == 'turborepo-cache' else []), *(['--namespace=smoke', '--max-entry-bytes=1024', '--max-total-bytes=65536'] if component == 'nx-cache' else []))
+            docker('run', '-d', '--name', name, *flags, *args, '-p', f'127.0.0.1::{port}', image, *(['--team=team_smoke', '--max-entry-bytes=1024', '--max-total-bytes=65536'] if component == 'turborepo-cache' else []), *(['--namespace=smoke', '--max-entry-bytes=1024', '--max-total-bytes=65536'] if component in ('nx-cache', 'go-cache') else []), *(['--read-only=false'] if component == 'go-cache' else []))
             address = docker('port', name, f'{port}/tcp')
             base = 'http://' + address
-            expected = 401 if component in ('webdav', 'gradle-cache', 'turborepo-cache', 'nx-cache') else 200
-            probe = '/v8/artifacts/opaque-key?teamId=team_smoke' if component == 'turborepo-cache' else '/v1/cache/opaque-key' if component == 'nx-cache' else '/cache/' + 'a' * 32 if component == 'gradle-cache' else '/' if component == 'webdav' else '/healthz'
+            expected = 401 if component in ('webdav', 'gradle-cache', 'turborepo-cache', 'nx-cache', 'go-cache') else 200
+            probe = '/cache/' + 'a' * 64 if component == 'go-cache' else '/v8/artifacts/opaque-key?teamId=team_smoke' if component == 'turborepo-cache' else '/v1/cache/opaque-key' if component == 'nx-cache' else '/cache/' + 'a' * 32 if component == 'gradle-cache' else '/' if component == 'webdav' else '/healthz'
             wait_for(lambda: request(base + probe)[0] == expected, 'container HTTP startup')
             if component == 'admin-web':
                 status, body, headers = request(base + '/')
@@ -134,6 +135,26 @@ def main(component):
                 status, body, _ = request(base + '/status', headers=health)
                 assert status == 200 and json.loads(body)['team'] == 'team_smoke'
                 assert request(base + path, headers=health)[0] in (401, 403)
+            elif component == 'go-cache':
+                path = '/cache/' + 'a' * 64
+                auth = {'Authorization': 'Bearer engine-test-only'}
+                for payload in (b'', b'Go compiler artifact', b'replacement'):
+                    metadata = {**auth, 'X-Cacheprog-OutputID': 'b' * 64,
+                                'X-Cacheprog-CompressionAlgorithm': '',
+                                'X-Cacheprog-UncompressedSize': str(len(payload)),
+                                'X-Cacheprog-MD5Sum': hashlib.md5(payload).hexdigest(),
+                                'X-Cacheprog-Sha256Sum': hashlib.sha256(payload).hexdigest()}
+                    assert request(base + path, 'PUT', payload, metadata)[0] == 200
+                    status, body, headers = request(base + path, headers=auth)
+                    assert status == 200 and body == payload
+                    assert headers['X-Cacheprog-OutputID'] == 'b' * 64 and headers['Last-Modified']
+                assert request(base + path, 'PUT', b'bad', metadata)[0] == 400
+                assert request(base + path)[0] == 401
+                assert request(base + path + '?tenant=other', headers=auth)[0] == 400
+                health = {'Authorization': 'Basic ' + base64.b64encode(b'health:engine-test-only').decode()}
+                status, body, _ = request(base + '/status', headers=health)
+                assert status == 200 and json.loads(body)['readOnly'] is False
+                assert request(base + path, headers=health)[0] == 401
             elif component == 'nx-cache':
                 auth = {'Authorization': 'Bearer engine-test-only'}
                 path = '/v1/cache/opaque-key'
@@ -175,5 +196,5 @@ def main(component):
 
 if __name__ == '__main__':
     if len(sys.argv) != 2 or sys.argv[1] not in COMPONENTS:
-        raise SystemExit('Usage: container_smoke.py admin-api|admin-web|operator|webdav|gradle-cache|turborepo-cache|nx-cache')
+        raise SystemExit('Usage: container_smoke.py admin-api|admin-web|operator|webdav|gradle-cache|turborepo-cache|nx-cache|go-cache')
     main(sys.argv[1])

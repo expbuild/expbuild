@@ -148,3 +148,7 @@ The optional `gateway.enabled` setting connects instance routes to an existing G
 ### Experimental Nx image
 
 `images.nx` defaults to empty. Set an administrator-approved image digest to enable `nx-http@0.1.0` creation. Existing cache engines and defaults remain separate. See [Nx HTTP](../../../docs/k8s-platform/nx-http.md) for Bearer token scope, capacity limits and pending real-client acceptance.
+
+### Experimental Go cacheprog image
+
+`images.goCache` defaults to empty. Configure an administrator-approved image digest to enable `go-cacheprog@0.1.0`; API and console creation default to server read-only. See [Go cacheprog](../../../docs/k8s-platform/go-cacheprog.md) for credential scope, configuration and pending real-client acceptance.

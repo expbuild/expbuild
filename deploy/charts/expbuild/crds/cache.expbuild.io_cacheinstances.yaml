@@ -49,6 +49,8 @@ spec:
                 enum: [PinnedV1]
               access:
                 properties:
+                  readOnly:
+                    type: boolean
                   credentialsSecretRef:
                     type: string
                   exposure:
@@ -188,6 +190,7 @@ spec:
                     - gradle-http
                     - turborepo-http
                     - nx-http
+                    - go-cacheprog
                     type: string
                   version:
                     maxLength: 16
@@ -225,6 +228,10 @@ spec:
               rule: self.templateRef.name != 'turborepo-http' || self.templateRef.version == '0.1.0'
             - message: unsupported nx-http template version
               rule: self.templateRef.name != 'nx-http' || self.templateRef.version == '0.1.0'
+            - message: unsupported go-cacheprog template version
+              rule: self.templateRef.name != 'go-cacheprog' || self.templateRef.version == '0.1.0'
+            - message: server readOnly is supported only by go-cacheprog
+              rule: "!has(self.access.readOnly) || !self.access.readOnly || self.templateRef.name == 'go-cacheprog'"
             - message: unsupported gradle-http template version
               rule: self.templateRef.name != 'gradle-http' || self.templateRef.version
                 in ['0.1.0','0.2.0']
@@ -235,7 +242,7 @@ spec:
                 || self.storage.reclaim == oldSelf.storage.reclaim)
             - message: eviction policy must match engine capabilities
               rule: 'self.templateRef.name == ''bazel-remote'' || self.templateRef.name
-                == ''gradle-http'' || self.templateRef.name == ''turborepo-http'' || self.templateRef.name == ''nx-http'' ? (self.eviction.enginePolicy == ''lru'' && self.eviction.maxCacheGiB
+                == ''gradle-http'' || self.templateRef.name == ''turborepo-http'' || self.templateRef.name == ''nx-http'' || self.templateRef.name == ''go-cacheprog'' ? (self.eviction.enginePolicy == ''lru'' && self.eviction.maxCacheGiB
                 > 0) : (self.eviction.enginePolicy == ''none'' && self.eviction.maxCacheGiB
                 == 0)'
           status:
@@ -265,6 +272,7 @@ spec:
                         - gradle-http
                         - turborepo-http
                         - nx-http
+                        - go-cacheprog
                         type: string
                         maxLength: 32
                       version:

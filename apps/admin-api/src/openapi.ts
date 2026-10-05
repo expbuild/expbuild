@@ -104,7 +104,7 @@ const schemas: Record<string, Schema> = {
   InstanceInput: {
     ...instanceSchema,
     description:
-      "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, gradle-http and experimental turborepo-http/nx-http, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. Optional templates require the deployment to enable their trusted images.",
+      "Full configuration, including for PATCH. exposure defaults to ClusterInternal; Gateway requires administrator-enabled shared HTTPS Gateway configuration. External endpoints appear only after backend and route readiness; ExternalReachability=Unknown means external DNS/TLS/client access has not been verified. For bazel-remote, gradle-http and experimental turborepo-http/nx-http/go-cacheprog, cacheGiB must be positive and strictly less than storageGiB. For webdav-apache, cacheGiB must be zero; automatic eviction is unsupported. Storage shrinking and template changes are forbidden. Optional templates require the deployment to enable their trusted images.",
   },
   Project: object(
     {
@@ -144,7 +144,7 @@ const schemas: Record<string, Schema> = {
     clientProfiles: { type: "array", items: ref("ClientProfile") },
     templateVersion: nullable(string),
     capabilities: nullable(ref("InstanceCapabilities")),
-    template: {type: "string", enum: ["bazel-remote", "webdav-apache", "gradle-http", "turborepo-http", "nx-http"]},
+    template: {type: "string", enum: ["bazel-remote", "webdav-apache", "gradle-http", "turborepo-http", "nx-http", "go-cacheprog"]},
     id: uuid,
     name: string,
     lifecycle: string,

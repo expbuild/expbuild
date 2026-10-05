@@ -200,3 +200,18 @@ it("shows moonrepo only for the current ready REAPI generation", () => {
   view.rerender(<ConnectionInfo detail={value} />);
   expect(screen.queryByText(/MOON_REMOTE_HOST=/)).toBeNull();
 });
+
+it("renders Go cacheprog as an experimental profile with an instance-bound token recipe", () => {
+  const value = detail();
+  value.id = "d21dd71b-3710-4b47-b6a6-8b660a0811cb";
+  value.spec!.templateRef = { name: "go-cacheprog", version: "0.1.0" };
+  value.clientProfiles = [{ id: "go-cacheprog", protocol: "go-cacheprog", version: "1.3.0", status: "experimental" }];
+  value.status!.endpoints = [{ protocol: "go-cacheprog", url: "https://nx.example.test/" }];
+  const view = render(<ConnectionInfo detail={value} />);
+  expect(screen.getByText(/go-cacheprog 1.3.0/)).toBeTruthy();
+  expect(screen.getByText(/CACHEPROG_HTTP_STORAGE_BASE_URL=/).textContent).toContain("export CACHEPROG_HTTP_STORAGE_BASE_URL='https://nx.example.test'");
+  expect(screen.queryByText(/当前端点尚无/)).toBeNull();
+  value.spec!.desiredState = "Suspended";
+  view.rerender(<ConnectionInfo detail={value} />);
+  expect(screen.queryByText(/CACHEPROG_HTTP_STORAGE_BASE_URL=/)).toBeNull();
+});

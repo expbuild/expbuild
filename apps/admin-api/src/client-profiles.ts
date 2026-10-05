@@ -18,5 +18,8 @@ export function clientProfiles(name: string, version: string | null | undefined)
   if (name === 'nx-http' && version === '0.1.0') {
     return [{ id: 'nx', protocol: 'nx-http', version: '22.7.12', status: 'experimental' as const }];
   }
+  if (name === 'go-cacheprog' && version === '0.1.0') {
+    return [{ id: 'go-cacheprog', protocol: 'go-cacheprog', version: '1.3.0', status: 'experimental' as const }];
+  }
   return [];
 }

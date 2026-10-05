@@ -7,6 +7,7 @@ images:
   webdavStats: '' # Required digest when WebDAV is enabled; independent of operator upgrades.
   webdav: '' # Optional Apache WebDAV image; digest required when enabled.
   turborepo: '' # Optional experimental Turborepo HTTP image; approved digest required.
+  goCache: '' # Optional experimental Go cacheprog image; approved digest required.
   nx: '' # Optional experimental Nx HTTP image; approved digest required.
   gradle: '' # Optional Gradle HTTP cache image; digest required when enabled.
 imagePullPolicy: IfNotPresent

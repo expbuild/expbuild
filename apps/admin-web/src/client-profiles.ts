@@ -3,7 +3,7 @@
 type Endpoint = { protocol: string; url: string };
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 export function clientProfileExample(id: string, endpoint: Endpoint, version?: string, instanceId?: string): string | null {
-  if (version !== undefined && version !== ({ pants: "2.33.1", sccache: "0.18.0", turborepo: "2.11.7", nx: "22.7.12", "maven-build-cache": "1.3.0", moonrepo: "2.5.6" } as Record<string, string>)[id]) return null;
+  if (version !== undefined && version !== ({ pants: "2.33.1", sccache: "0.18.0", turborepo: "2.11.7", nx: "22.7.12", "maven-build-cache": "1.3.0", moonrepo: "2.5.6", "go-cacheprog": "1.3.0" } as Record<string, string>)[id]) return null;
   let url: URL;
   try { url = new URL(endpoint.url); } catch { return null; }
   if (!url.hostname || url.username || url.password || url.search || url.hash ||
@@ -14,7 +14,9 @@ export function clientProfileExample(id: string, endpoint: Endpoint, version?: s
   const nx = id === "nx" && endpoint.protocol === "nx-http" && ["http:", "https:"].includes(url.protocol);
   const maven = id === "maven-build-cache" && endpoint.protocol === "webdav" && ["http:", "https:"].includes(url.protocol);
   const moon = id === "moonrepo" && endpoint.protocol === "reapi" && ["grpc:", "grpcs:"].includes(url.protocol);
-  if (!sccache && !pants && !turborepo && !nx && !maven && !moon) return null;
+  const goCache = id === "go-cacheprog" && endpoint.protocol === "go-cacheprog" && ["http:", "https:"].includes(url.protocol);
+  if (!goCache && !sccache && !pants && !turborepo && !nx && !maven && !moon) return null;
+  if (goCache) return goCacheRecipe(url.origin);
   if (turborepo) {
     if (!instanceId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(instanceId)) return null;
     return [
@@ -222,4 +224,42 @@ function moonRecipe(endpoint: string): string {
     'moon --log warn --cache "$MOON_CACHE" run app:build',
     ")",
   ].join("\n");
+}
+
+function goCacheRecipe(origin: string): string {
+ return [
+  "(",
+  "set -euo pipefail",
+  "# Experimental: already installed Go 1.27.1 and platacard/cacheprog v1.3.0 required.",
+  "export GOTOOLCHAIN=local",
+  "test \"$(go env GOVERSION)\" = 'go1.27.1'",
+  "EXPBUILD_CACHEPROG_BIN=\"$(command -v cacheprog)\"",
+  "case \"$EXPBUILD_CACHEPROG_BIN\" in /*) ;; *) echo 'cacheprog must resolve to an absolute executable path' >&2; exit 1;; esac",
+  "case \"$EXPBUILD_CACHEPROG_BIN\" in *[!a-zA-Z0-9_./-]*) echo 'Use a cacheprog path without spaces or shell metacharacters' >&2; exit 1;; esac",
+  "\"$EXPBUILD_CACHEPROG_BIN\" --version | grep -Eq '^cacheprog version v?1\\.3\\.0( |$)'",
+  "# Clear inherited cacheprog storage, auth and reset settings before choosing this instance.",
+  "for EXPBUILD_ENV in ${!CACHEPROG_@}; do unset \"$EXPBUILD_ENV\"; done",
+  "read -r -s -p 'Instance cache token: ' EXPBUILD_CACHE_TOKEN",
+  "printf '\\n'",
+  "case \"$EXPBUILD_CACHE_TOKEN\" in ''|*[!a-zA-Z0-9_-]*) echo 'Expected the generated instance password' >&2; exit 1;; esac",
+  "export CACHEPROG_REMOTE_STORAGE_TYPE=http",
+  `export CACHEPROG_HTTP_STORAGE_BASE_URL=${quote(origin)}`,
+  "export CACHEPROG_HTTP_STORAGE_EXTRA_HEADERS=\"Authorization:Bearer $EXPBUILD_CACHE_TOKEN\"",
+  "unset EXPBUILD_CACHE_TOKEN",
+  "EXPBUILD_GO_ROOT=\"$(mktemp -d \"${TMPDIR:-/tmp}/expbuild-go.XXXXXX\")\"",
+  "EXPBUILD_GO_ROOT=\"$(cd \"$EXPBUILD_GO_ROOT\" && pwd -P)\"",
+  "trap 'rm -rf -- \"$EXPBUILD_GO_ROOT\"' EXIT",
+  "export CACHEPROG_ROOT_DIRECTORY=\"$EXPBUILD_GO_ROOT/helper\"",
+  "export GOCACHE=\"$EXPBUILD_GO_ROOT/go-local\"",
+  "export GOCACHEPROG=\"$EXPBUILD_CACHEPROG_BIN direct\"",
+  "export CACHEPROG_DISABLE_PUT=true",
+  "# Server readOnly remains authoritative. Enable uploads only to a writable trusted instance.",
+  "if [ \"${EXPBUILD_GO_WRITE:-false}\" = true ]; then",
+  "  test \"${CI:-}\" = true || { echo 'Writes require trusted CI=true' >&2; exit 1; }",
+  "  export CACHEPROG_DISABLE_PUT=false",
+  "fi",
+  "# The helper returns local DiskPath files; keep both directories until Go exits.",
+  "go build ./...",
+  ")"
+ ].join("\n");
 }

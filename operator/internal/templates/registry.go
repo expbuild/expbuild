@@ -8,6 +8,7 @@ import (
 
 	cachev1 "github.com/expbuild/expbuild/operator/api/v1alpha1"
 	"github.com/expbuild/expbuild/operator/internal/bazelremote"
+	"github.com/expbuild/expbuild/operator/internal/gocache"
 	"github.com/expbuild/expbuild/operator/internal/gradlecache"
 	"github.com/expbuild/expbuild/operator/internal/instance"
 	"github.com/expbuild/expbuild/operator/internal/nxcache"
@@ -91,6 +92,16 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 				return []cachev1.Endpoint{{Protocol: "nx-http", URL: fmt.Sprintf("http://%s.%s.svc:8080", name, namespace)}}
 			},
 		},
+		{Name: "go-cacheprog", Version: "0.1.0"}: {
+			policy: "lru", render: gocache.Render,
+			capabilities: Capabilities{HTTPProtocol: "go-cacheprog", HTTPPort: 8080},
+			probe: func(ctx context.Context, c *cachev1.CacheInstance, s *corev1.Secret) error {
+				return gocache.CheckProtocol(ctx, c, s, fmt.Sprintf("http://%s.%s.svc:8080", c.Name, c.Namespace))
+			},
+			endpoints: func(name, namespace string) []cachev1.Endpoint {
+				return []cachev1.Endpoint{{Protocol: "go-cacheprog", URL: fmt.Sprintf("http://%s.%s.svc:8080", name, namespace)}}
+			},
+		},
 		{Name: "gradle-http", Version: "0.1.0"}: {
 			policy: "lru", render: gradlecache.Render,
 			capabilities: Capabilities{HTTPProtocol: "gradle-http", HTTPBasePath: "/cache/", HTTPPort: 8080},
@@ -118,6 +129,7 @@ func lookup(ref cachev1.TemplateRef) (Adapter, error) {
 type OptionalImages struct {
 	Turborepo string
 	Nx        string
+	GoCache   string
 }
 
 func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradleImage string, optional ...OptionalImages) (Adapter, error) {
@@ -127,6 +139,9 @@ func Resolve(ref cachev1.TemplateRef, bazelImage, webdavImage, statsImage, gradl
 	}
 	if len(optional) == 1 && ref.Name == "nx-http" {
 		images["cache"] = optional[0].Nx
+	}
+	if len(optional) == 1 && ref.Name == "go-cacheprog" {
+		images["cache"] = optional[0].GoCache
 	}
 	if ref.Name == "webdav-apache" && ref.Version == "0.2.0" {
 		images["statistics"] = statsImage
