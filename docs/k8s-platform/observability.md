@@ -1,6 +1,6 @@
 # Observability features and deployment integration
 
-2026-10-01. This document records the implemented first-release capabilities, integration requirements, and test boundaries. See the [observability plan](observability-plan.md) for the complete goals; the existing Bazel history endpoint remains documented in [monitoring.md](monitoring.md).
+Initial release: 2026-10-01. Capability table updated: 2026-10-08, against `main` at `71d5134`. This document records implemented observability, integration requirements, and test boundaries. See the [feature support matrix](support-matrix.md) for template and client validation, the [observability plan](observability-plan.md) for the complete goals, and [monitoring](monitoring.md) for the Bazel history endpoint.
 
 ## User entry points
 
@@ -24,6 +24,11 @@ Service readiness and collection state are displayed separately. Unconfigured so
 | gradle-http 0.1.0 | `/status` snapshots | Continuous native metrics are not claimed | Unsupported | Unsupported |
 | webdav-apache 0.2.0 | Existing scan snapshots | Unsupported | Unsupported | Unsupported |
 | webdav-apache 0.1.0 | Unsupported | Unsupported | Unsupported | Unsupported |
+| turborepo-http 0.1.0 | Not exposed | Not exposed | Not exposed | Not exposed |
+| nx-http 0.1.0 | Not exposed | Not exposed | Not exposed | Not exposed |
+| go-cacheprog 0.1.0 | Not exposed | Not exposed | Not exposed | Not exposed |
+
+Turbo, Nx and Go implement cache budgets and LRU, but currently declare `statistics: false` and `lookupHistory: false`. Their authenticated readiness/status probes do not provide a platform collection or history integration. Adding engine metrics is current backlog work. Kubernetes resource metrics, events and logs have separate collection requirements and must not be presented as cache hit/miss statistics.
 
 The WebDAV engine and scanning method remain unchanged. New Gradle instances use 0.2.0; old instances continue under their original versions. The platform does not silently change template versions and does not yet provide a version-upgrade workflow. Publish a Gradle image containing the new metrics before enabling this version of the management API/Operator; retain release records linking all three versions.
 

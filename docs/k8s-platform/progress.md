@@ -1,31 +1,59 @@
 # Implementation Status
 
-Branch: `feat/k8s-cache-platform`. This file records actual code and validation boundaries; it does not replace the full implementation plan. The refactoring follows the new architecture, without requiring legacy code to be retained.
+Updated: 2026-10-08. Current implementation baseline: [`main` at `71d5134`](https://github.com/expbuild/expbuild/tree/71d5134f5ae3f327167db3d918624d111c5b8bcd). The original platform branch has been merged. Use the [feature support and validation matrix](support-matrix.md) for exact template versions, client profiles and capability boundaries.
+
+## Current Implementation
+
+- The control plane provides local users, project roles, audits, asynchronous instance operations, credential rotation, project quotas, Kubernetes hard limits, CR/PVC inventory, and retained-volume reclaim/cleanup.
+- REAPI/Bazel HTTP, Gradle HTTP and Apache WebDAV have selected real-engine/client and disposable-cluster acceptance. The console provides English and Simplified Chinese; the first observability implementation includes metrics, diagnostics, logs, alerts and platform health with external backend dependencies.
+- Turbo, Nx and Go cacheprog have independent opt-in engines and platform integration. Their real clients, deployed-template lifecycle, HTTPS and performance still require acceptance. They expose no engine statistics in the platform yet.
+- sccache, Pants, Maven Build Cache Extension and moonrepo have experimental recipes using existing engines; those recipes do not establish real-client support. Maven build outputs and Go build outputs are distinct from dependency-download proxies.
+- Persistent immutable image bindings and retained-volume recovery records are implemented. Changing installation defaults does not authorize an existing instance's engine upgrade. An explicit template/engine upgrade workflow remains pending.
+- The BuildKit/Registry yq experiment is a standalone prototype, not an expbuild template. Image publication, production compatibility, high availability and scale qualification remain incomplete.
+
+## Current Validation
+
+All four main workflows completed successfully for `71d5134`. This is an evidence snapshot, not a guarantee about later commits or untested paths.
+
+| Workflow | Result and executed scope | Boundary |
+| --- | --- | --- |
+| [Management API](https://github.com/expbuild/expbuild/actions/runs/37252554048) | Passed: API/UI builds, PostgreSQL and monitoring contracts, recipe tests and browser workflows | Browser Kubernetes boundary and client recipes use test doubles; no new native-client certification |
+| [Kubernetes platform](https://github.com/expbuild/expbuild/actions/runs/37252553978) | Passed: Go/race checks, Helm, CRD/RBAC/API server contracts, real Bazel/Apache protocols and native Gradle builds | API server tests do not run workloads; native engine/client tests are separate from cluster paths |
+| [Platform container builds](https://github.com/expbuild/expbuild/actions/runs/37252554034) | Passed: eight components built and smoke-tested, including Turbo, Nx and Go | `push: false`; no published release or actual experimental build clients |
+| [Isolated Kubernetes lifecycle](https://github.com/expbuild/expbuild/actions/runs/37252554008) | Passed: Operator lifecycle plus Helm internal, Gateway and Cilium isolation jobs | Base engines only; Gradle is excluded from Cilium mode; no production CSI/DNS or experimental-template deployment acceptance |
+
+The earlier Gradle health-identity regression is no longer awaiting CI: current Helm tests check status access and rejection of cache reads/writes using the API-created probe credentials. [Testing](testing.md) describes each layer; [support matrix](support-matrix.md#client-and-cluster-acceptance) maps that evidence to templates. Standalone Bazel, Gradle and BuildKit workload experiments retain their own [recorded limits](open-source-benchmark.md).
 
 ## Current Outstanding Work
 
-The latest acceptance records at the end of this file take precedence. Earlier chronological records are retained below; their “awaiting validation” items may have been completed by later commits. Priorities indicate a suggested order, not calendar commitments.
+The next milestone is a reproducibly installable enterprise trial with qualified client paths, useful instance statistics and measured limits. The current summary and backlog here supersede historical records below. Priorities describe dependency order, not calendar commitments.
 
 | Priority | Work | Completion criteria and current boundaries |
 |---|---|---|
-| In progress | Least-privilege regression for the Gradle probe identity | `26c4274` restricts the `health` identity to `/status`; Go concurrency tests, [platform CI](https://github.com/expbuild/expbuild/actions/runs/36725337211), and [container CI](https://github.com/expbuild/expbuild/actions/runs/36725336885) passed; [isolated-cluster CI](https://github.com/expbuild/expbuild/actions/runs/36725336876) was still running when this record was written. Confirm status reads with the actual API Secret, rejection of cache reads/writes, and normal use by the original client. |
-| P1 | Cache-type expansion | [Expansion research and planning](cache-expansion-plan.md) is documented; the recommendation is to validate Docker/OCI, BuildKit, artifact, and CI caches before integrating package and task caches. New engines have not undergone runtime or performance validation. HTTP upstream proxying still requires a pinned engine and upstream trust boundary, validation of Cache-Control, revalidation, authenticated-response isolation, and eviction, followed by template/CRD/API/UI and real-client integration. WebDAV remains unchanged at the user's request; do not further extend the Apache template until a replacement service is selected. |
-| P1 | Template expansion and upgrades | Existing templates are integrated through a compiled-in registry using exact versions. There is no engine/template version upgrade workflow, compatible migration, or rollback acceptance for deployed instances yet. If independent third-party releases are needed, design signed template packages and an extension SDK separately; do not record them as implemented. |
-| P1 | Operational recovery and resource reconciliation | Read-only CR/PVC inventory, retained-volume reclamation/cleanup, and single-instance reservation increases exist. Still needed: inventory and explicit repair procedures for differences in Pods, Secrets, ingress routes, and other resources, plus real-cluster fault injection for failed operations, API disconnection, and interrupted deletion. Large-project scans require partitioning/archival; truncation of a bounded scan must not be treated as healthy. |
-| P1 | Deeper observability and production acceptance | The first release includes API/Worker/Operator metrics, background capacity snapshots, continuous Gradle 0.2.0 metrics, resource trends, events, Loki logs, Alertmanager alerts/silences/history, and Chinese/English UI. Continue adding project-level thresholds, complete dependency trends, correlation by absolute incident time, collector-authentication installation packages, tracing, and scale baselines; see [observability integration](observability.md) for support and validation boundaries. |
-| P1 | Enterprise release and production certification | Still needed: image publication and verification checklist, private-registry/offline installation procedures, and cross-version database and CRD upgrade/rollback drills. Validate multi-node remounting, real DNS/TLS, fault recovery, and resource isolation on the target Kubernetes/CSI/CNI/Gateway combination; establish baselines for startup, throughput, latency, restart scans, and instance scale. A successful disposable kind run does not constitute production compatibility certification. |
-| Later expansion | Enterprise identity and deployment modes | OIDC, GitOps management mode, multicluster operation, user-defined domains, object storage, and other backends are not implemented. Design them separately according to actual deployment needs; they are not currently validated capabilities. |
+| P0 | Real-client and template acceptance | Go cacheprog, then Turbo and Nx: pinned actual clients, cold upload, fresh-local-cache restoration, uncached output comparison, source/dependency/argument invalidation, credentials, interruption and TLS. Deploy each template on kind and validate PVC persistence, rotation, pause/resume and Retain/Delete. Retain existing Bazel/Gradle regression. Qualify each client independently; follow with sccache, Pants, Maven and moonrepo recipes. |
+| P0 | New-engine statistics | Expose real Turbo/Nx/Go capacity, requests, hits/misses, traffic, eviction and errors through the existing API and console. Define metric units; do not infer task hits or time savings from file requests. Preserve missing-data states and both UI languages. |
+| P0 | Performance and capacity baselines | Reproducible concurrency, small/large entries, near-full storage and restart tests. Measure throughput, P95/P99, errors, CPU/memory and recovery time; investigate the experimental engines' serialized reads. Publish measured limits before setting SLOs. |
+| P0 | Reproducible enterprise trial delivery | Versioned images and Helm artifacts with digest/version records, install checks and a clean-cluster client acceptance run using release artifacts. Validate database migrations and CRD update order; document backup scope including keys, CR status/image bindings, PVC metadata and recovery records. Image build success alone does not satisfy this gate. |
+| P1 | Enterprise access, upgrades and recovery | Add server-enforced reader/writer credentials, expiry/revocation and then OIDC. Go's current read-only mode applies to a whole instance, not tokens. Design explicit template/engine upgrades that honor immutable image bindings; test real A/B migration and backup recovery. Rollback must preserve binding-aware reconciliation. |
+| P1 | Operational diagnosis and production acceptance | Extend CR/PVC inventory to Pod/Secret/route differences with explicit repair procedures; test failed operations, API disconnection and interrupted deletion. Validate target CSI/CNI/Gateway, real DNS/TLS, multinode remounting, private/offline installation and project/instance scale. Bounded scans must expose truncation. |
+| P1 | OCI cache integration | Build on the standalone BuildKit/Registry prototype; select and integrate an engine, then qualify image pull-through separately. Include upstream authentication, reference retention, actual GC space recovery, metrics and real clients. See [expansion plan](cache-expansion-plan.md). |
+| P1 | Observability depth | Project thresholds, full Operator/dependency trends, incident time correlation, collector installation/authentication and alert-history recovery. New-engine basic metrics are the earlier P0 task; tracing and large-scale SLOs follow measured needs. |
+| P2 | Further cache and deployment options | Qualify package proxies and CI/artifact semantics individually. Object storage, GitOps, multicluster, user-defined domains and a third-party extension SDK need separate designs. Keep Apache WebDAV unchanged until a replacement is selected. |
 
-The overall goal remains in progress; a module test or disposable-cluster pass cannot replace delivery acceptance for the corresponding scope.
+The [support matrix](support-matrix.md) and English/Chinese homepages now include all six engine families and seven experimental profiles. Keep them synchronized when acceptance or capabilities change.
 
-## 2026-10-01 Initial Observability Release
+## Historical Records
+
+The following notes preserve earlier implementation and test results. Their branch names, counts, local-environment limitations and phrases such as “awaiting CI” describe the stage when written. They do not override the current summary, validation snapshot or backlog above.
+
+### 2026-10-01 Initial Observability Release
 
 - Delivered platform metrics and structured request logs, business-operation completion counts/durations, background collectors, Gradle 0.2.0 metrics, and Chinese/English pages for project observability, instance diagnostics, alerts, and platform health.
 - Queries support Prometheus, Loki, and Alertmanager; metrics and logs are isolated by cluster/project/original instance UID. Events correlate CR/Pod/PVC UIDs; alert ingestion is idempotent, silences are scope-limited and audited, and background reconciliation does not fabricate recovery times.
 - Validated frontend/backend builds, permissions/deduplication/collector takeover with real PostgreSQL, 56 frontend tests, real Prometheus/Loki/Alertmanager contracts, replay of six rules, Go static checks and race detection for cache metrics, CRD/RBAC/Helm acceptance on Kubernetes 1.32 API Server/etcd, and five browser management scenarios (the internationalization scenario was corrected and revalidated separately).
 - See the [observability integration guide](observability.md) for release configuration, data-source dependencies, retention boundaries, and remaining enhancements. This round did not deploy to a business cluster or recertify the complete node-collection pipeline, production CSI/CNI, credential rotation, or large-scale load.
 
-## Implemented
+### Initial Implementation Records
 
 - `operator/api/v1alpha1`: CacheInstance API, generated CRD, immutable project/instance identities, and status subresource.
 - `operator/internal/bazelremote`: configuration validation and deterministic resource generation, dedicated PVC, immutable configuration versions, Service, and StatefulSet.
@@ -39,7 +67,7 @@ The overall goal remains in progress; a module test or disposable-cluster pass c
 
 - Self-service password changes and platform-administrator password resets, revoking all sessions of the target account afterward; login rechecks the password version inside a transaction to avoid issuing an old-password session after a concurrent reset.
 
-## Coded, Awaiting End-to-End Validation
+### Early Integration Records
 
 - Management API Kubernetes integration, project namespace initialization, instance creation/update/deletion, and operation queries.
 - OpenAPI 3.1 runtime endpoint, offline JSON export, and client integration guide, including sessions/CSRF, permissions, asynchronous operations, idempotency, and version preconditions. The CRD remains authoritative for detailed CR spec/status types.
@@ -56,7 +84,7 @@ The basic management flow above passed the isolated kind + Helm + WebDAV accepta
 
 - The WebDAV Apache renderer, CRD engine-capability constraints, Operator PROPFIND readiness checks, and optional Helm image are implemented and integrated with management API template enablement and capability validation. The management UI supports template-catalog selection, editing with the original engine retained, and hiding unsupported statistics and budgets; see [WebDAV progress](webdav.md).
 
-## Validated
+### Early Validation Records
 
 - Go unit tests, controller fake-client lifecycle tests, and real HTTP/gRPC probe tests.
 - CRD installation, immutable ownership, generation/status, and resource-reconciliation tests with a real Kubernetes 1.32 API Server + etcd.
@@ -79,9 +107,9 @@ OpenAPI standards validation, coverage of all registered routes, reference resol
 
 Authentication, MKCOL, PUT/GET, PROPFIND, LOCK, and lock-constrained DELETE passed with real Apache 2.4.66.
 
-## Stage Records
+### Stage Records
 
-The development and acceptance history is retained below; current outstanding work is governed by “Current Outstanding Work” at the beginning of this document.
+These chronological records retain the evidence and limitations of each stage; “Current Outstanding Work” at the beginning of this document governs the active backlog.
 
 Instance lists now include a persisted template field; migration recovers engine names from existing creation operations. Real PostgreSQL tests cover backfilling historical WebDAV data and rerunning migrations. UI tests cover the enabled catalog, WebDAV creation, suspension submission for existing instances, and not collecting unsupported statistics.
 
@@ -278,7 +306,7 @@ WebDAV remains unchanged for now: the user will select a more suitable service l
 
 Least privilege for Gradle probe credentials: the engine now permits the `health` identity only to read `/status` and rejects its GET/PUT requests for cache entries. Helm cluster acceptance will validate this using the actual Secret created by the management API. The client identity retains cache read/write access. Go concurrency tests passed; full-cluster results depend on new CI.
 
-## Management Console Interaction and Internationalization (2026-10-01)
+### Management Console Interaction and Internationalization (2026-10-01)
 
 The management UI has been reorganized as an enterprise console: project switching at the top, fixed feature navigation, and separate pages for project overview, cache instances, operation records, resources/quotas, member permissions, audit records, and platform user management. Hash routes record projects and feature pages, supporting refresh and browser back/forward. Instance lists add search and protocol/status filters; creation uses a dialog and details use a drawer, with keyboard-focus restoration and narrow-screen layouts.
 

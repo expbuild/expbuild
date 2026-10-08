@@ -28,19 +28,23 @@ These versioned templates are available for new instances when their engines are
 | --- | --- | --- |
 | `bazel-remote@0.1.0` | Bazel HTTP remote cache or REAPI Action Cache/CAS via [bazel-remote](https://github.com/buchgr/bazel-remote) | Independent PVC, cache budget, LRU |
 | `gradle-http@0.2.0` | [Gradle HTTP build cache](https://docs.gradle.org/current/userguide/build_cache.html) | Independent PVC, cache budget, LRU |
-| `webdav-apache@0.2.0` | Authenticated WebDAV via Apache HTTP Server | Independent PVC; no native cache budget or automatic eviction |
+| `webdav-apache@0.2.0` | Authenticated WebDAV via [Apache HTTP Server](https://httpd.apache.org/) | Independent PVC; no native cache budget or automatic eviction |
 
 **REAPI is caching only; remote execution is not supported.** Historical Gradle/WebDAV `0.1.0` instances retain their original capabilities. Template upgrades are not yet automated and there is no template-version upgrade workflow.
 
-Observations vary by engine: Bazel exposes capacity and AC/CAS lookup history; Gradle adds hits/misses, latency, traffic, and eviction metrics; WebDAV reports approximate size and file count from a bounded scan. Time series require Prometheus-compatible storage, logs require Loki with ingestion, and alerts require Alertmanager with rules. Missing data is shown as unavailable. [Full capability matrix →](docs/k8s-platform/observability.md)
+Observations vary by engine: Bazel exposes capacity and AC/CAS lookup history; Gradle adds hits/misses, latency, traffic, and eviction metrics; WebDAV reports approximate size and file count from a bounded scan. Time series require Prometheus-compatible storage, logs require Loki with ingestion, and alerts require Alertmanager with rules. Missing data is shown as unavailable. [Observability details →](docs/k8s-platform/observability.md)
 
-**Experimental, opt-in:** [Turborepo HTTP artifact cache](docs/k8s-platform/turborepo-http.md) has its own engine and pinned connection profile; real-client acceptance is pending.
+**Experimental templates, opt-in:** these separate engines are integrated with the Operator, API and console. Real-client and template-specific Kubernetes lifecycle acceptance remain pending; engine statistics are not yet exposed.
 
-**Experimental, opt-in:** [Nx HTTP artifact cache](docs/k8s-platform/nx-http.md) has its own engine and pinned connection profile; real-client acceptance is pending.
+| Template | Pinned client | Storage and eviction |
+| --- | --- | --- |
+| [turborepo-http@0.1.0](docs/k8s-platform/turborepo-http.md) | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching) 2.11.7 | Independent PVC, cache budget, LRU |
+| [nx-http@0.1.0](docs/k8s-platform/nx-http.md) | [Nx](https://nx.dev/docs/kb/self-hosted-caching) 22.7.12 | Independent PVC, cache budget, LRU |
+| [go-cacheprog@0.1.0](docs/k8s-platform/go-cacheprog.md) | [cacheprog](https://github.com/platacard/cacheprog) 1.3.0 with Go 1.27.1 | Independent PVC, cache budget, LRU; instance-wide read-only policy |
 
-The [experimental Maven Build Cache Extension profile](docs/k8s-platform/maven-build-cache.md) reuses WebDAV for build outputs; real-client acceptance is pending.
+**Experimental client recipes:** [sccache and Pants](docs/k8s-platform/client-profiles.md), [moonrepo](docs/k8s-platform/moonrepo.md), and [Maven Build Cache Extension](docs/k8s-platform/maven-build-cache.md) reuse existing engines. Real-client acceptance remains pending; recipes are not certified client support. Maven and Go build-output caches do not provide dependency download proxies.
 
-**Experimental client recipes:** sccache, Pants and [moonrepo 2.5.6](docs/k8s-platform/moonrepo.md) reuse existing engines. Real-client acceptance remains pending; recipes are not certified client support.
+See the [feature support and validation matrix](docs/k8s-platform/support-matrix.md) for exact template versions, client profiles, capabilities and remaining acceptance gates.
 
 ## How it works
 
@@ -113,7 +117,7 @@ The English and Chinese homepages cover the same scope. Detailed engineering gui
 
 | Start here | Guides |
 | --- | --- |
-| Understand the platform | [Design](docs/k8s-platform/README.md) · [Implementation status](docs/k8s-platform/progress.md) |
+| Understand the platform | [Design](docs/k8s-platform/README.md) · [Support matrix](docs/k8s-platform/support-matrix.md) · [Implementation status](docs/k8s-platform/progress.md) |
 | Install and operate | [Helm](deploy/charts/expbuild/README.md) · [Images](images/README.md) · [Instance domains](docs/k8s-platform/gateway.md) |
 | Integrate clients and APIs | [API integration](docs/k8s-platform/api-integration.md) · [OpenAPI](docs/k8s-platform/openapi.json) |
 | Manage resources | [Quotas](docs/k8s-platform/quotas.md) · [Inventory](docs/k8s-platform/inventory.md) · [Retained volumes](docs/k8s-platform/retained-volume-reclaim.md) |
@@ -124,9 +128,9 @@ Current implementation docs live in `docs/k8s-platform`. Earlier alternatives re
 
 ## What's next
 
-- Qualify additional cache types, including OCI pull-through, BuildKit registry, package, compiler, and task caches.
-- Add template upgrade/migration workflows and broaden recovery and production validation.
-- Deepen observability and scale baselines; evaluate OIDC, object storage, GitOps, and multi-cluster support separately.
+- Complete real-client and Kubernetes acceptance for Go, Turborepo and Nx; add their statistics and performance baselines.
+- Deliver versioned installation artifacts, then deepen credential permissions, upgrade workflows and recovery validation.
+- Integrate OCI/BuildKit caches next; qualify package and CI caches, OIDC, object storage, GitOps and multi-cluster support separately.
 
 These are planned directions. Templates currently use a compiled adapter registry; a third-party extension SDK and shared cross-engine content index are not implemented. See the [cache expansion plan](docs/k8s-platform/cache-expansion-plan.md) for validation gates and the [active backlog](docs/k8s-platform/progress.md). The Apache WebDAV service remains unchanged while its replacement is evaluated.
 

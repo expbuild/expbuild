@@ -1,6 +1,6 @@
 # Test layers and reproduction
 
-Each layer has a different validation scope. See [implementation status](progress.md) for the latest actual results. Passing tests does not mean every product capability is complete.
+Coverage updated: 2026-10-08, against `main` at `71d5134`. Each layer has a different validation scope. See the [current CI snapshot](progress.md#current-validation) for actual results and the [support matrix](support-matrix.md) for coverage by template and client. Passing tests does not mean every product capability is complete.
 
 | Layer | Validation scope | Not covered |
 | --- | --- | --- |
@@ -8,9 +8,18 @@ Each layer has a different validation scope. See [implementation status](progres
 | envtest | Isolated API server/etcd, CRDs, RBAC, generation/status, resource reconciliation | kubelet, PVC provisioning, networking |
 | API/PostgreSQL | Real database transactions, authorization, idempotency, worker recovery; mocked Kubernetes | Actual cluster permissions and workloads |
 | React component tests | Permission-aware UI, forms, confirmations, errors, one-time credentials | Complete real-browser interaction |
+| Client recipe contracts | Real Bash argument/environment handling with stub executables | Actual Turbo/Nx/cacheprog/sccache/Pants/Maven/moon clients or builds |
 | Native engine and container checks | Actual protocols, authentication, image entry points, non-root/read-only root filesystem | Complete Kubernetes lifecycle |
+| Native build clients | Bazel 8.8.1 HTTP/REAPI and Gradle 8.14.3 cache builds with uncached controls in platform CI | Other client versions, experimental clients, production scale |
 | Isolated kind Operator tests | StatefulSet/PVC, recreation, pause/resume, credentials, leader election, Retain/Delete | Management API, Helm, production CSI |
-| Isolated kind Helm/API tests | Chart installation/migration/bootstrap/upgrade/uninstallation; public API through to real instances | TLS ingress, network isolation, REAPI clients, browsers |
+| Isolated kind Helm/API tests | Chart and API lifecycle; separate Gateway and Cilium modes validate selected TLS and isolation paths | Full browser-to-cluster flow, experimental templates, production infrastructure |
+| Browser management tests | Real UI, API, PostgreSQL and asynchronous worker, with a deterministic Kubernetes adapter | Actual workloads, PVCs, cache traffic and real client execution |
+
+## Experimental template acceptance
+
+Turbo, Nx and Go cacheprog currently have Go protocol fixtures, schema/admission/rendering checks, API/UI/recipe tests and built-image HTTP smoke checks. No current workflow executes their actual build clients or deploys these templates through their complete Kubernetes lifecycle. sccache, Pants, Maven and moonrepo recipes also await real-client acceptance. A successful base-engine cluster job does not qualify these integrations.
+
+Before promoting a template or profile, record the client/toolchain versions, fixture revision and engine digest, then demonstrate cold upload, restoration with empty local caches and outputs, comparison with an uncached baseline, source/dependency/argument invalidation, wrong/cross-instance credentials, interrupted uploads and server-error behavior. Validate trusted and untrusted TLS, then PVC persistence, pause/resume, rotation and Retain/Delete for each new engine. Measure performance separately from correctness; keep support levels specific to the paths actually executed.
 
 ## Isolated-cluster tests
 
@@ -22,10 +31,11 @@ Run from the repository root:
 
 ```sh
 docker build -f images/operator/Dockerfile -t expbuild/operator:test .
+docker build -f images/gradle-cache/Dockerfile -t expbuild/gradle-cache:test .
 python3 tools/cluster_lifecycle.py
 ```
 
-Full control-plane tests also require local builds of the other two images:
+Full control-plane tests additionally require the API and console images. Keep the Operator and Gradle images built above; internal and Gateway modes load the Gradle image, while isolation mode skips it:
 
 ```sh
 docker build -f images/admin-api/Dockerfile -t expbuild/admin-api:test .
@@ -45,6 +55,8 @@ Gateway mode additionally requires Go and OpenSSL. `python3 tools/helm_lifecycle
 
 WebDAV checks cover anonymous rejection, rejection of incorrect hostnames/untrusted CAs, 16 MiB PUT/GET, PROPFIND, LOCK and lock-constrained DELETE, pause/resume, credential rotation, and ingress revocation after instance deletion. Deliberately rejected TLS tests use separate port-forwarding sessions so kubectl exiting after a connection reset does not affect subsequent tests.
 
+Gradle checks cover the published `/cache/` endpoint, authenticated HTTPS reads/writes, rejection of old credentials after rotation, and route revocation after deletion. Internal and Gateway modes also verify that API-created health credentials can read status but cannot read or write cache entries, and that engine statistics reach the management API.
+
 The same job then creates a digest-pinned bazel-remote v2.6.2 instance. A Go contract client uses trusted TLS and gRPC authority to verify capabilities, FindMissingBlobs, chunked 8 MiB ByteStream upload/download, rejection of anonymous access and old passwords, and reads of original data after rolling credential updates. It constructs wire messages from standard protobuf fields; this does not qualify a complete Bazel build client, ActionCache, or compression protocol. Credentials are handed over in temporary files with mode 0600, removed after use, and never appear in command-line arguments or logs.
 
 This test has no public DNS, external load balancer, or NetworkPolicy-enforcing CNI, so it does not demonstrate those facilities. See [implementation status](progress.md) for actual passes and failure records.
@@ -61,11 +73,11 @@ CI adds isolation mode, including the existing Gateway/TLS, automatic Prometheus
 - Appropriately labeled Pods in the designated Gateway namespace can access both ports; appropriately labeled Pods in the monitoring namespace can access only 8080.
 - Removing namespace authorization or the client Pod label blocks new connections; restoring labels restores connectivity.
 
-Negative assertions require TCP timeouts; DNS errors, connection refusal, or process errors do not count as policy enforcement. Positive checks verify service reachability before and after revocation. Existing connections, multi-node cross-node traffic, IPv6, other CNIs, and production networking are outside this scope. The new job is implemented; actual passing status is determined by implementation records and CI.
+Negative assertions require TCP timeouts; DNS errors, connection refusal, or process errors do not count as policy enforcement. Positive checks verify service reachability before and after revocation. Existing connections, multi-node cross-node traffic, IPv6, other CNIs, and production networking are outside this scope. The current job passes for REAPI/WebDAV; Gradle, Turbo, Nx and Go are not deployed in this mode. Results are pinned in the [CI snapshot](progress.md#current-validation).
 
 ## Real-browser management workflows
 
-`npm run test:browser` uses pinned Playwright/Chromium, a built admin-web, the actual Fastify API, and PostgreSQL. The launcher creates a dedicated randomly named database and applies all migrations, deleting only its own database on exit. It does not reuse running services, read a business kubeconfig, or install a Kubernetes client/worker. Projects remain pending after creation, so these tests must not be recorded as successful cache-instance deployments.
+`npm run test:browser` uses pinned Playwright/Chromium, a built admin-web, the actual Fastify API, PostgreSQL and the asynchronous operation worker. The launcher creates a dedicated randomly named database and applies all migrations, deleting only its own database on exit. Only the Kubernetes boundary uses a deterministic adapter; no business kubeconfig or real cache workload is used. UI lifecycle success therefore does not establish successful Kubernetes deployment.
 
 Set `TEST_DATABASE_URL` to dedicated test PostgreSQL (the account needs permission to create test databases), then run from the repository root:
 
@@ -76,6 +88,6 @@ npx playwright install --with-deps chromium --only-shell
 npm run test:browser
 ```
 
-Local execution requires a free 127.0.0.1:4173. Browser and database connections use real network requests; API responses are neither intercepted nor fabricated. Tests create only public test accounts and temporary data. Coverage includes login/logout, HttpOnly sessions, project creation, quota saving and persistence after refresh, rejection of missing CSRF, cross-project access denial, and stale-version quota-write conflicts after a new tab inherits a session. Screenshots and traces are retained only on failure in local `test-results/browser`; automatic upload is not configured.
+Local execution requires a free 127.0.0.1:4173. Browser and database connections use real network requests; API responses are neither intercepted nor fabricated. Tests create only public test accounts and temporary data. Coverage includes sessions, project access, CSRF and quota conflicts; instance creation, one-time credentials, pause/resume and deletion; language/navigation/layout; and experimental template/profile connection panels. Screenshots and traces are retained only on failure in local `test-results/browser`; automatic upload is not configured.
 
 Management API CI now includes browser installation and execution steps. Current coverage does not include creating real cache instances from the browser, file reads/writes, real domains, or production ingress; these still need integration with the isolated Kubernetes path. Component-test results cannot substitute for a failed browser run.
