@@ -28,22 +28,23 @@
 | --- | --- | --- |
 | `bazel-remote@0.1.0` | 通过 [bazel-remote](https://github.com/buchgr/bazel-remote) 提供 Bazel HTTP 远程缓存与 REAPI Action Cache/CAS | 独立 PVC、缓存预算、LRU |
 | `gradle-http@0.2.0` | [Gradle HTTP 构建缓存](https://docs.gradle.org/current/userguide/build_cache.html) | 独立 PVC、缓存预算、LRU |
-| `webdav-apache@0.2.0` | 通过 Apache HTTP Server 提供带认证的 WebDAV | 独立 PVC；无原生缓存预算或自动淘汰 |
+| `webdav-apache@0.2.0` | 通过 [Apache HTTP Server](https://httpd.apache.org/) 提供带认证的 WebDAV | 独立 PVC；无原生缓存预算或自动淘汰 |
 
 **REAPI 仅提供缓存，不支持远程执行。** 历史 Gradle/WebDAV `0.1.0` 实例保留原有能力，目前没有自动升级或模板版本升级流程。
 
-观测能力因引擎而异：Bazel 提供容量与 AC/CAS 查询历史；Gradle 增加命中与缺失、延迟、流量和淘汰指标；WebDAV 通过有界扫描估算内容大小与文件数量。时序数据需要兼容 Prometheus 的存储，日志需要 Loki 与采集链路，告警需要 Alertmanager 与规则。缺失数据会显示为不可用。[完整能力矩阵 →](docs/k8s-platform/observability.md)
+观测能力因引擎而异：Bazel 提供容量与 AC/CAS 查询历史；Gradle 增加命中与缺失、延迟、流量和淘汰指标；WebDAV 通过有界扫描估算内容大小与文件数量。时序数据需要兼容 Prometheus 的存储，日志需要 Loki 与采集链路，告警需要 Alertmanager 与规则。缺失数据会显示为不可用。[可观测能力详情 →](docs/k8s-platform/observability.md)
 
+**实验性模板，需显式启用：** 以下独立引擎已接入 Operator、API 和控制台。真实客户端及各模板的 Kubernetes 生命周期验收尚未完成，平台暂未提供其引擎统计。
 
-[Maven Build Cache Extension 实验性配置](docs/k8s-platform/maven-build-cache.md)复用 WebDAV 保存构建产物，真实客户端验收待完成；不提供 Maven 依赖镜像代理。
+| 模板 | 固定客户端版本 | 存储与淘汰 |
+| --- | --- | --- |
+| [turborepo-http@0.1.0](docs/k8s-platform/turborepo-http.md) | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching) 2.11.7 | 独立 PVC、缓存预算、LRU |
+| [nx-http@0.1.0](docs/k8s-platform/nx-http.md) | [Nx](https://nx.dev/docs/kb/self-hosted-caching) 22.7.12 | 独立 PVC、缓存预算、LRU |
+| [go-cacheprog@0.1.0](docs/k8s-platform/go-cacheprog.md) | [cacheprog](https://github.com/platacard/cacheprog) 1.3.0，配合 Go 1.27.1 | 独立 PVC、缓存预算、LRU；实例级只读策略 |
 
-**实验性客户端配置：** sccache、Pants 和 [moonrepo 2.5.6](docs/k8s-platform/moonrepo.md) 复用现有引擎。真实客户端验收仍待完成，配置示例不代表已认证支持。
+**实验性客户端配置：** [sccache 和 Pants](docs/k8s-platform/client-profiles.md)、[moonrepo](docs/k8s-platform/moonrepo.md) 与 [Maven Build Cache Extension](docs/k8s-platform/maven-build-cache.md) 复用现有引擎。真实客户端验收仍待完成，配置示例不代表已认证支持。Maven 和 Go 构建产物缓存不提供依赖下载代理。
 
-
-[Turborepo HTTP 缓存](docs/k8s-platform/turborepo-http.md)使用独立适配器与固定版本配置，默认关闭；真实客户端验收尚未完成。
-
-
-[Nx HTTP 缓存](docs/k8s-platform/nx-http.md)使用独立适配器与固定版本配置，默认关闭；真实客户端验收尚未完成。
+各模板的准确版本、客户端配置、功能及待验收范围，见[功能支持与验证矩阵](docs/k8s-platform/support-matrix.md)。
 
 ## 工作原理
 
@@ -116,7 +117,7 @@ npm run build
 
 | 目标 | 指南 |
 | --- | --- |
-| 了解平台 | [架构设计](docs/k8s-platform/README.md) · [实施状态](docs/k8s-platform/progress.md) |
+| 了解平台 | [架构设计](docs/k8s-platform/README.md) · [支持矩阵](docs/k8s-platform/support-matrix.md) · [实施状态](docs/k8s-platform/progress.md) |
 | 安装与运维 | [Helm](deploy/charts/expbuild/README.md) · [镜像](images/README.md) · [实例域名](docs/k8s-platform/gateway.md) |
 | 客户端与 API 接入 | [API 集成](docs/k8s-platform/api-integration.md) · [OpenAPI](docs/k8s-platform/openapi.json) |
 | 资源管理 | [项目配额](docs/k8s-platform/quotas.md) · [资源清单](docs/k8s-platform/inventory.md) · [保留卷](docs/k8s-platform/retained-volume-reclaim.md) |
@@ -127,9 +128,9 @@ npm run build
 
 ## 后续方向
 
-- 验证更多缓存类型，包括 OCI 拉取代理、BuildKit Registry、包管理器、编译器与任务缓存。
-- 增加模板升级与迁移流程，扩展恢复与生产部署验证。
-- 深化可观测能力与规模基线，分别评估 OIDC、对象存储、GitOps 和多集群支持。
+- 完成 Go、Turborepo 和 Nx 的真实客户端与 Kubernetes 验收，补齐统计及性能基线。
+- 提供版本化安装产物，随后完善凭据权限、升级流程与恢复验证。
+- 接下来集成 OCI/BuildKit 缓存；包代理、CI 缓存、OIDC、对象存储、GitOps 和多集群分别验收。
 
 以上是规划方向。模板目前使用编译期适配器注册表，尚未实现第三方扩展 SDK 或跨引擎共享内容索引。验证门槛见[缓存扩展计划](docs/k8s-platform/cache-expansion-plan.md)，当前任务见[实施状态](docs/k8s-platform/progress.md)。评估替代方案期间，Apache WebDAV 服务保持不变。
 

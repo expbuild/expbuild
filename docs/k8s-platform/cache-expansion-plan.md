@@ -1,10 +1,10 @@
 # expbuild Cache Type Expansion Research and Plan
 
-Compiled: 2026-10-02. Basis: research into official documentation and project materials on 2026-10-01. Status: candidate expansion plan; no runtime, compatibility, or performance validation of new engines has been conducted. This document records the recommended scope and sequence; specific engines and versions will be selected after prototype validation.
+Compiled: 2026-10-02 from upstream research on 2026-10-01. Implementation status and priorities updated: 2026-10-08, against `main` at `71d5134`. Upstream candidate descriptions retain their original research scope; verify target versions and licenses when selecting an engine. The [support matrix](support-matrix.md) distinguishes current integrations from candidates.
 
-Prioritize Docker/OCI image pull caching, BuildKit build caching, and general artifact and CI caching, followed by language-specific package caches. Continue the Kubernetes architecture for managing independent instances, reuse existing engines, and unify lifecycle, credentials, configuration, and observability entry points.
+First qualify the existing Go, Turbo and Nx integrations, add their statistics and performance baselines, and complete reproducible release delivery. Then integrate BuildKit Registry caching and Docker/OCI pull caching as separate services. Package proxies and general artifact/CI services follow explicit client and retention requirements. Continue managing independent Kubernetes instances with unified lifecycle, credentials, configuration and observability entry points.
 
-Existing templates cover REAPI/Bazel HTTP, Gradle HTTP, and Apache WebDAV; see [Implementation Status](progress.md) for actual delivery and validation boundaries. This plan does not mean new types are already integrated or change the agreement to leave WebDAV unchanged for now; see the [WebDAV Cache Service Plan](webdav-cache-plan.md) for the internally developed service direction.
+REAPI/Bazel HTTP, Gradle HTTP and Apache WebDAV have selected acceptance evidence. Turbo, Nx and Go have separate experimental templates; sccache, Pants, Maven Build Cache Extension and moonrepo have experimental recipes on existing engines. Their real-client acceptance is pending. The [BuildKit/Registry yq prototype](buildkit-registry-yq-poc.md) has standalone native ARM64 evidence, but no expbuild template. See [implementation status](progress.md) for the active backlog. Apache WebDAV remains unchanged; the [custom WebDAV proposal](webdav-cache-plan.md) does not authorize further changes to the current engine.
 
 ## Expansion Principles
 
@@ -18,18 +18,19 @@ Integration assessments and priorities in this document's tables are planning re
 
 ## Cache Types and Candidate Implementations
 
-| Type | Content and purpose | Candidate implementation or integration | Suggested sequence |
+| Type | Content and purpose | Candidate implementation or integration | Current state and priority |
 |---|---|---|---|
-| Docker/OCI image pull cache | Cache upstream image manifests, configurations, and layers to reduce repeated downloads | [Distribution](https://distribution.github.io/distribution/recipes/mirror/), [zot](https://zotregistry.dev/v2.1.21/articles/mirroring/), Harbor | Phase 1 |
-| BuildKit build cache | Reuse Dockerfile build steps and multistage build results | Writable OCI Registry using [cache-to and cache-from](https://docs.docker.com/build/cache/backends/registry/) | Phase 1 |
-| General artifact and CI cache | Store files, directory archives, and intermediate results by key | HTTP/WebDAV, S3; prioritize validation of [GitLab Runner distributed caching](https://docs.gitlab.com/ci/caching/) | Phase 1; establish data-retention semantics first |
-| npm package cache | Package metadata and tarballs for npm, pnpm, and Yarn | [Verdaccio](https://www.verdaccio.org/docs/caching/) | Phase 2 |
-| Maven dependency cache | JARs, POMs, plugins, and repository metadata | [Reposilite](https://reposilite.com/), Nexus Repository | Phase 2; validate proxy-cache behavior |
-| Python package cache | Wheels, source packages, and the PyPI index | [devpi](https://github.com/devpi/devpi) | Phase 2 |
-| Go Modules cache | Module versions' .mod, .info, and .zip files | [Athens](https://docs.gomods.io/configuration/storage/) | Phase 2 |
-| C/C++ and Rust compilation cache | Compilation outputs and metadata needed for lookup | Remote storage interfaces of [sccache](https://github.com/mozilla/sccache) and [ccache](https://ccache.dev/manual/latest.html) | Phase 3; prioritize reuse of existing backends |
-| Monorepo task cache | Outputs and logs from build, test, and other tasks | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching), [Nx self-hosted cache API](https://nx.dev/docs/kb/self-hosted-caching) | Phase 3 |
-| HTTP download cache | SDKs, toolchains, installers, and source archives | [NGINX caching proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), configured for designated upstreams | Phase 3, or earlier based on actual demand |
+| Docker/OCI image pull cache | Cache upstream image manifests, configurations, and layers to reduce repeated downloads | [Distribution](https://distribution.github.io/distribution/recipes/mirror/), [zot](https://zotregistry.dev/v2.1.21/articles/mirroring/), Harbor | Research; P1 integration |
+| BuildKit build cache | Reuse Dockerfile build steps and multistage build results | Writable OCI Registry using [cache-to and cache-from](https://docs.docker.com/build/cache/backends/registry/) | Standalone prototype; P1 platform integration |
+| General artifact and CI cache | Store files, directory archives, and intermediate results by key | HTTP/WebDAV, S3; prioritize validation of [GitLab Runner distributed caching](https://docs.gitlab.com/ci/caching/) | Research; P2 after defining retention semantics |
+| npm package cache | Package metadata and tarballs for npm, pnpm, and Yarn | [Verdaccio](https://www.verdaccio.org/docs/caching/) | Research; P2 |
+| Maven dependency cache | JARs, POMs, plugins, and repository metadata | [Reposilite](https://reposilite.com/), Nexus Repository | Research; P2; separate from the experimental Maven build-output recipe |
+| Python package cache | Wheels, source packages, and the PyPI index | [devpi](https://github.com/devpi/devpi) | Research; P2 |
+| Go Modules cache | Module versions' .mod, .info, and .zip files | [Athens](https://docs.gomods.io/configuration/storage/) | Research; P2; separate from the experimental Go build-output engine |
+| C/C++ and Rust compilation cache | Compilation outputs and metadata needed for lookup | Remote storage interfaces of [sccache](https://github.com/mozilla/sccache) and [ccache](https://ccache.dev/manual/latest.html) | sccache WebDAV recipe implemented, real-client acceptance pending; ccache remains a candidate |
+| Monorepo task cache | Outputs and logs from build, test, and other tasks | [Turborepo](https://turborepo.dev/docs/core-concepts/remote-caching), [Nx self-hosted cache API](https://nx.dev/docs/kb/self-hosted-caching) | Experimental engines implemented; P0 acceptance, statistics and performance |
+| Go build cache | Compiled Go outputs | [cacheprog HTTP adapter](go-cacheprog.md) | Experimental engine implemented; P0 acceptance, statistics and performance |
+| HTTP download cache | SDKs, toolchains, installers, and source archives | [NGINX caching proxy](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), configured for designated upstreams | Candidate; prioritize by actual demand |
 | Other package ecosystems | NuGet, Cargo, Composer, APT, RPM, Alpine, and others | [Nexus format support](https://help.sonatype.com/en/formats.html), corresponding Pulp plugins, or dedicated services | Validate individually based on customer needs |
 | Nix binary cache | Built Nix store contents | [Attic](https://docs.attic.rs/) | Specialized extension; further maturity assessment required |
 | Model and dataset cache | Model files, datasets, and their downloaded content | First research upstream-specific APIs, authentication, redirects, and storage protocols | Specialized extension; engine not yet selected |
@@ -109,9 +110,9 @@ When many package formats are needed, evaluate Nexus or Pulp as another deployme
 
 ### Compilation and Monorepo Tasks
 
-sccache supports remote backends including S3 and WebDAV; ccache also provides remote storage mechanisms. Integration can initially reuse existing services, adding client configuration, independent namespaces, and compatibility acceptance tests. Their keys, data formats, and statistics differ, so entry interoperability must not be assumed. Certify ccache remote storage and helper mechanisms against specific client versions as well. [sccache](https://github.com/mozilla/sccache), [ccache manual](https://ccache.dev/manual/latest.html)
+sccache supports remote backends including S3 and WebDAV; ccache also provides remote storage mechanisms. The [experimental sccache recipe](client-profiles.md#sccache) now reuses Apache WebDAV; real-client acceptance is pending. Use dedicated instances and credentials for different trust domains rather than treating key prefixes as isolation. Keys, data formats and statistics differ, so entry interoperability must not be assumed. ccache remote storage and helper mechanisms still need selection and version-specific acceptance. [sccache](https://github.com/mozilla/sccache), [ccache manual](https://ccache.dev/manual/latest.html)
 
-Turborepo provides a public remote-cache protocol and community implementations, while Nx provides an OpenAPI for self-hosted services. Evaluate separate protocol adapters reusing file or object storage, while managing authentication, task content, and compatible versions separately. [Turborepo protocol](https://turborepo.dev/docs/core-concepts/remote-caching), [community service implementation](https://github.com/ducktors/turborepo-remote-cache), [Nx API](https://nx.dev/docs/kb/self-hosted-caching)
+Turborepo provides a public remote-cache protocol and community implementations, while Nx provides an OpenAPI for self-hosted services. expbuild now has separate experimental [Turbo](turborepo-http.md) and [Nx](nx-http.md) engines on PVCs; their real-client, statistics and performance gates remain open. Object storage is not implemented. [Turborepo protocol](https://turborepo.dev/docs/core-concepts/remote-caching), [community service implementation](https://github.com/ducktors/turborepo-remote-cache), [Nx API](https://nx.dev/docs/kb/self-hosted-caching)
 
 ### Specialized Extensions
 
@@ -154,11 +155,11 @@ A successful response is not a cache hit: a proxy's first successful upstream fe
 
 ## Suggested Implementation Sequence and Acceptance
 
-| Phase | Work scope | Outputs before the next phase |
+| Priority | Work scope | Outputs before the next phase |
 |---|---|---|
-| Phase 1 | Compare Distribution and zot; prototype image pull, BuildKit, and general artifact/CI caching | Establish engines and versions, artifact-retention boundaries, storage approach, client compatibility, and metric gaps |
-| Phase 2 | Verdaccio, devpi, Athens; validate Maven candidates | Package templates, upstream authentication and isolation, metadata refresh, executable cleanup, and client examples |
-| Phase 3 | sccache/ccache, Turborepo/Nx, HTTP download proxy, and other package ecosystems | Client/template certification matrix, reusable storage adapters, separate statistics |
+| P0 | Qualify existing Go/Turbo/Nx engines, then the remaining experimental client recipes; complete trial delivery | Real clients and cluster paths, accurate statistics, performance limits, versioned install artifacts; keep each profile experimental until its own gates pass |
+| P1 | Build on the BuildKit/Registry prototype; compare candidate engines and qualify image pull-through separately | Engine/version selection, template integration, upstream credentials, retention/GC, real-client and metric acceptance |
+| P2 | Package proxies and general artifact/CI services; assess ccache and HTTP download proxy by demand | Client-specific templates, upstream isolation, metadata refresh, explicit retention, executable cleanup and integration examples |
 | Specialized extensions | Nix, models and datasets, P2P distribution, external Harbor, and others | Separate plans based on actual user needs, avoiding prerequisites for initial delivery |
 
 This sequence is a recommendation, not a calendar or delivery commitment. HTTP upstream proxies still require validation of Cache-Control, revalidation, authentication-response isolation, and eviction; this plan does not extend the existing Apache WebDAV template further.

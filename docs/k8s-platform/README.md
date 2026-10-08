@@ -1,12 +1,12 @@
 # expbuild: Kubernetes cache-service management platform
 
-Updated: 2026-10-01. Status: implementation in progress; selected REAPI, WebDAV, and Gradle paths have passed disposable-cluster acceptance, while complete product and production-environment qualification remain unfinished. See [outstanding work in the implementation status](progress.md#current-outstanding-work) for current development tasks and validation boundaries, and [testing instructions](testing.md) for validation methods. The current WebDAV implementation remains unchanged for now; see the [custom WebDAV cache-service proposal](webdav-cache-plan.md) for future direction.
+Status updated: 2026-10-08, against `main` at `71d5134`. Selected REAPI, WebDAV and Gradle paths have passed disposable-cluster acceptance. Turbo, Nx and Go cacheprog have experimental platform integrations with real-client and deployed-template acceptance pending. The [feature support matrix](support-matrix.md) records current capabilities and evidence; the [active backlog](progress.md#current-outstanding-work) and [testing instructions](testing.md) describe remaining work and verification. Production qualification is unfinished. Apache WebDAV remains unchanged pending a replacement decision; the [custom service proposal](webdav-cache-plan.md) is a future direction.
 
 See [implementation-plan.md](implementation-plan.md) for implementation contracts and task breakdowns. This document defines the product and architecture; the implementation contract defines modules, data, state machines, and delivery gates. Together they form the current implementation baseline.
 
 The [platform observability plan](observability-plan.md) defines the complete goals for platform and cache-instance monitoring, log diagnostics, and alerts. See [observability integration](observability.md) for the first implementation, user entry points, and deployment configuration, and [monitoring instructions](monitoring.md) for the existing Bazel history endpoint.
 
-See [cache-type expansion research and planning](cache-expansion-plan.md) for candidate engines, integration boundaries, and suggested sequencing for Docker/OCI, BuildKit, artifact and CI caches, package caches, and task caches. That document records directions awaiting validation, not implemented capabilities.
+See [cache-type expansion research and planning](cache-expansion-plan.md) for candidate engines, integration boundaries and sequencing after qualification of existing experimental integrations. The standalone BuildKit/Registry prototype is not yet a platform template; Docker/OCI pull-through, artifact/CI services and package proxies remain candidates.
 
 This document is independent of the earlier unified-cache-engine proposals in `docs/design` and `docs/strategy`. Those proposals remain historical research and are not prerequisites for this design.
 
@@ -17,7 +17,7 @@ expbuild is a Kubernetes-based cache-service management platform. Users choose a
 Established directions:
 
 - Prioritize enterprise self-hosting, with Kubernetes as the instance runtime foundation.
-- Reuse open-source cache engines; the first REAPI template uses bazel-remote, with its exact version to be pinned through a PoC.
+- Reuse open-source engines where suitable; the REAPI integration validates bazel-remote v2.6.2. Gradle and the experimental Turbo, Nx and Go templates use separate expbuild engines.
 - Give instances separate workloads, storage, and credentials; native protocol requests go directly to cache services.
 - Unify management capabilities and interfaces without requiring all engines to share protocol semantics or eviction algorithms.
 - Start with small independent services, without a unified CacheCatalog or cross-engine content index.
@@ -78,7 +78,7 @@ The initial release does not mandate sidecars. Prefer native engine authenticati
 |---|---|
 | EngineTemplate | Administrator-maintained versioned template package; initially shipped with the platform, without requiring a dynamic template CRD |
 | CacheInstance | Namespaced CRD; sole authority for desired instance configuration |
-| CacheInstance.status | Operator-written observations, actual versions, conditions, and endpoints |
+| CacheInstance.status | Operator-written observations, versions, conditions and endpoints; also contains the immutable image-binding trust record, which must be preserved during backup/recovery |
 | Kubernetes Secret | Instance credentials; CRs contain only same-namespace references |
 | Platform database | Users, teams, project authorization, audits, asynchronous-operation records; no independently editable duplicate instance spec |
 | Metrics system | Time-series statistics; no per-request or high-frequency metrics written to CR status |

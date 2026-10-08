@@ -1,6 +1,6 @@
 # Experimental client configurations
 
-The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0, Pants 2.33.1, Maven Build Cache Extension 1.3.0 and moonrepo 2.5.6. Real-client cache acceptance is still pending. Existing Bazel, Gradle and WebDAV examples remain available.
+Status updated: 2026-10-08. The management API and connection panel provide **experimental configuration recipes**, not certified support, for sccache 0.18.0, Pants 2.33.1, Maven Build Cache Extension 1.3.0 and moonrepo 2.5.6 using existing engines. Turbo, Nx and Go cacheprog use separate experimental engines described below. The [support matrix](support-matrix.md#experimental-client-profiles) lists all seven pinned profiles; real-client acceptance is pending for each. Existing Bazel, Gradle and WebDAV examples remain available.
 
 | Client | Existing template | Transport | Configuration status |
 | --- | --- | --- | --- |
